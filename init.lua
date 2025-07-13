@@ -1030,7 +1030,7 @@ mq.imgui.init("SmartLoot", function()
         ImGui.End()
         
         if shouldClose == false then
-            lootUI.showUI = false
+            lootUI.showUI = true
         end
     end
 

@@ -22,9 +22,7 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 8)
             ImGui.Text("Item requiring decision:")
             ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2)
-            ImGui.PushFont(ImGui.GetIO().Fonts.Fonts[1]) -- Larger font if available
             ImGui.TextColored(1, 1, 0, 1, lootUI.currentItem.name)
-            ImGui.PopFont()
             ImGui.EndChild()
             ImGui.PopStyleColor()
             
@@ -269,11 +267,77 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
             lootUI.peerItemRulesPopup.itemID or 0, 
             lootUI.peerItemRulesPopup.iconID or 0))
         
+        -- Clear states if item changed
+        if lootUI.peerItemRulesPopup.lastItemName and 
+           lootUI.peerItemRulesPopup.lastItemName ~= lootUI.peerItemRulesPopup.itemName then
+            lootUI.peerItemRulesPopup.peerStates = {}
+        end
+        lootUI.peerItemRulesPopup.lastItemName = lootUI.peerItemRulesPopup.itemName
+        
+        -- Clear recentlyChanged flags after a delay to allow database to update
+        if lootUI.peerItemRulesPopup.peerStates then
+            local currentTime = mq.gettime()
+            for peer, peerState in pairs(lootUI.peerItemRulesPopup.peerStates) do
+                if peerState.recentlyChanged and peerState.changeTime and 
+                   (currentTime - peerState.changeTime) > 2000 then -- 2 second delay
+                    peerState.recentlyChanged = false
+                    peerState.changeTime = nil
+                end
+            end
+        end
+        
         ImGui.SetNextWindowSize(500, 400, ImGuiCond.FirstUseEver)
         local keepOpen = true
         if ImGui.Begin(windowTitle, keepOpen) then
             ImGui.Text("Configure rules for '" .. (lootUI.peerItemRulesPopup.itemName or "") .. "' across all peers.")
             ImGui.Separator()
+
+            -- Build peer list outside of table scope so it's available for buttons
+            local peerList = {}
+            local currentCharacter = mq.TLO.Me.Name()
+            if currentCharacter then
+                table.insert(peerList, currentCharacter)
+            end
+
+            -- Add connected peers
+            local connectedPeers = util.getConnectedPeers()
+            local connectedPeerSet = {}
+            for _, peer in ipairs(connectedPeers) do
+                connectedPeerSet[peer] = true
+                if peer ~= currentCharacter then
+                    table.insert(peerList, peer)
+                end
+            end
+
+            -- Add other characters that have rules in database
+            local allCharacters = database.getAllCharactersWithRules()
+            logging.debug(string.format("[PeerRules] getAllCharactersWithRules returned: %s", 
+                                      table.concat(allCharacters or {}, ", ")))
+            
+            for _, charName in ipairs(allCharacters) do
+                if charName ~= currentCharacter then
+                    local alreadyAdded = false
+                    for _, existingPeer in ipairs(peerList) do
+                        if existingPeer == charName then
+                            alreadyAdded = true
+                            break
+                        end
+                    end
+                    if not alreadyAdded then
+                        table.insert(peerList, charName)
+                        logging.debug(string.format("[PeerRules] Added character from DB: %s", charName))
+                    end
+                end
+            end
+
+            -- Sort peer list alphabetically, keeping current character first
+            table.sort(peerList, function(a, b)
+                if a == currentCharacter then return true end
+                if b == currentCharacter then return false end
+                return a < b
+            end)
+            
+            logging.debug(string.format("[PeerRules] Final peer list: %s", table.concat(peerList, ", ")))
 
             if ImGui.BeginTable("PeerItemRulesTable", 3, 
                 ImGuiTableFlags.BordersInnerV + 
@@ -285,46 +349,10 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                 ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, 80)
                 ImGui.TableHeadersRow()
 
-                local peerList = {}
-                -- Always include current character as "Local"
-                local currentCharacter = mq.TLO.Me.Name()
-                if currentCharacter then
-                    table.insert(peerList, currentCharacter)
+                -- Initialize persistent state for peer rules if not exists
+                if not lootUI.peerItemRulesPopup.peerStates then
+                    lootUI.peerItemRulesPopup.peerStates = {}
                 end
-
-                -- Add connected peers
-                local connectedPeers = util.getConnectedPeers()
-                local connectedPeerSet = {}
-                for _, peer in ipairs(connectedPeers) do
-                    connectedPeerSet[peer] = true
-                    if peer ~= currentCharacter then
-                        table.insert(peerList, peer)
-                    end
-                end
-
-                -- Add other characters that have rules in database
-                local allCharacters = database.getAllCharactersWithRules()
-                for _, charName in ipairs(allCharacters) do
-                    if charName ~= currentCharacter then
-                        local alreadyAdded = false
-                        for _, existingPeer in ipairs(peerList) do
-                            if existingPeer == charName then
-                                alreadyAdded = true
-                                break
-                            end
-                        end
-                        if not alreadyAdded then
-                            table.insert(peerList, charName)
-                        end
-                    end
-                end
-
-                -- Sort peer list alphabetically, keeping current character first
-                table.sort(peerList, function(a, b)
-                    if a == currentCharacter then return true end
-                    if b == currentCharacter then return false end
-                    return a < b
-                end)
 
                 for _, peer in ipairs(peerList) do
                     ImGui.TableNextRow()
@@ -346,13 +374,39 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                     local peerRules = database.getLootRulesForPeer(peer)
                     local itemName = lootUI.peerItemRulesPopup.itemName or ""
                     local lowerItemName = string.lower(itemName)
+                    local itemID = lootUI.peerItemRulesPopup.itemID or 0
                     
-                    local ruleData = peerRules[lowerItemName] or peerRules[itemName] or { rule = "", item_id = 0, icon_id = 0 }
+                    -- Try to find the rule - first by composite key if we have an itemID, then by name
+                    local ruleData = nil
+                    if itemID > 0 then
+                        local compositeKey = string.format("%s_%d", itemName, itemID)
+                        ruleData = peerRules[compositeKey]
+                    end
+                    
+                    -- Fallback to name-based lookup
+                    if not ruleData then
+                        ruleData = peerRules[lowerItemName] or peerRules[itemName]
+                    end
+                    
+                    -- Default if no rule found
+                    if not ruleData then
+                        ruleData = { rule = "", item_id = itemID, icon_id = lootUI.peerItemRulesPopup.iconID or 0 }
+                    end
+                    
                     local currentRuleStr = ruleData.rule or ""
                     
-                    local displayRule = currentRuleStr
-                    local threshold = 1
+                    -- Initialize persistent state for this peer if not exists
+                    if not lootUI.peerItemRulesPopup.peerStates[peer] then
+                        lootUI.peerItemRulesPopup.peerStates[peer] = {
+                            displayRule = currentRuleStr,
+                            threshold = 1
+                        }
+                    end
                     
+                    local peerState = lootUI.peerItemRulesPopup.peerStates[peer]
+                    
+                    -- Parse the current rule for display
+                    local displayRule, threshold
                     if string.sub(currentRuleStr, 1, 15) == "KeepIfFewerThan" then
                         displayRule = "KeepIfFewerThan"
                         local colonPos = string.find(currentRuleStr, ":")
@@ -361,16 +415,24 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                         end
                     elseif currentRuleStr == "" then
                         displayRule = "Unset"
+                    else
+                        displayRule = currentRuleStr
+                    end
+                    
+                    -- Update persistent state if not recently changed
+                    if not peerState.recentlyChanged then
+                        peerState.displayRule = displayRule
+                        peerState.threshold = threshold or 1
                     end
 
                     -- Rule combo box
-                    if ImGui.BeginCombo("##ruleCombo_" .. peer, displayRule) then
+                    if ImGui.BeginCombo("##ruleCombo_" .. peer, peerState.displayRule) then
                         for _, option in ipairs({"Keep", "Ignore", "KeepIfFewerThan", "Destroy", "Unset"}) do
-                            local isSelected = (displayRule == option)
+                            local isSelected = (peerState.displayRule == option)
                             if ImGui.Selectable(option, isSelected) then
                                 local newRuleValue = option
                                 if option == "KeepIfFewerThan" then
-                                    newRuleValue = "KeepIfFewerThan:" .. threshold
+                                    newRuleValue = "KeepIfFewerThan:" .. peerState.threshold
                                 elseif option == "Unset" then
                                     newRuleValue = ""
                                 end
@@ -379,18 +441,39 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                 local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
                                 local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                                 
+                                local success = false
                                 if peer == currentCharacter then
-                                    database.saveLootRule(itemName, itemID, newRuleValue, iconID)
+                                    success = database.saveLootRule(itemName, itemID, newRuleValue, iconID)
                                 else
-                                    database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
+                                    success = database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
                                     if connectedPeerSet[peer] then
                                         actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
                                     end
                                 end
                                 
-                                -- Update display immediately
-                                currentRuleStr = newRuleValue
-                                displayRule = (option == "KeepIfFewerThan") and "KeepIfFewerThan" or option
+                                if success then
+                                    -- Update persistent state
+                                    peerState.displayRule = (option == "KeepIfFewerThan") and "KeepIfFewerThan" or option
+                                    peerState.recentlyChanged = true
+                                    peerState.changeTime = mq.gettime()
+                                    logging.debug(string.format("[PeerRules] Successfully saved rule '%s' for %s -> %s (itemID=%d, iconID=%d)", 
+                                        newRuleValue, peer, itemName, itemID, iconID))
+                                    
+                                    -- Force refresh of peer rules cache
+                                    database.refreshLootRuleCacheForPeer(peer)
+                                    
+                                    -- Debug: Check if rule is in cache after refresh
+                                    local testRules = database.getLootRulesForPeer(peer)
+                                    local testKey = itemID > 0 and string.format("%s_%d", itemName, itemID) or itemName
+                                    local testRule = testRules[testKey]
+                                    if testRule then
+                                        logging.debug(string.format("[PeerRules] Verified rule in cache: key=%s, rule=%s", testKey, testRule.rule))
+                                    else
+                                        logging.debug(string.format("[PeerRules] WARNING: Rule not found in cache after refresh! key=%s", testKey))
+                                    end
+                                else
+                                    logging.debug(string.format("[PeerRules] Failed to save rule '%s' for %s -> %s", newRuleValue, peer, itemName))
+                                end
                             end
                             if isSelected then
                                 ImGui.SetItemDefaultFocus()
@@ -400,27 +483,38 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                     end
 
                     -- Threshold input for KeepIfFewerThan
-                    if displayRule == "KeepIfFewerThan" then
+                    if peerState.displayRule == "KeepIfFewerThan" then
                         ImGui.SameLine()
-                        local newThreshold, changedThreshold = ImGui.InputInt("##threshold_" .. peer, threshold)
+                        local newThreshold, changedThreshold = ImGui.InputInt("##threshold_" .. peer, peerState.threshold)
                         if changedThreshold then
                             newThreshold = math.max(1, newThreshold)
-                            if newThreshold ~= threshold then
+                            if newThreshold ~= peerState.threshold then
                                 local updatedRule = "KeepIfFewerThan:" .. newThreshold
                                 -- Use the itemID and iconID from the popup if available, otherwise fall back to database values
                                 local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
                                 local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                                 
+                                local success = false
                                 if peer == currentCharacter then
-                                    database.saveLootRule(itemName, itemID, updatedRule, iconID)
+                                    success = database.saveLootRule(itemName, itemID, updatedRule, iconID)
                                 else
-                                    database.saveLootRuleFor(peer, itemName, itemID, updatedRule, iconID)
+                                    success = database.saveLootRuleFor(peer, itemName, itemID, updatedRule, iconID)
                                     if connectedPeerSet[peer] then
                                         actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
                                     end
                                 end
-                                threshold = newThreshold
-                                currentRuleStr = updatedRule
+                                
+                                if success then
+                                    peerState.threshold = newThreshold
+                                    peerState.recentlyChanged = true
+                                    peerState.changeTime = mq.gettime()
+                                    logging.debug(string.format("[PeerRules] Successfully updated threshold to %d for %s -> %s", newThreshold, peer, itemName))
+                                    
+                                    -- Force refresh of peer rules cache
+                                    database.refreshLootRuleCacheForPeer(peer)
+                                else
+                                    logging.debug(string.format("[PeerRules] Failed to update threshold to %d for %s -> %s", newThreshold, peer, itemName))
+                                end
                             end
                         end
                     end
@@ -431,16 +525,27 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                         local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
                         local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                         
+                        local success = false
                         if peer == currentCharacter then
-                            database.saveLootRule(itemName, itemID, "", iconID)
+                            success = database.saveLootRule(itemName, itemID, "", iconID)
                         else
-                            database.saveLootRuleFor(peer, itemName, itemID, "", iconID)
+                            success = database.saveLootRuleFor(peer, itemName, itemID, "", iconID)
                             if connectedPeerSet[peer] then
                                 actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
                             end
                         end
-                        currentRuleStr = ""
-                        displayRule = "Unset"
+                        
+                        if success then
+                            peerState.displayRule = "Unset"
+                            peerState.recentlyChanged = true
+                            peerState.changeTime = mq.gettime()
+                            logging.debug(string.format("[PeerRules] Successfully unset rule for %s -> %s", peer, itemName))
+                            
+                            -- Force refresh of peer rules cache
+                            database.refreshLootRuleCacheForPeer(peer)
+                        else
+                            logging.debug(string.format("[PeerRules] Failed to unset rule for %s -> %s", peer, itemName))
+                        end
                     end
                 end
                 ImGui.EndTable()
@@ -457,17 +562,29 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                 local itemID = lootUI.peerItemRulesPopup.itemID or 0
                 local iconID = lootUI.peerItemRulesPopup.iconID or 0
                 
+                logging.debug(string.format("[SetAllKeep] PeerList has %d entries: %s", #peerList, table.concat(peerList, ", ")))
+                logging.debug(string.format("[SetAllKeep] ConnectedPeers: %s", table.concat(connectedPeers or {}, ", ")))
+                
+                local updateCount = 0
                 for _, peer in ipairs(peerList) do
                     if peer == currentCharacter then
-                        database.saveLootRule(itemName, itemID, "Keep", iconID)
+                        local success = database.saveLootRule(itemName, itemID, "Keep", iconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            logging.debug(string.format("[SetAllKeep] Updated local character: %s", peer))
+                        end
                     else
-                        database.saveLootRuleFor(peer, itemName, itemID, "Keep", iconID)
+                        local success = database.saveLootRuleFor(peer, itemName, itemID, "Keep", iconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            logging.debug(string.format("[SetAllKeep] Updated peer: %s", peer))
+                        end
                         if connectedPeerSet[peer] then
                             actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
                         end
                     end
                 end
-                logging.log("Set all peers to 'Keep' for " .. itemName)
+                logging.log(string.format("Set all %d peers to 'Keep' for %s", updateCount, itemName))
             end
             
             ImGui.SameLine()
@@ -478,17 +595,31 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                 local itemID = lootUI.peerItemRulesPopup.itemID or 0
                 local iconID = lootUI.peerItemRulesPopup.iconID or 0
                 
+                logging.debug(string.format("[SetAllIgnore] PeerList has %d entries: %s", 
+                                          #peerList, table.concat(peerList, ", ")))
+                logging.debug(string.format("[SetAllIgnore] ConnectedPeers: %s", 
+                                          table.concat(connectedPeers or {}, ", ")))
+                
+                local updateCount = 0
                 for _, peer in ipairs(peerList) do
                     if peer == currentCharacter then
-                        database.saveLootRule(itemName, itemID, "Ignore", iconID)
+                        local success = database.saveLootRule(itemName, itemID, "Ignore", iconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            logging.debug(string.format("[SetAllIgnore] Updated local character: %s", peer))
+                        end
                     else
-                        database.saveLootRuleFor(peer, itemName, itemID, "Ignore", iconID)
+                        local success = database.saveLootRuleFor(peer, itemName, itemID, "Ignore", iconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            logging.debug(string.format("[SetAllIgnore] Updated peer: %s", peer))
+                        end
                         if connectedPeerSet[peer] then
                             actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
                         end
                     end
                 end
-                logging.log("Set all peers to 'Ignore' for " .. itemName)
+                logging.log(string.format("Set all %d peers to 'Ignore' for %s", updateCount, itemName))
             end
             
             ImGui.Separator()
@@ -506,6 +637,7 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
         if not keepOpen then
             lootUI.peerItemRulesPopup.isOpen = false
             lootUI.peerItemRulesPopup.itemName = ""
+            -- Don't clear peerStates - let them persist to remember dropdown selections
         end
     end
 end
@@ -634,8 +766,37 @@ function uiPopups.drawUpdateIDsPopup(lootUI, database, util)
             for _, character in ipairs(allCharacters) do
                 local peerRules = database.getLootRulesForPeer(character)
                 local lowerItemName = string.lower(popup.itemName or "")
+                local itemName = popup.itemName or ""
+                local currentItemID = popup.currentItemID or 0
                 
-                if peerRules[lowerItemName] or peerRules[popup.itemName or ""] then
+                -- Check both name-based and composite key lookups
+                local hasRule = false
+                
+                -- Try composite key first if we have an itemID
+                if currentItemID > 0 then
+                    local compositeKey = string.format("%s_%d", itemName, currentItemID)
+                    if peerRules[compositeKey] then
+                        hasRule = true
+                    end
+                end
+                
+                -- Try name-based lookup
+                if not hasRule and (peerRules[lowerItemName] or peerRules[itemName]) then
+                    hasRule = true
+                end
+                
+                -- Also check all rules to find any that match the item name
+                if not hasRule then
+                    for key, ruleData in pairs(peerRules) do
+                        if ruleData.item_name and 
+                           (string.lower(ruleData.item_name) == lowerItemName or ruleData.item_name == itemName) then
+                            hasRule = true
+                            break
+                        end
+                    end
+                end
+                
+                if hasRule then
                     table.insert(affectedCharacters, character)
                 end
             end
@@ -679,15 +840,65 @@ function uiPopups.drawUpdateIDsPopup(lootUI, database, util)
                 local itemName = popup.itemName or ""
                 local newItemID = popup.newItemID or popup.currentItemID or 0
                 local newIconID = popup.newIconID or popup.currentIconID or 0
+                
+                logging.debug(string.format("[UpdateIDs] Starting update for '%s': currentID=%d->%d, iconID=%d->%d, affected=%d", 
+                                          itemName, popup.currentItemID or 0, newItemID, 
+                                          popup.currentIconID or 0, newIconID, #affectedCharacters))
 
                 for _, character in ipairs(affectedCharacters) do
                     local peerRules = database.getLootRulesForPeer(character)
                     local lowerItemName = string.lower(itemName)
+                    local currentItemID = popup.currentItemID or 0
                     
-                    local currentRule = peerRules[lowerItemName] or peerRules[itemName]
+                    -- Find the current rule using the same logic as detection
+                    local currentRule = nil
+                    local foundKey = nil
+                    
+                    -- Try composite key first if we have an itemID
+                    if currentItemID > 0 then
+                        local compositeKey = string.format("%s_%d", itemName, currentItemID)
+                        if peerRules[compositeKey] then
+                            currentRule = peerRules[compositeKey]
+                            foundKey = compositeKey
+                        end
+                    end
+                    
+                    -- Try name-based lookup
+                    if not currentRule then
+                        currentRule = peerRules[lowerItemName] or peerRules[itemName]
+                        foundKey = currentRule and (peerRules[lowerItemName] and lowerItemName or itemName)
+                    end
+                    
+                    -- Search all rules if still not found
+                    if not currentRule then
+                        for key, ruleData in pairs(peerRules) do
+                            if ruleData.item_name and 
+                               (string.lower(ruleData.item_name) == lowerItemName or ruleData.item_name == itemName) then
+                                currentRule = ruleData
+                                foundKey = key
+                                break
+                            end
+                        end
+                    end
+                    
                     if currentRule then
-                        database.saveLootRuleFor(character, itemName, newItemID, currentRule.rule, newIconID)
-                        updateCount = updateCount + 1
+                        logging.debug(string.format("[UpdateIDs] Updating %s: found rule with key '%s', rule='%s'", 
+                                                  character, foundKey or "unknown", currentRule.rule or ""))
+                        
+                        -- Save with new IDs
+                        local success = database.saveLootRuleFor(character, itemName, newItemID, currentRule.rule, newIconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            
+                            -- If the old key was different from what the new one will be, we might need to delete the old entry
+                            if currentItemID > 0 and newItemID ~= currentItemID then
+                                -- The saveLootRuleFor should handle this, but let's log it
+                                logging.debug(string.format("[UpdateIDs] ItemID changed from %d to %d for %s", 
+                                                          currentItemID, newItemID, character))
+                            end
+                        else
+                            logging.debug(string.format("[UpdateIDs] Failed to update rule for %s", character))
+                        end
                         
                         -- Send reload command to connected peers
                         local connectedPeers = util.getConnectedPeers()
@@ -697,6 +908,8 @@ function uiPopups.drawUpdateIDsPopup(lootUI, database, util)
                                 break
                             end
                         end
+                    else
+                        logging.debug(string.format("[UpdateIDs] No rule found for %s (this shouldn't happen!)", character))
                     end
                 end
 

@@ -545,7 +545,7 @@ end
 -- SAVE FUNCTIONS
 -- ============================================================================
 
--- Save loot rule with itemID priority
+-- Save loot rule - SIMPLIFIED: itemID-based only
 function database.saveLootRuleFor(toonName, itemName, itemID, rule, iconID)
     if not toonName or toonName == "Local" then
         toonName = mq.TLO.Me.Name() or "unknown"
@@ -559,115 +559,92 @@ function database.saveLootRuleFor(toonName, itemName, itemID, rule, iconID)
     itemID = tonumber(itemID) or 0
     iconID = tonumber(iconID) or 0
     
-    logging.debug(string.format("[Database] Saving rule: %s (itemID:%d, iconID:%d) -> %s for %s", 
-                  itemName, itemID, iconID, rule, toonName))
-    
-    -- If we have a valid itemID, save to itemID-based table
-    if itemID > 0 then
-        -- Update item mapping
-        local mappingStmt = prepareStatement([[
-            INSERT OR REPLACE INTO item_id_mappings 
-            (item_id, item_name, icon_id, last_seen)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        ]])
-        
-        if mappingStmt then
-            mappingStmt:bind(1, itemID)
-            mappingStmt:bind(2, itemName)
-            mappingStmt:bind(3, iconID)
-            mappingStmt:step()
-            mappingStmt:finalize()
-        end
-        
-        -- Save rule
-        local stmt = prepareStatement([[
-            INSERT OR REPLACE INTO lootrules_v2 
-            (toon, item_id, item_name, rule, icon_id, updated_at)
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ]])
-        
-        if not stmt then
+    -- REQUIRE valid itemID from game only
+    if itemID <= 0 then
+        -- Try to get from game
+        local findItem = mq.TLO.FindItem(itemName)
+        if findItem and findItem.ID() and findItem.ID() > 0 then
+            itemID = findItem.ID()
+            iconID = findItem.Icon() or iconID
+        else
+            logging.error(string.format("[Database] Cannot save rule for '%s' - no valid itemID available from game", itemName))
             return false
-        end
-        
-        stmt:bind(1, toonName)
-        stmt:bind(2, itemID)
-        stmt:bind(3, itemName)
-        stmt:bind(4, rule)
-        stmt:bind(5, iconID)
-        
-        local result = stmt:step()
-        stmt:finalize()
-        
-        if result == sqlite3.DONE then
-            -- Update cache
-            if not lootRulesCache.byItemID[toonName] then
-                lootRulesCache.byItemID[toonName] = {}
-            end
-            lootRulesCache.byItemID[toonName][itemID] = {
-                rule = rule,
-                item_name = itemName,
-                item_id = itemID,
-                icon_id = iconID
-            }
-            
-            -- Remove from fallback table if exists
-            local deleteStmt = prepareStatement([[
-                DELETE FROM lootrules_name_fallback 
-                WHERE toon = ? AND item_name LIKE ?
-            ]])
-            
-            if deleteStmt then
-                deleteStmt:bind(1, toonName)
-                deleteStmt:bind(2, itemName)
-                deleteStmt:step()
-                deleteStmt:finalize()
-                
-                -- Remove from name cache
-                if lootRulesCache.byName[toonName] then
-                    lootRulesCache.byName[toonName][itemName] = nil
-                end
-            end
-            
-            logging.info(string.format("[Database] Saved itemID-based rule: %s (ID:%d) -> %s", itemName, itemID, rule))
-            return true
-        end
-    else
-        -- No itemID, save to fallback table
-        local stmt = prepareStatement([[
-            INSERT OR REPLACE INTO lootrules_name_fallback 
-            (toon, item_name, rule, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        ]])
-        
-        if not stmt then
-            return false
-        end
-        
-        stmt:bind(1, toonName)
-        stmt:bind(2, itemName)
-        stmt:bind(3, rule)
-        
-        local result = stmt:step()
-        stmt:finalize()
-        
-        if result == sqlite3.DONE then
-            -- Update cache
-            if not lootRulesCache.byName[toonName] then
-                lootRulesCache.byName[toonName] = {}
-            end
-            lootRulesCache.byName[toonName][itemName] = {
-                rule = rule,
-                item_name = itemName,
-                item_id = 0,
-                icon_id = 0
-            }
-            
-            logging.info(string.format("[Database] Saved name-based fallback rule: %s -> %s", itemName, rule))
-            return true
         end
     end
     
+    logging.debug(string.format("[Database] Saving rule: %s (itemID:%d, iconID:%d) -> %s for %s", 
+                  itemName, itemID, iconID, rule, toonName))
+    
+    -- Update item mapping
+    local mappingStmt = prepareStatement([[
+        INSERT OR REPLACE INTO item_id_mappings 
+        (item_id, item_name, icon_id, last_seen)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ]])
+    
+    if mappingStmt then
+        mappingStmt:bind(1, itemID)
+        mappingStmt:bind(2, itemName)
+        mappingStmt:bind(3, iconID)
+        mappingStmt:step()
+        mappingStmt:finalize()
+    end
+    
+    -- Save rule to itemID-based table ONLY
+    local stmt = prepareStatement([[
+        INSERT OR REPLACE INTO lootrules_v2 
+        (toon, item_id, item_name, rule, icon_id, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ]])
+    
+    if not stmt then
+        return false
+    end
+    
+    stmt:bind(1, toonName)
+    stmt:bind(2, itemID)
+    stmt:bind(3, itemName)
+    stmt:bind(4, rule)
+    stmt:bind(5, iconID)
+    
+    local result = stmt:step()
+    stmt:finalize()
+    
+    if result == sqlite3.DONE then
+        -- Update cache
+        if not lootRulesCache.byItemID[toonName] then
+            lootRulesCache.byItemID[toonName] = {}
+        end
+        lootRulesCache.byItemID[toonName][itemID] = {
+            rule = rule,
+            item_name = itemName,
+            item_id = itemID,
+            icon_id = iconID
+        }
+        
+        -- Clean up any old fallback entries for this item
+        local deleteStmt = prepareStatement([[
+            DELETE FROM lootrules_name_fallback 
+            WHERE toon = ? AND item_name LIKE ?
+        ]])
+        
+        if deleteStmt then
+            deleteStmt:bind(1, toonName)
+            deleteStmt:bind(2, itemName)
+            deleteStmt:step()
+            deleteStmt:finalize()
+            
+            -- Remove from name cache
+            if lootRulesCache.byName[toonName] then
+                lootRulesCache.byName[toonName][itemName] = nil
+            end
+        end
+        
+        logging.info(string.format("[Database] Saved itemID-based rule: %s (ID:%d) -> %s for %s", itemName, itemID, rule, toonName))
+        return true
+    end
+    
+    logging.error(string.format("[Database] Failed to save rule for %s", itemName))
     return false
 end
 
@@ -1308,6 +1285,67 @@ function database.checkRecentCorpseRecord(zoneName, corpseID, timeWindowMinutes)
     stmt:finalize()
     
     return found
+end
+
+-- Debug function to show what's in all rule tables
+function database.debugAllTables()
+    local conn = getConnection()
+    if not conn then
+        logging.error("[Database] No database connection")
+        return
+    end
+    
+    -- Check which tables exist
+    local tablesStmt = conn:prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%lootrules%'")
+    if tablesStmt then
+        logging.log("[Database] Available loot rule tables:")
+        for row in tablesStmt:nrows() do
+            logging.log("  - " .. row.name)
+        end
+        tablesStmt:finalize()
+    end
+    
+    -- Show original table if it exists
+    local oldStmt = conn:prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lootrules'")
+    if oldStmt and oldStmt:step() == sqlite3.ROW then
+        oldStmt:finalize()
+        local countStmt = conn:prepare("SELECT COUNT(*) FROM lootrules")
+        if countStmt and countStmt:step() == sqlite3.ROW then
+            local count = countStmt:get_value(0)
+            logging.log(string.format("[Database] Original 'lootrules' table has %d rules", count))
+            countStmt:finalize()
+            
+            -- Show sample data
+            local sampleStmt = conn:prepare("SELECT toon, item_name, rule, item_id FROM lootrules LIMIT 5")
+            if sampleStmt then
+                logging.log("[Database] Sample from original table:")
+                for row in sampleStmt:nrows() do
+                    logging.log(string.format("  %s: %s -> %s (itemID=%s)", 
+                                            row.toon, row.item_name, row.rule, tostring(row.item_id)))
+                end
+                sampleStmt:finalize()
+            end
+        end
+    else
+        if oldStmt then oldStmt:finalize() end
+        logging.log("[Database] Original 'lootrules' table no longer exists")
+    end
+    
+    -- Show v2 table
+    local v2Stmt = conn:prepare("SELECT COUNT(*) FROM lootrules_v2")
+    if v2Stmt and v2Stmt:step() == sqlite3.ROW then
+        local count = v2Stmt:get_value(0)
+        logging.log(string.format("[Database] 'lootrules_v2' table has %d rules", count))
+        v2Stmt:finalize()
+    end
+    
+    -- Show fallback table
+    local fallbackStmt = conn:prepare("SELECT COUNT(*) FROM lootrules_name_fallback")
+    if fallbackStmt and fallbackStmt:step() == sqlite3.ROW then
+        local count = fallbackStmt:get_value(0)
+        logging.log(string.format("[Database] 'lootrules_name_fallback' table has %d rules", count))
+        fallbackStmt:finalize()
+    end
 end
 
 -- Force re-migration of data (for debugging/fixing migration issues)

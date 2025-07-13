@@ -68,7 +68,7 @@ local function parseRule(ruleString)
     return ruleString, 1
 end
 
--- Helper function to ensure ItemID is available
+-- Helper function to get ItemID from game only
 local function ensureItemID(itemName, currentItemID)
     if currentItemID and currentItemID > 0 then
         return currentItemID
@@ -76,17 +76,12 @@ local function ensureItemID(itemName, currentItemID)
     
     -- Try to get from game
     local findItem = mq.TLO.FindItem(itemName)
-    if findItem and findItem.ID() then
+    if findItem and findItem.ID() and findItem.ID() > 0 then
         return findItem.ID()
     end
     
-    -- As a last resort, generate a placeholder ID based on item name hash
-    local hash = 0
-    for i = 1, #itemName do
-        hash = hash + string.byte(itemName, i)
-    end
-    -- Use negative hash to distinguish from real IDs, but ensure it's positive for primary key
-    return math.abs(hash) + 1000000  -- Add offset to avoid conflicts with real item IDs
+    -- Return 0 if no valid ID available - caller must handle this
+    return 0
 end
 
 -- Helper function to send reload message to peer
@@ -841,21 +836,40 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                 
                 if #connectedPeers > 0 then
                     -- Get the LOCAL rule for this item (not the rule from the currently selected character)
-                    local localRule, localItemID, localIconID = database.getLootRule(itemName, true)
+                    local localRule, localItemID, localIconID = database.getLootRule(itemName, true, itemID)
                     
                     if localRule and localRule ~= "" then
                         local appliedCount = 0
-                        local itemID = ensureItemID(itemName, localItemID)
+                        -- Use the itemID and iconID from the current row, not from the local rule lookup
+                        -- This ensures we don't accidentally change IDs when applying rules
+                        local useItemID = itemID  -- From the current row
+                        local useIconID = iconID  -- From the current row
                         
+                        -- Only use local values if current row has no IDs
+                        if useItemID == 0 and localItemID and localItemID > 0 then
+                            useItemID = localItemID
+                        end
+                        if useIconID == 0 and localIconID and localIconID > 0 then
+                            useIconID = localIconID
+                        end
+                        
+                        -- First, update the local character's rule to ensure IDs are consistent
+                        if useItemID ~= localItemID or useIconID ~= localIconID then
+                            database.saveLootRule(itemName, useItemID, localRule, useIconID)
+                            logging.debug(string.format("Updated local rule IDs for '%s' (itemID=%d, iconID=%d)", 
+                                                      itemName, useItemID, useIconID))
+                        end
+                        
+                        -- Then apply to all peers
                         for _, peer in ipairs(connectedPeers) do
                             if peer ~= currentCharacter then
                                 if database.saveLootRuleFor then
-                                    local success = database.saveLootRuleFor(peer, itemName, itemID, localRule, localIconID or 0)
+                                    local success = database.saveLootRuleFor(peer, itemName, useItemID, localRule, useIconID)
                                     if success then
                                         appliedCount = appliedCount + 1
                                         sendReloadMessageToPeer(peer)
-                                        logging.debug(string.format("Applied local rule '%s' for '%s' to peer %s", 
-                                                                  localRule, itemName, peer))
+                                        logging.debug(string.format("Applied local rule '%s' for '%s' to peer %s (itemID=%d, iconID=%d)", 
+                                                                  localRule, itemName, peer, useItemID, useIconID))
                                     else
                                         logging.debug(string.format("Failed to apply rule for '%s' to peer %s", itemName, peer))
                                     end
