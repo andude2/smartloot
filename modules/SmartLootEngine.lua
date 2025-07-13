@@ -1036,11 +1036,8 @@ function SmartLootEngine.triggerPeerForItem(itemName)
     
     -- Register with waterfall tracker BEFORE triggering
     local peerRegistered = waterfallTracker.onPeerTriggered(interestedPeer)
-    -- Send actor message to force peer to refresh loot rule cache
-    actors.send({mailbox = "smartloot_mailbox", server = interestedPeer}, {
-        cmd = "refresh_rules",
-        sender = mq.TLO.Me.Name(),
-    })
+    util.sendPeerCommand(interestedPeer, "/sl_rulescache")
+
     mq.delay(100) -- optional: slight delay to let cache refresh
     
     -- Send peer command using centralized utility function

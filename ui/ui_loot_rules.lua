@@ -4,6 +4,7 @@ local logging = require("modules.logging")
 local uiUtils = require("ui.ui_utils")
 local actors = require("actors")
 local json = require("dkjson")
+local util = require("modules.util")
 
 local uiLootRules = {}
 
@@ -86,15 +87,7 @@ end
 
 -- Helper function to send reload message to peer
 local function sendReloadMessageToPeer(peer)
-    local success, err = pcall(function()
-        actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
-    end)
-    
-    if not success then
-        logging.debug("[SmartLoot] Failed to send reload message to " .. peer .. ": " .. tostring(err))
-    else
-        logging.debug("[SmartLoot] Sent reload message to " .. peer)
-    end
+    util.sendPeerCommand(peer, "/sl_rulescache")
 end
 
 -- Helper function to update rule and handle all the database operations
@@ -144,7 +137,7 @@ local function updateItemRule(itemName, newRuleValue, targetCharacter, database,
                 logging.debug("Changed rule for " .. itemName .. " to " .. newRuleValue .. " on " .. targetCharacter)
 
                 -- NEW: Refresh cache for peer after saving
-                database.refreshLootRuleCacheForPeer(targetCharacter) -- <--- ADD THIS LINE
+                database.refreshLootRuleCacheForPeer(targetCharacter)
 
                 -- Send reload message if connected
                 local connectedPeers = util.getConnectedPeers()
@@ -760,6 +753,7 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
             ImGui.PushStyleColor(ImGuiCol.Button, ruleColor[1] * 0.3, ruleColor[2] * 0.3, ruleColor[3] * 0.3, 0.8)
             
             local comboId = "##rule_" .. i .. "_" .. itemName
+            
             ImGui.SetNextItemWidth(120)
             
             if ImGui.BeginCombo(comboId, displayRule) then
@@ -778,12 +772,17 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                             newRuleValue = "KeepIfFewerThan:" .. threshold
                         end
                         
-                        -- Use the centralized update function
-                        updateItemRule(itemName, newRuleValue, targetCharacter, database, util, true)
-                        
-                        -- Update the local ruleData to reflect the change immediately
-                        ruleData.rule = newRuleValue
-                        displayRule = ruleType
+                        -- Only update if the rule actually changed
+                        if newRuleValue ~= ruleData.rule then
+                            -- Use the centralized update function, preserving iconID
+                            updateItemRule(itemName, newRuleValue, targetCharacter, database, util, true, itemID, iconID)
+                            
+                            -- Update the local ruleData to reflect the change immediately
+                            ruleData.rule = newRuleValue
+                            displayRule = ruleType
+                        else
+                            logging.debug("Skipped update for " .. itemName .. " - rule value unchanged (" .. newRuleValue .. ")")
+                        end
                     end
                     
                     ImGui.PopStyleColor()
@@ -808,8 +807,8 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                     local newRuleValue = "KeepIfFewerThan:" .. newThreshold
                     local targetCharacter = lootUI.selectedCharacterForRules
                     
-                    -- Use the centralized update function
-                    updateItemRule(itemName, newRuleValue, targetCharacter, database, util, true)
+                    -- Use the centralized update function, preserving iconID  
+                    updateItemRule(itemName, newRuleValue, targetCharacter, database, util, true, itemID, iconID)
                 end
                 
                 ImGui.PopID()
@@ -869,9 +868,9 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                                         appliedCount = appliedCount + 1
                                         sendReloadMessageToPeer(peer)
                                         logging.debug(string.format("Applied local rule '%s' for '%s' to peer %s (itemID=%d, iconID=%d)", 
-                                                                  localRule, itemName, peer, useItemID, useIconID))
+                                                                localRule, itemName, peer, useItemID, useIconID))
                                     else
-                                        logging.debug(string.format("Failed to apply rule for '%s' to peer %s", itemName, peer))
+                                        logging.debug(string.format("No change (or failed) applying rule for '%s' to peer %s - reload sent anyway", itemName, peer))
                                     end
                                 end
                             end

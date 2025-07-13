@@ -275,12 +275,15 @@ function modeHandler.getPeerStatus()
     local connectedPeers = util.getConnectedPeers()
     local shouldBeMain = modeHandler.shouldBeRGMain()
     
+    -- Get current mode from global or fallback to original mode
+    local currentMode = _G.runMode or modeHandler.state.originalMode or modeHandler.state.currentMode or "unknown"
+    
     local status = {
         currentCharacter = currentToon,
         connectedPeers = connectedPeers,
         peerLootOrder = config.peerLootOrder or {},
         shouldBeMain = shouldBeMain,
-        currentMode = runMode,
+        currentMode = currentMode,
         recommendedMode = shouldBeMain and "main" or "background"
     }
     

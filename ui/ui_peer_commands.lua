@@ -57,6 +57,9 @@ function uiPeerCommands.draw(lootUI, loot, util)
             
             local buttonWidth = (ImGui.GetContentRegionAvail() - 10) / 2 -- Two buttons per row with spacing
             
+            -- Add rounded edges to all buttons
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
+            
             -- Row 1: Loot and Pause
             ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.8, 0.8)  -- Blue for Loot
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.7, 0.9, 0.9)
@@ -190,6 +193,9 @@ function uiPeerCommands.draw(lootUI, loot, util)
                 end
             end
             
+            -- Pop the rounding style at the end
+            ImGui.PopStyleVar()
+            
             ImGui.Spacing()
         else
             ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.3, 0.3, 1.0)  -- Red for no peers
@@ -201,7 +207,7 @@ function uiPeerCommands.draw(lootUI, loot, util)
     end
     
     if shouldClose == false then
-        lootUI.showPeerCommands = false
+        lootUI.showPeerCommands = true
     end
 end
 

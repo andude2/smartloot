@@ -5,7 +5,6 @@ local logging = require("modules.logging")
 local uiUtils = require("ui.ui_utils")
 local util = require("modules.util")
 local database = require("modules.database")
-local actors = require("actors")
 local json = require("dkjson")
 
 local uiPopups = {}
@@ -89,6 +88,9 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 -- Save the rule locally
                 database.saveLootRule(itemName, itemID_from_current, rule, iconID_from_current)
                 
+                -- Refresh local cache after saving rule
+                database.refreshLootRuleCache()
+                
                 if not skipAction then
                     -- Queue the loot action
                     lootUI.pendingLootAction = {
@@ -107,9 +109,13 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 lootUI.pendingThreshold = 1
             end
             
-            -- Main action buttons - consistent 240px width, 35px height
-            local buttonWidth = 240
-            local buttonHeight = 35
+            -- Main action buttons - smaller, side by side with rounded corners
+            local buttonWidth = 175
+            local buttonHeight = 30
+            local roundingRadius = 6
+            
+            -- Push rounding style for ALL buttons in this popup
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, roundingRadius)
             
             -- OPTION 1: Apply To All (DEFAULT - highlighted and prominent)
             ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.7, 0.2, 0.9)
@@ -136,13 +142,17 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                             if success then
                                 appliedCount = appliedCount + 1
                                 -- Send reload command to peer
-                                actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
+                                util.sendPeerCommand(peer, "/sl_rulescache")
                             end
                         end
                     end
                 end
                 
                 logging.log(string.format("Applied rule '%s' for '%s' to %d connected peers", rule, itemName, appliedCount))
+                
+                -- Refresh local cache after applying rules to all peers
+                database.refreshLootRuleCache()
+                
                 applyRuleAndQueue(rule)
             end
             ImGui.PopStyleColor(3)
@@ -151,7 +161,9 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 ImGui.SetTooltip("RECOMMENDED: Set this rule for yourself AND all connected peers, then process the item")
             end
             
+            ImGui.SameLine()
             ImGui.Spacing()
+            ImGui.SameLine()
             
             -- OPTION 2: Just me and process
             ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.5, 0.8, 0.9)
@@ -177,12 +189,14 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             ImGui.Text("Advanced Options:")
             ImGui.Spacing()
             
-            -- Row 1: Peer editor and Process as ignored
+            -- Bottom row: All three buttons in one row
+            local buttonWidth = (ImGui.GetContentRegionAvail() - 20) / 3 -- Three buttons per row with spacing
+            
             ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.4, 0.8, 0.8)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.5, 0.9, 1.0)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.3, 0.7, 1.0)
             
-            if ImGui.Button("Open Peer Rule Editor", 180, 30) then
+            if ImGui.Button("Open Peer Rule Editor", buttonWidth, 30) then
                 -- Open the peer item rules popup
                 lootUI.peerItemRulesPopup = lootUI.peerItemRulesPopup or {}
                 lootUI.peerItemRulesPopup.isOpen = true
@@ -206,7 +220,7 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.9, 0.7, 0.3, 1.0)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.7, 0.5, 0.1, 1.0)
             
-            if ImGui.Button("Process as Ignored", 140, 30) then
+            if ImGui.Button("Process as Ignored", buttonWidth, 30) then
                 local rule = "Ignore"
                 logging.log(string.format("Processing '%s' as ignored - will trigger peer chain", itemName))
                 applyRuleAndQueue(rule, false)
@@ -217,14 +231,14 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 ImGui.SetTooltip("Set to 'Ignore' for yourself and trigger peer chain")
             end
             
-            ImGui.Spacing()
+            ImGui.SameLine()
             
-            -- Row 2: Skip item
+            -- Skip item button
             ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.6, 0.6, 0.8)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.7, 0.7, 1.0)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.5, 0.5, 1.0)
             
-            if ImGui.Button("Skip Item (Leave Unset)", 180, 30) then
+            if ImGui.Button("Skip Item (Leave Unset)", buttonWidth, 30) then
                 logging.log("Skipping item " .. itemName .. " - leaving rule unset")
                 lootUI.currentItem = nil
                 lootUI.pendingDecisionRule = "Keep"
@@ -236,6 +250,9 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             if ImGui.IsItemHovered() then
                 ImGui.SetTooltip("Skip this item without setting any rule")
             end
+            
+            -- Pop the rounding style at the very end, after all buttons
+            ImGui.PopStyleVar()
             
             ImGui.Spacing()
             ImGui.Separator()
@@ -338,6 +355,87 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
             end)
             
             logging.debug(string.format("[PeerRules] Final peer list: %s", table.concat(peerList, ", ")))
+
+            -- Quick Actions section - moved above table for better UX
+            ImGui.Text("Quick Actions:")
+            
+            if ImGui.Button("Set All to Keep") then
+                local itemName = lootUI.peerItemRulesPopup.itemName
+                -- Use the itemID and iconID from the popup
+                local itemID = lootUI.peerItemRulesPopup.itemID or 0
+                local iconID = lootUI.peerItemRulesPopup.iconID or 0
+                
+                logging.debug(string.format("[SetAllKeep] PeerList has %d entries: %s", #peerList, table.concat(peerList, ", ")))
+                logging.debug(string.format("[SetAllKeep] ConnectedPeers: %s", table.concat(connectedPeers or {}, ", ")))
+                
+                local updateCount = 0
+                for _, peer in ipairs(peerList) do
+                    if peer == currentCharacter then
+                        local success = database.saveLootRule(itemName, itemID, "Keep", iconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            logging.debug(string.format("[SetAllKeep] Updated local character: %s", peer))
+                        end
+                    else
+                        local success = database.saveLootRuleFor(peer, itemName, itemID, "Keep", iconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            logging.debug(string.format("[SetAllKeep] Updated peer: %s", peer))
+                        end
+                        if connectedPeerSet[peer] then
+                            util.sendPeerCommand(peer, "/sl_rulescache")
+                        end
+                    end
+                end
+                logging.log(string.format("Set all %d peers to 'Keep' for %s", updateCount, itemName))
+            end
+            
+            ImGui.SameLine()
+            
+            if ImGui.Button("Set All to Ignore") then
+                local itemName = lootUI.peerItemRulesPopup.itemName
+                -- Use the itemID and iconID from the popup
+                local itemID = lootUI.peerItemRulesPopup.itemID or 0
+                local iconID = lootUI.peerItemRulesPopup.iconID or 0
+                
+                logging.debug(string.format("[SetAllIgnore] PeerList has %d entries: %s", 
+                                          #peerList, table.concat(peerList, ", ")))
+                logging.debug(string.format("[SetAllIgnore] ConnectedPeers: %s", 
+                                          table.concat(connectedPeers or {}, ", ")))
+                
+                local updateCount = 0
+                for _, peer in ipairs(peerList) do
+                    if peer == currentCharacter then
+                        local success = database.saveLootRule(itemName, itemID, "Ignore", iconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            logging.debug(string.format("[SetAllIgnore] Updated local character: %s", peer))
+                        end
+                    else
+                        local success = database.saveLootRuleFor(peer, itemName, itemID, "Ignore", iconID)
+                        if success then
+                            updateCount = updateCount + 1
+                            logging.debug(string.format("[SetAllIgnore] Updated peer: %s", peer))
+                        end
+                        if connectedPeerSet[peer] then
+                            util.sendPeerCommand(peer, "/sl_rulescache")
+                        end
+                    end
+                end
+                logging.log(string.format("Set all %d peers to 'Ignore' for %s", updateCount, itemName))
+            end
+            
+            ImGui.SameLine()
+            
+            if ImGui.Button("Close") then
+                keepOpen = false
+            end
+            
+            -- Add context help
+            ImGui.SameLine()
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, " - Configure rules here, then return to loot decision")
+            
+            ImGui.Separator()
 
             if ImGui.BeginTable("PeerItemRulesTable", 3, 
                 ImGuiTableFlags.BordersInnerV + 
@@ -447,7 +545,7 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                 else
                                     success = database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
                                     if connectedPeerSet[peer] then
-                                        actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
+                                        util.sendPeerCommand(peer, "/sl_rulescache")
                                     end
                                 end
                                 
@@ -459,8 +557,12 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                     logging.debug(string.format("[PeerRules] Successfully saved rule '%s' for %s -> %s (itemID=%d, iconID=%d)", 
                                         newRuleValue, peer, itemName, itemID, iconID))
                                     
-                                    -- Force refresh of peer rules cache
-                                    database.refreshLootRuleCacheForPeer(peer)
+                                    -- Force refresh of rules cache
+                                    if peer == currentCharacter then
+                                        database.refreshLootRuleCache()
+                                    else
+                                        database.refreshLootRuleCacheForPeer(peer)
+                                    end
                                     
                                     -- Debug: Check if rule is in cache after refresh
                                     local testRules = database.getLootRulesForPeer(peer)
@@ -500,7 +602,7 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                 else
                                     success = database.saveLootRuleFor(peer, itemName, itemID, updatedRule, iconID)
                                     if connectedPeerSet[peer] then
-                                        actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
+                                        util.sendPeerCommand(peer, "/sl_rulescache")
                                     end
                                 end
                                 
@@ -510,8 +612,12 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                     peerState.changeTime = mq.gettime()
                                     logging.debug(string.format("[PeerRules] Successfully updated threshold to %d for %s -> %s", newThreshold, peer, itemName))
                                     
-                                    -- Force refresh of peer rules cache
-                                    database.refreshLootRuleCacheForPeer(peer)
+                                    -- Force refresh of rules cache
+                                    if peer == currentCharacter then
+                                        database.refreshLootRuleCache()
+                                    else
+                                        database.refreshLootRuleCacheForPeer(peer)
+                                    end
                                 else
                                     logging.debug(string.format("[PeerRules] Failed to update threshold to %d for %s -> %s", newThreshold, peer, itemName))
                                 end
@@ -531,7 +637,7 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                         else
                             success = database.saveLootRuleFor(peer, itemName, itemID, "", iconID)
                             if connectedPeerSet[peer] then
-                                actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
+                                util.sendPeerCommand(peer, "/sl_rulescache")
                             end
                         end
                         
@@ -541,8 +647,12 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                             peerState.changeTime = mq.gettime()
                             logging.debug(string.format("[PeerRules] Successfully unset rule for %s -> %s", peer, itemName))
                             
-                            -- Force refresh of peer rules cache
-                            database.refreshLootRuleCacheForPeer(peer)
+                            -- Force refresh of rules cache
+                            if peer == currentCharacter then
+                                database.refreshLootRuleCache()
+                            else
+                                database.refreshLootRuleCacheForPeer(peer)
+                            end
                         else
                             logging.debug(string.format("[PeerRules] Failed to unset rule for %s -> %s", peer, itemName))
                         end
@@ -551,86 +661,6 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                 ImGui.EndTable()
             end
 
-            ImGui.Separator()
-            
-            -- Helper buttons for common actions
-            ImGui.Text("Quick Actions:")
-            
-            if ImGui.Button("Set All to Keep") then
-                local itemName = lootUI.peerItemRulesPopup.itemName
-                -- Use the itemID and iconID from the popup
-                local itemID = lootUI.peerItemRulesPopup.itemID or 0
-                local iconID = lootUI.peerItemRulesPopup.iconID or 0
-                
-                logging.debug(string.format("[SetAllKeep] PeerList has %d entries: %s", #peerList, table.concat(peerList, ", ")))
-                logging.debug(string.format("[SetAllKeep] ConnectedPeers: %s", table.concat(connectedPeers or {}, ", ")))
-                
-                local updateCount = 0
-                for _, peer in ipairs(peerList) do
-                    if peer == currentCharacter then
-                        local success = database.saveLootRule(itemName, itemID, "Keep", iconID)
-                        if success then
-                            updateCount = updateCount + 1
-                            logging.debug(string.format("[SetAllKeep] Updated local character: %s", peer))
-                        end
-                    else
-                        local success = database.saveLootRuleFor(peer, itemName, itemID, "Keep", iconID)
-                        if success then
-                            updateCount = updateCount + 1
-                            logging.debug(string.format("[SetAllKeep] Updated peer: %s", peer))
-                        end
-                        if connectedPeerSet[peer] then
-                            actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
-                        end
-                    end
-                end
-                logging.log(string.format("Set all %d peers to 'Keep' for %s", updateCount, itemName))
-            end
-            
-            ImGui.SameLine()
-            
-            if ImGui.Button("Set All to Ignore") then
-                local itemName = lootUI.peerItemRulesPopup.itemName
-                -- Use the itemID and iconID from the popup
-                local itemID = lootUI.peerItemRulesPopup.itemID or 0
-                local iconID = lootUI.peerItemRulesPopup.iconID or 0
-                
-                logging.debug(string.format("[SetAllIgnore] PeerList has %d entries: %s", 
-                                          #peerList, table.concat(peerList, ", ")))
-                logging.debug(string.format("[SetAllIgnore] ConnectedPeers: %s", 
-                                          table.concat(connectedPeers or {}, ", ")))
-                
-                local updateCount = 0
-                for _, peer in ipairs(peerList) do
-                    if peer == currentCharacter then
-                        local success = database.saveLootRule(itemName, itemID, "Ignore", iconID)
-                        if success then
-                            updateCount = updateCount + 1
-                            logging.debug(string.format("[SetAllIgnore] Updated local character: %s", peer))
-                        end
-                    else
-                        local success = database.saveLootRuleFor(peer, itemName, itemID, "Ignore", iconID)
-                        if success then
-                            updateCount = updateCount + 1
-                            logging.debug(string.format("[SetAllIgnore] Updated peer: %s", peer))
-                        end
-                        if connectedPeerSet[peer] then
-                            actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
-                        end
-                    end
-                end
-                logging.log(string.format("Set all %d peers to 'Ignore' for %s", updateCount, itemName))
-            end
-            
-            ImGui.Separator()
-            
-            if ImGui.Button("Close") then
-                keepOpen = false
-            end
-            
-            -- Add context help
-            ImGui.SameLine()
-            ImGui.TextColored(0.7, 0.7, 0.7, 1, " - Configure rules here, then return to loot decision")
         end
         ImGui.End()
 
@@ -904,7 +934,7 @@ function uiPopups.drawUpdateIDsPopup(lootUI, database, util)
                         local connectedPeers = util.getConnectedPeers()
                         for _, connectedPeer in ipairs(connectedPeers) do
                             if connectedPeer == character then
-                                actors.send({to=character, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
+                                util.sendPeerCommand(peer, "/sl_rulescache")
                                 break
                             end
                         end
@@ -1087,7 +1117,7 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
                                     database.saveLootRule(lootUI.selectedItemForPopup, itemID, newRule, iconID)
                                 else
                                     database.saveLootRuleFor(peer, lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
-                                    actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
+                                    util.sendPeerCommand(peer, "/sl_rulescache")
                                 end
                                 currentRule = newRule
                                 displayRule = (option == "KeepIfFewerThan") and "KeepIfFewerThan" or newRule
@@ -1109,7 +1139,7 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
                                 database.saveLootRule(lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
                             else
                                 database.saveLootRuleFor(peer, lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
-                                actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
+                                util.sendPeerCommand(peer, "/sl_rulescache")
                             end
                             currentRule = newRule
                             displayRule = "KeepIfFewerThan"
@@ -1304,7 +1334,7 @@ function uiPopups.drawAddNewRulePopup(lootUI, database, util)
                     local connectedPeers = util.getConnectedPeers()
                     for _, peer in ipairs(connectedPeers) do
                         if peer == popup.selectedCharacter then
-                            actors.send({to=peer, actor="smartloot_mailbox"}, json.encode({cmd="reload_rules"}))
+                            util.sendPeerCommand(peer, "/sl_rulescache")
                             break
                         end
                     end

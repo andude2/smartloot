@@ -763,6 +763,9 @@ function database.refreshLootRuleCacheForPeer(peerName)
     local peerKey = peerName
     logging.debug("[Database] refreshLootRuleCacheForPeer for " .. peerName)
 
+    -- Mark cache as invalid first to force reload
+    lootRulesCache.loaded[peerKey] = false
+
     -- Clear existing cache for this peer
     lootRulesCache.byItemID[peerKey] = {}
     lootRulesCache.byName[peerKey] = {}
@@ -817,6 +820,31 @@ function database.refreshLootRuleCacheForPeer(peerName)
     
     lootRulesCache.loaded[peerKey] = true
     return true
+end
+
+-- Helper function to invalidate peer cache without reloading
+function database.invalidatePeerCache(peerName)
+    local peerKey = peerName
+    logging.debug("[Database] Invalidating cache for peer " .. peerName)
+    
+    lootRulesCache.loaded[peerKey] = false
+    lootRulesCache.byItemID[peerKey] = {}
+    lootRulesCache.byName[peerKey] = {}
+end
+
+-- Clear all peer rule caches (used when receiving reload_rules message)
+function database.clearPeerRuleCache()
+    local currentToon = mq.TLO.Me.Name() or "unknown"
+    logging.debug("[Database] Clearing all peer rule caches")
+    
+    for peerKey, _ in pairs(lootRulesCache.loaded) do
+        if peerKey ~= currentToon then
+            logging.debug("[Database] Clearing peer cache for: " .. peerKey)
+            lootRulesCache.loaded[peerKey] = false
+            lootRulesCache.byItemID[peerKey] = {}
+            lootRulesCache.byName[peerKey] = {}
+        end
+    end
 end
 
 function database.getLootRulesForPeer(peerName)

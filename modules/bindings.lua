@@ -100,6 +100,13 @@ local function bindLiveStats()
 end
 
 local function bindPeerCommands()
+    mq.bind("/sl_peer_commands", function()
+        if lootUI then
+            lootUI.showPeerCommands = not (lootUI.showPeerCommands or false)
+            util.printSmartLoot("Peer Commands window " .. (lootUI.showPeerCommands and "shown" or "hidden"), "info")
+        end
+    end)
+
     mq.bind("/sl_check_peers", function()
         if modeHandler and modeHandler.debugPeerStatus then
             modeHandler.debugPeerStatus()
@@ -120,6 +127,66 @@ local function bindPeerCommands()
         else
             util.printSmartLoot("Mode is already appropriate for current peer status", "info")
         end
+    end)
+
+    mq.bind("/sl_mode", function(mode)
+        if not modeHandler then
+            util.printSmartLoot("Mode handler not available", "warning")
+            return
+        end
+        
+        if not mode or mode == "" then
+            util.printSmartLoot("Usage: /sl_mode <mode>", "error")
+            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once", "info")
+            
+            -- Show current mode
+            local status = modeHandler.getPeerStatus()
+            util.printSmartLoot("Current mode: " .. (status.currentMode or "unknown"), "info")
+            return
+        end
+        
+        mode = mode:lower()
+        local validModes = {main = true, background = true, rgmain = true, rgonce = true, once = true}
+        
+        if not validModes[mode] then
+            util.printSmartLoot("Invalid mode: " .. mode, "error")
+            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once", "info")
+            return
+        end
+        
+        util.printSmartLoot("Setting mode to: " .. mode, "info")
+        
+        -- Set the SmartLoot engine mode directly (this is what actually controls behavior)
+        if SmartLootEngine and SmartLootEngine.LootMode then
+            local engineMode
+            if mode == "main" and SmartLootEngine.LootMode.Main then
+                engineMode = SmartLootEngine.LootMode.Main
+            elseif mode == "background" and SmartLootEngine.LootMode.Background then
+                engineMode = SmartLootEngine.LootMode.Background
+            elseif mode == "rgmain" and SmartLootEngine.LootMode.RGMain then
+                engineMode = SmartLootEngine.LootMode.RGMain
+            elseif mode == "rgonce" and SmartLootEngine.LootMode.RGOnce then
+                engineMode = SmartLootEngine.LootMode.RGOnce
+            elseif mode == "once" and SmartLootEngine.LootMode.Once then
+                engineMode = SmartLootEngine.LootMode.Once
+            end
+            
+            if engineMode and SmartLootEngine.setLootMode then
+                SmartLootEngine.setLootMode(engineMode, "Manual /sl_mode command")
+                util.printSmartLoot("SmartLoot engine mode set to: " .. mode, "success")
+            else
+                util.printSmartLoot("Failed to set engine mode", "error")
+            end
+        else
+            util.printSmartLoot("SmartLootEngine not available", "warning")
+        end
+        
+        -- Also update mode handler for consistency
+        if modeHandler then
+            modeHandler.setMode(mode, "Manual /sl_mode command")
+        end
+        
+        util.printSmartLoot("Mode set to: " .. mode, "success")
     end)
 
     mq.bind("/sl_peer_monitor", function(action)
@@ -159,10 +226,10 @@ local function bindStatusCommands()
         
         local status = modeHandler.getPeerStatus()
         util.printSmartLoot("=== SmartLoot Mode Status ===", "system")
-        util.printSmartLoot("Current Character: " .. status.currentCharacter, "info")
-        util.printSmartLoot("Current Mode: " .. status.currentMode, "info")
+        util.printSmartLoot("Current Character: " .. (status.currentCharacter or "unknown"), "info")
+        util.printSmartLoot("Current Mode: " .. (status.currentMode or "unknown"), "info")
         util.printSmartLoot("Should Be Main: " .. tostring(status.shouldBeMain), "info")
-        util.printSmartLoot("Recommended Mode: " .. status.recommendedMode, "info")
+        util.printSmartLoot("Recommended Mode: " .. (status.recommendedMode or "unknown"), "info")
         util.printSmartLoot("Peer Monitoring: " .. (modeHandler.state.peerMonitoringActive and "Active" or "Inactive"), "info")
         
         if status.currentMode ~= status.recommendedMode then
@@ -239,6 +306,31 @@ local function bindEngineCommands()
         
         SmartLootEngine.resetProcessedCorpses()
         util.printSmartLoot("SmartLoot cache cleared. All corpses will be treated as new.", "success")
+    end)
+
+    mq.bind("/sl_rulescache", function()
+        local database = require("modules.database")
+        if not database then
+            util.printSmartLoot("Database module not available", "warning")
+            return
+        end
+        
+        util.printSmartLoot("Refreshing loot rules cache...", "info")
+        
+        -- Refresh local character's rules cache
+        database.refreshLootRuleCache()
+        
+        -- Clear all peer rule caches to force reload on next access
+        database.clearPeerRuleCache()
+        
+        -- Also refresh our own entry in the peer cache for UI consistency
+        local currentToon = mq.TLO.Me.Name()
+        if currentToon then
+            database.refreshLootRuleCacheForPeer(currentToon)
+        end
+        
+        util.printSmartLoot("Loot rules cache refreshed for local and all peers", "success")
+        util.printSmartLoot("Peer rules will reload fresh data on next access", "info")
     end)
 
     mq.bind("/sl_emergency_stop", function()
@@ -745,9 +837,11 @@ local function bindUtilityCommands()
             util.printSmartLoot("Peer Management:", "info")
             util.printSmartLoot("  /sl_check_peers - Check peer connections", "info")
             util.printSmartLoot("  /sl_refresh_mode - Refresh mode based on peers", "info")
+            util.printSmartLoot("  /sl_mode <mode> - Set loot mode (main|background|rgmain|rgonce|once)", "info")
             util.printSmartLoot("  /sl_peer_monitor [on|off] - Toggle peer monitoring", "info")
             util.printSmartLoot("Maintenance:", "info")
             util.printSmartLoot("  /sl_clearcache - Clear corpse cache", "info")
+            util.printSmartLoot("  /sl_rulescache - Refresh loot rules cache", "info")
             util.printSmartLoot("  /sl_help - Show this help", "info")
             util.printSmartLoot("Chat & Chase Control:", "info")
             util.printSmartLoot("  /sl_chat <mode> - Set chat output (raid|group|guild|custom|silent)", "info")
@@ -816,10 +910,10 @@ function bindings.listBindings()
         "/sl_pause", "/sl_doloot", "/sl_rg_trigger", "/sl_emergency_stop", "/sl_resume",
         "/sl_toggle_hotbar", "/sl_debug", "/sl_stats",
         "/sl_engine_status", "/sl_mode_status", "/sl_waterfall_status", "/sl_waterfall_debug", "/sl_waterfall_complete", "/sl_test_peer_complete",
-        "/sl_check_peers", "/sl_refresh_mode", "/sl_peer_monitor",
+        "/sl_check_peers", "/sl_refresh_mode", "/sl_mode", "/sl_peer_monitor",
         "/sl_chat", "/sl_chase", "/sl_chase_on", "/sl_chase_off",
         "/sl_addtemp", "/sl_removetemp", "/sl_cleartemp", "/sl_afkfarm",
-        "/sl_clearcache", "/sl_help", "/sl_getstarted", "/sl_version"
+        "/sl_clearcache", "/sl_rulescache", "/sl_help", "/sl_getstarted", "/sl_version"
     }
     
     util.printSmartLoot("=== Registered SmartLoot Commands ===", "system")

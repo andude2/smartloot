@@ -42,6 +42,7 @@ local commandCategories = {
         name = "User Interface",
         commands = {
             {cmd = "/sl_toggle_hotbar", params = "", desc = "Toggle the visibility of the SmartLoot hotbar.", hasOptionalParam = false},
+            {cmd = "/sl_peer_commands", params = "", desc = "Toggle the visibility of the Peer Commands window for controlling other SmartLoot instances.", hasOptionalParam = false},
             {cmd = "/sl_debug", params = "", desc = "Toggle the debug window showing detailed loot processing information.", hasOptionalParam = false},
             {cmd = "/sl_debug level", params = "[X]", desc = "Set or show debug logging level. X can be 0-5 or NONE/ERROR/WARN/INFO/DEBUG/VERBOSE.", hasOptionalParam = true},
             {cmd = "/sl_stats", params = "[show|hide|toggle|reset|compact]", desc = "Control the live statistics window. Parameters: show, hide, toggle visibility, reset position, or toggle compact mode.", hasOptionalParam = true},

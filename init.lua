@@ -185,6 +185,9 @@ if runMode ~= "main" and runMode ~= "once" and runMode ~= "background" and
     runMode = "main"
 end
 
+-- Make runMode globally accessible for other modules
+_G.runMode = runMode
+
 if runMode == "main" or runMode == "background" then
     modeHandler.startPeerMonitoring()
     logging.log("[SmartLoot] Peer monitoring started for dynamic mode switching")
@@ -411,6 +414,13 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
     elseif cmd == "reload_rules" then
         util.printSmartLoot("Reload command received from " .. sender .. ". Refreshing rule cache.", "info")
         database.refreshLootRuleCache()
+        -- Also clear peer rule caches since rules may have been updated by other characters
+        database.clearPeerRuleCache()
+        -- Refresh our own peer cache entry to ensure UI shows updated self-rules
+        local currentToon = mq.TLO.Me.Name()
+        if currentToon then
+            database.refreshLootRuleCacheForPeer(currentToon)
+        end
         
     elseif cmd == "rg_trigger" then
         util.printSmartLoot("RG trigger command received from " .. sender, "info")
