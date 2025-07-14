@@ -64,35 +64,9 @@ function config.load()
         file:close()
         local decoded = json.decode(contents)
         if decoded then
-            -- Handle legacy format (migrate from old single-server format)
-            if decoded.peerLootOrder and not decoded.servers then
-                -- Legacy format - migrate to new structure
-                configData.global = {
-                    lootCommandType = decoded.lootCommandType or config.lootCommandType,
-                    mainToonName = decoded.mainToonName or config.mainToonName,
-                    lootDelay = decoded.lootDelay or config.lootDelay,
-                    retryCount = decoded.retryCount or config.retryCount,
-                    retryDelay = decoded.retryDelay or config.retryDelay,
-                    -- NEW: Set defaults for chat config during migration
-                    chatOutputMode = decoded.chatOutputMode or config.chatOutputMode,
-                    customChatCommand = decoded.customChatCommand or config.customChatCommand,
-                    -- Apply global settings (add to existing section)
-                    useChaseCommands = configData.global.useChaseCommands or config.useChaseCommands,
-                    chasePauseCommand = configData.global.chasePauseCommand or config.chasePauseCommand,
-                    chaseResumeCommand = configData.global.chaseResumeCommand or config.chaseResumeCommand,
-                }
-                configData.servers = {
-                    [sanitizedServerName] = {
-                        peerLootOrder = decoded.peerLootOrder or {}
-                    }
-                }
-                -- Save in new format
-                config.save()
-            else
-                -- New format
-                configData.global = decoded.global or configData.global
-                configData.servers = decoded.servers or {}
-            end
+            -- New format
+            configData.global = decoded.global or configData.global
+            configData.servers = decoded.servers or {}
             
             -- Apply global settings
             config.lootCommandType = configData.global.lootCommandType or config.lootCommandType
@@ -413,39 +387,6 @@ function config.debugPrint()
         local serverConfig = config.getServerConfig(server)
         local peerOrder = serverConfig.peerLootOrder or {}
         print("  " .. server .. ": " .. (#peerOrder > 0 and table.concat(peerOrder, ", ") or "(no peer order)"))
-    end
-end
-
--- Migration function to help users move from old single-server config
-function config.migrateFromLegacy()
-    local file = io.open(config.filePath, "r")
-    if not file then
-        return false, "No config file found"
-    end
-    
-    local contents = file:read("*a")
-    file:close()
-    local decoded = json.decode(contents)
-    
-    if not decoded then
-        return false, "Invalid JSON in config file"
-    end
-    
-    -- Check if this is legacy format
-    if decoded.peerLootOrder and not decoded.servers then
-        -- Create backup
-        local backupPath = config.filePath .. ".backup"
-        local backupFile = io.open(backupPath, "w")
-        if backupFile then
-            backupFile:write(contents)
-            backupFile:close()
-        end
-        
-        -- Migrate to new format
-        config.load()  -- This will handle the migration
-        return true, "Migrated legacy configuration to per-server format. Backup saved to " .. backupPath
-    else
-        return false, "Configuration is already in new format"
     end
 end
 
