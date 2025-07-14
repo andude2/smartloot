@@ -1,4 +1,4 @@
--- modules/database_v2.lua - ItemID-based SQLite Database Module
+-- modules/database.lua - SQLite Database Module
 local database = {}
 local mq       = require("mq")
 local logging  = require("modules.logging")
@@ -21,26 +21,13 @@ local lootRulesCache = {
 -- Database connection
 local db = nil
 
--- Database migration function
-local function migrateToItemIDBasedSchema(conn)
-    logging.debug("[Database] Running migration to itemID-based schema...")
+-- Create database tables
+local function createDatabaseTables(conn)
+    logging.debug("[Database] Creating database tables...")
     
-    -- Check if we need to migrate
-    local checkStmt = conn:prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lootrules_v2'")
-    local hasNewTable = false
-    if checkStmt:step() == sqlite3.ROW then
-        hasNewTable = true
-    end
-    checkStmt:finalize()
-    
-    if hasNewTable then
-        logging.debug("[Database] ItemID-based schema already exists, skipping migration")
-        return true
-    end
-    
-    -- Create new tables
-    local createNewTables = [[
-        -- New itemID-based table
+    -- Create all required tables
+    local createTables = [[
+        -- ItemID-based table
         CREATE TABLE IF NOT EXISTS lootrules_v2 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             toon TEXT NOT NULL,
@@ -83,109 +70,13 @@ local function migrateToItemIDBasedSchema(conn)
         CREATE INDEX IF NOT EXISTS idx_item_mappings_name ON item_id_mappings(item_name);
     ]]
     
-    local result = conn:exec(createNewTables)
+    local result = conn:exec(createTables)
     if result ~= sqlite3.OK then
-        logging.error("[Database] Failed to create new tables: " .. conn:errmsg())
+        logging.error("[Database] Failed to create tables: " .. conn:errmsg())
         return false
     end
     
-    -- Migrate existing data if old table exists
-    local checkOldStmt = conn:prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lootrules'")
-    local hasOldTable = false
-    if checkOldStmt:step() == sqlite3.ROW then
-        hasOldTable = true
-    end
-    checkOldStmt:finalize()
-    
-    if hasOldTable then
-        logging.debug("[Database] Migrating data from old schema...")
-        
-        -- First, let's check what data exists in the old table
-        local checkStmt = conn:prepare("SELECT COUNT(*) as total, COUNT(CASE WHEN item_id > 0 THEN 1 END) as with_ids FROM lootrules")
-        if checkStmt then
-            if checkStmt:step() == sqlite3.ROW then
-                local total = checkStmt:get_value(0)
-                local withIds = checkStmt:get_value(1)
-                logging.debug(string.format("[Database] Found %d total rules, %d with itemIDs", total, withIds))
-            end
-            checkStmt:finalize()
-        end
-        
-        -- Migrate items with valid itemIDs (including 0 values, we'll handle them differently)
-        local migrateWithIDs = [[
-            INSERT OR IGNORE INTO lootrules_v2 (toon, item_id, item_name, rule, icon_id, created_at, updated_at)
-            SELECT toon, 
-                   CASE WHEN item_id IS NULL OR item_id = 0 THEN 
-                       -- Try to get a unique fake ID for migration, using row hash
-                       ABS(CAST(SUBSTR(HEX(RANDOMBLOB(4)), 1, 8) AS INTEGER)) 
-                   ELSE item_id END,
-                   item_name, rule, 
-                   COALESCE(icon_id, 0), 
-                   created_at, updated_at
-            FROM lootrules
-            WHERE item_id IS NOT NULL AND item_id > 0
-        ]]
-        
-        result = conn:exec(migrateWithIDs)
-        if result ~= sqlite3.OK then
-            logging.error("[Database] Failed to migrate items with IDs: " .. conn:errmsg())
-        else
-            local migratedStmt = conn:prepare("SELECT COUNT(*) FROM lootrules_v2")
-            if migratedStmt then
-                if migratedStmt:step() == sqlite3.ROW then
-                    local migrated = migratedStmt:get_value(0)
-                    logging.debug(string.format("[Database] Migrated %d rules with itemIDs", migrated))
-                end
-                migratedStmt:finalize()
-            end
-        end
-        
-        -- Migrate items without itemIDs to fallback table
-        local migrateWithoutIDs = [[
-            INSERT OR IGNORE INTO lootrules_name_fallback (toon, item_name, rule, created_at, updated_at)
-            SELECT toon, item_name, rule, created_at, updated_at
-            FROM lootrules
-            WHERE item_id IS NULL OR item_id = 0
-        ]]
-        
-        result = conn:exec(migrateWithoutIDs)
-        if result ~= sqlite3.OK then
-            logging.error("[Database] Failed to migrate items without IDs: " .. conn:errmsg())
-        else
-            local fallbackStmt = conn:prepare("SELECT COUNT(*) FROM lootrules_name_fallback")
-            if fallbackStmt then
-                if fallbackStmt:step() == sqlite3.ROW then
-                    local fallback = fallbackStmt:get_value(0)
-                    logging.debug(string.format("[Database] Migrated %d rules to fallback table", fallback))
-                end
-                fallbackStmt:finalize()
-            end
-        end
-        
-        -- Build item mappings from successfully migrated data
-        local buildMappings = [[
-            INSERT OR IGNORE INTO item_id_mappings (item_id, item_name, icon_id)
-            SELECT DISTINCT item_id, item_name, icon_id
-            FROM lootrules_v2
-        ]]
-        
-        result = conn:exec(buildMappings)
-        if result ~= sqlite3.OK then
-            logging.error("[Database] Failed to build item mappings: " .. conn:errmsg())
-        else
-            local mappingsStmt = conn:prepare("SELECT COUNT(*) FROM item_id_mappings")
-            if mappingsStmt then
-                if mappingsStmt:step() == sqlite3.ROW then
-                    local mappings = mappingsStmt:get_value(0)
-                    logging.debug(string.format("[Database] Created %d item mappings", mappings))
-                end
-                mappingsStmt:finalize()
-            end
-        end
-        
-        logging.debug("[Database] Migration completed successfully")
-    end
-    
+    logging.debug("[Database] Tables created successfully")
     return true
 end
 
@@ -205,9 +96,9 @@ local function initializeDatabase()
     db:exec("PRAGMA foreign_keys = ON")
     db:exec("PRAGMA case_sensitive_like = OFF")
     
-    -- Run migration to new schema
-    if not migrateToItemIDBasedSchema(db) then
-        logging.error("[Database] Schema migration failed")
+    -- Create database tables
+    if not createDatabaseTables(db) then
+        logging.error("[Database] Failed to create database tables")
         db:close()
         db = nil
         return nil
@@ -299,7 +190,7 @@ local function initializeDatabase()
         return nil
     end
 
-    logging.debug("[Database] SQLite database initialized with itemID-based schema: " .. DB_PATH)
+    logging.debug("[Database] SQLite database initialized: " .. DB_PATH)
     return db
 end
 
@@ -654,7 +545,7 @@ function database.saveLootRule(itemName, itemID, rule, iconID)
 end
 
 -- ============================================================================
--- MIGRATION AND MAINTENANCE
+-- MAINTENANCE FUNCTIONS
 -- ============================================================================
 
 -- Function to check if an item exists in fallback and attempt to resolve its ID
@@ -1315,186 +1206,6 @@ function database.checkRecentCorpseRecord(zoneName, corpseID, timeWindowMinutes)
     return found
 end
 
--- Debug function to show what's in all rule tables
-function database.debugAllTables()
-    local conn = getConnection()
-    if not conn then
-        logging.error("[Database] No database connection")
-        return
-    end
-    
-    -- Check which tables exist
-    local tablesStmt = conn:prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%lootrules%'")
-    if tablesStmt then
-        logging.log("[Database] Available loot rule tables:")
-        for row in tablesStmt:nrows() do
-            logging.log("  - " .. row.name)
-        end
-        tablesStmt:finalize()
-    end
-    
-    -- Show original table if it exists
-    local oldStmt = conn:prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lootrules'")
-    if oldStmt and oldStmt:step() == sqlite3.ROW then
-        oldStmt:finalize()
-        local countStmt = conn:prepare("SELECT COUNT(*) FROM lootrules")
-        if countStmt and countStmt:step() == sqlite3.ROW then
-            local count = countStmt:get_value(0)
-            logging.log(string.format("[Database] Original 'lootrules' table has %d rules", count))
-            countStmt:finalize()
-            
-            -- Show sample data
-            local sampleStmt = conn:prepare("SELECT toon, item_name, rule, item_id FROM lootrules LIMIT 5")
-            if sampleStmt then
-                logging.log("[Database] Sample from original table:")
-                for row in sampleStmt:nrows() do
-                    logging.log(string.format("  %s: %s -> %s (itemID=%s)", 
-                                            row.toon, row.item_name, row.rule, tostring(row.item_id)))
-                end
-                sampleStmt:finalize()
-            end
-        end
-    else
-        if oldStmt then oldStmt:finalize() end
-        logging.log("[Database] Original 'lootrules' table no longer exists")
-    end
-    
-    -- Show v2 table
-    local v2Stmt = conn:prepare("SELECT COUNT(*) FROM lootrules_v2")
-    if v2Stmt and v2Stmt:step() == sqlite3.ROW then
-        local count = v2Stmt:get_value(0)
-        logging.log(string.format("[Database] 'lootrules_v2' table has %d rules", count))
-        v2Stmt:finalize()
-    end
-    
-    -- Show fallback table
-    local fallbackStmt = conn:prepare("SELECT COUNT(*) FROM lootrules_name_fallback")
-    if fallbackStmt and fallbackStmt:step() == sqlite3.ROW then
-        local count = fallbackStmt:get_value(0)
-        logging.log(string.format("[Database] 'lootrules_name_fallback' table has %d rules", count))
-        fallbackStmt:finalize()
-    end
-end
-
--- Force re-migration of data (for debugging/fixing migration issues)
-function database.forceMigration()
-    local conn = getConnection()
-    if not conn then
-        logging.error("[Database] No database connection for forced migration")
-        return false
-    end
-    
-    logging.info("[Database] Starting forced migration...")
-    
-    -- Clear existing new tables
-    conn:exec("DELETE FROM lootrules_v2")
-    conn:exec("DELETE FROM lootrules_name_fallback") 
-    conn:exec("DELETE FROM item_id_mappings")
-    
-    -- Check if old table exists
-    local checkOldStmt = conn:prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lootrules'")
-    local hasOldTable = false
-    if checkOldStmt:step() == sqlite3.ROW then
-        hasOldTable = true
-    end
-    checkOldStmt:finalize()
-    
-    if not hasOldTable then
-        logging.warn("[Database] No old 'lootrules' table found for migration")
-        return false
-    end
-    
-    -- Show what we're working with
-    local dataStmt = conn:prepare([[
-        SELECT toon, item_name, rule, item_id, icon_id 
-        FROM lootrules 
-        LIMIT 5
-    ]])
-    
-    if dataStmt then
-        logging.debug("[Database] Sample data from old table:")
-        while dataStmt:step() == sqlite3.ROW do
-            local toon = dataStmt:get_value(0)
-            local itemName = dataStmt:get_value(1) 
-            local rule = dataStmt:get_value(2)
-            local itemId = dataStmt:get_value(3)
-            local iconId = dataStmt:get_value(4)
-            logging.debug(string.format("  %s: %s -> %s (ID:%s, Icon:%s)", 
-                         toon, itemName, rule, tostring(itemId), tostring(iconId)))
-        end
-        dataStmt:finalize()
-    end
-    
-    -- Migrate ALL items with any itemID > 0 to itemID table
-    local migrateWithIDs = [[
-        INSERT INTO lootrules_v2 (toon, item_id, item_name, rule, icon_id, created_at, updated_at)
-        SELECT toon, item_id, item_name, rule, COALESCE(icon_id, 0), created_at, updated_at
-        FROM lootrules
-        WHERE item_id > 0
-    ]]
-    
-    local result = conn:exec(migrateWithIDs)
-    if result == sqlite3.OK then
-        local countStmt = conn:prepare("SELECT COUNT(*) FROM lootrules_v2")
-        if countStmt:step() == sqlite3.ROW then
-            local count = countStmt:get_value(0)
-            logging.info(string.format("[Database] Migrated %d rules with itemIDs", count))
-        end
-        countStmt:finalize()
-    else
-        logging.error("[Database] Failed to migrate itemID rules: " .. conn:errmsg())
-    end
-    
-    -- Migrate items without valid itemIDs to fallback
-    local migrateWithoutIDs = [[
-        INSERT INTO lootrules_name_fallback (toon, item_name, rule, created_at, updated_at)
-        SELECT toon, item_name, rule, created_at, updated_at
-        FROM lootrules
-        WHERE item_id IS NULL OR item_id = 0
-    ]]
-    
-    result = conn:exec(migrateWithoutIDs)
-    if result == sqlite3.OK then
-        local countStmt = conn:prepare("SELECT COUNT(*) FROM lootrules_name_fallback")
-        if countStmt:step() == sqlite3.ROW then
-            local count = countStmt:get_value(0)
-            logging.info(string.format("[Database] Migrated %d rules to fallback table", count))
-        end
-        countStmt:finalize()
-    else
-        logging.error("[Database] Failed to migrate fallback rules: " .. conn:errmsg())
-    end
-    
-    -- Build item mappings
-    local buildMappings = [[
-        INSERT INTO item_id_mappings (item_id, item_name, icon_id, first_seen, last_seen)
-        SELECT DISTINCT item_id, item_name, COALESCE(icon_id, 0), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        FROM lootrules_v2
-    ]]
-    
-    result = conn:exec(buildMappings)
-    if result == sqlite3.OK then
-        local countStmt = conn:prepare("SELECT COUNT(*) FROM item_id_mappings")
-        if countStmt:step() == sqlite3.ROW then
-            local count = countStmt:get_value(0)
-            logging.info(string.format("[Database] Created %d item mappings", count))
-        end
-        countStmt:finalize()
-    else
-        logging.error("[Database] Failed to build item mappings: " .. conn:errmsg())
-    end
-    
-    -- Clear cache to force reload
-    lootRulesCache = {
-        byItemID = {},
-        byName = {},
-        itemMappings = {},
-        loaded = {}
-    }
-    
-    logging.info("[Database] Forced migration completed")
-    return true
-end
 
 function database.cleanup()
     if db then
