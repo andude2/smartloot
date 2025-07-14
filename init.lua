@@ -511,7 +511,7 @@ end)
 
 local smartLootType = mq.DataType.new('SmartLoot', {
     Members = {
-        Status = function(_, self)
+        State = function(_, self)
             local state = SmartLootEngine.getState()
             
             if state.mode == SmartLootEngine.LootMode.Disabled then
@@ -929,7 +929,7 @@ mq.imgui.init("SmartLoot", function()
         ImGui.SetNextWindowBgAlpha(0.75)
         ImGui.SetNextWindowSize(800, 600, ImGuiCond.FirstUseEver)
         
-        local windowFlags = ImGuiWindowFlags.None
+        local windowFlags = bit32.bor(ImGuiWindowFlags.None)
         
         local open, shouldClose = ImGui.Begin("SmartLoot State Engine Interface", true, windowFlags)
         if open then
@@ -1039,8 +1039,8 @@ mq.imgui.init("SmartLoot", function()
         end
         ImGui.End()
         
-        if shouldClose == false then
-            lootUI.showUI = true
+        if not open and lootUI.showUI then
+            lootUI.showUI = false
         end
     end
 

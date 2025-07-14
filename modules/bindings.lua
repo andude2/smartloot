@@ -795,16 +795,6 @@ local function bindTempRuleCommands()
 end
 
 local function bindUtilityCommands()
-    mq.bind("/sl_migrate_db", function()
-        util.printSmartLoot("Starting database migration...", "info")
-        local database = require("modules.database")
-        if database.forceMigration() then
-            util.printSmartLoot("Database migration completed successfully", "success")
-        else
-            util.printSmartLoot("Database migration failed", "error")
-        end
-    end)
-
     mq.bind("/sl_help", function()
         if uiHelp then
             uiHelp.toggle()

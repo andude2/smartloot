@@ -11,10 +11,7 @@ local uiFloatingButton = {}
 local floatingButtonState = {
     show = true,
     position = { x = 100, y = 100 },
-    expanded = false,
     buttonSize = 60,
-    expandedWidth = 320,
-    expandedHeight = 240,
     alpha = 0.95,
     isDragging = false,
     dragOffset = { x = 0, y = 0 },
@@ -103,13 +100,7 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         local baseColor, glowColor, textColor, modeText
         local alpha = floatingButtonState.alpha
         
-        if floatingButtonState.expanded then
-            -- Green when expanded
-            baseColor = isPressed and {r=0.18, g=0.55, b=0.18, a=0.8 * alpha} or
-                       isHovered and {r=0.24, g=0.71, b=0.24, a=0.9 * alpha} or {r=0.20, g=0.63, b=0.20, a=0.7 * alpha}
-            glowColor = {r=0.31, g=1.0, b=0.31, a=0.4 * alpha}
-            modeText = "SL"
-        elseif hasDatabase and isActive then
+        if hasDatabase and isActive then
             -- Blue for active
             baseColor = isPressed and {r=0.18, g=0.39, b=0.71, a=0.8 * alpha} or
                        isHovered and {r=0.24, g=0.51, b=0.86, a=0.9 * alpha} or {r=0.20, g=0.47, b=0.78, a=0.7 * alpha}
@@ -215,11 +206,6 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         -- Right-click context menu for the button
         if ImGui.BeginPopupContextWindow("SmartLootButtonContext") then
             ImGui.Text("SmartLoot Options")
-            ImGui.Separator()
-            
-            if ImGui.MenuItem(floatingButtonState.expanded and "Hide Control Panel" or "Show Control Panel", nil, floatingButtonState.expanded) then
-                floatingButtonState.expanded = not floatingButtonState.expanded
-            end
             
             ImGui.Separator()
             
@@ -357,10 +343,6 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
                 mq.cmd('/sl_clearcache')
             end
             
-            if ImGui.MenuItem("Auto Known") then
-                mq.cmd('/slautolootknown')
-            end
-            
             ImGui.Separator()
             
             if ImGui.MenuItem("Reset Position") then
@@ -392,254 +374,6 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         end
     end
     ImGui.End()
-
-    -- === EXPANDED PANEL WINDOW (Only when expanded) ===
-    if floatingButtonState.expanded then
-        local panelWindowFlags = ImGuiWindowFlags.NoDecoration + ImGuiWindowFlags.AlwaysAutoResize + 
-                                ImGuiWindowFlags.NoFocusOnAppearing + ImGuiWindowFlags.NoNav
-        
-        -- Position the panel next to the button
-        local panelX = floatingButtonState.position.x + floatingButtonState.buttonSize + 10
-        local panelY = floatingButtonState.position.y
-        ImGui.SetNextWindowPos(panelX, panelY, ImGuiCond.Always)
-        
-        -- Apply alpha to expanded mode background
-        ImGui.SetNextWindowBgAlpha(floatingButtonState.alpha)
-        
-        local panelOpen = true
-        if ImGui.Begin("SmartLoot Panel", panelOpen, panelWindowFlags) then
-            local alpha = floatingButtonState.alpha
-            
-            -- Push styles at the beginning and track count
-            local styleVarCount = 0
-            local styleColorCount = 0
-            
-            ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 12.0)
-            styleVarCount = styleVarCount + 1
-            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
-            styleVarCount = styleVarCount + 1
-            
-            ImGui.PushStyleColor(ImGuiCol.WindowBg, 0.13, 0.13, 0.13, 0.95 * alpha)
-            styleColorCount = styleColorCount + 1
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.95, 0.95, 0.95, 1.0 * alpha)
-            styleColorCount = styleColorCount + 1
-            ImGui.PushStyleColor(ImGuiCol.Separator, 0.5, 0.5, 0.5, 0.8 * alpha)
-            styleColorCount = styleColorCount + 1
-            ImGui.PushStyleColor(ImGuiCol.ChildBg, 0.1, 0.1, 0.1, 0.5 * alpha)
-            styleColorCount = styleColorCount + 1
-            
-            -- Header
-            ImGui.TextColored(0.29, 0.73, 0.96, 1.0 * alpha, "SmartLoot Control Center")
-            ImGui.SameLine()
-            ImGui.SetCursorPosX(ImGui.GetWindowWidth() - 35)
-            
-            -- Close button
-            local closeColors = {
-                base = {r=0.91, g=0.30, b=0.28, a=0.8},
-                hover = {r=0.95, g=0.40, b=0.38, a=0.9},
-                active = {r=0.87, g=0.26, b=0.24, a=1.0}
-            }
-            if createModernButton("X##CollapsePanel", 25, 25, closeColors.base, closeColors.hover, closeColors.active) then
-                floatingButtonState.expanded = false
-            end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Close panel")
-            end
-            
-            ImGui.Spacing()
-            
-            -- Status display
-            local isActive = not (lootUI.paused or false)
-            local hasDatabase = database and database.isConnected and type(database.isConnected) == "function" and database.isConnected() or false
-            if not hasDatabase and database then
-                hasDatabase = (database.healthCheck ~= nil) or (database.saveLootRule ~= nil)
-            end
-            
-            local statusText, statusColor, statusIcon
-            if hasDatabase and isActive then
-                statusText = "Active"
-                statusColor = {0.20, 0.76, 0.51, 1.0 * alpha}
-                statusIcon = ">"
-            elseif hasDatabase and not isActive then
-                statusText = "Paused" 
-                statusColor = {0.95, 0.61, 0.22, 1.0 * alpha}
-                statusIcon = "||"
-            else
-                statusText = "Database Disconnected"
-                statusColor = {0.91, 0.30, 0.28, 1.0 * alpha}
-                statusIcon = "!"
-            end
-            
-            ImGui.Text("Status: ")
-            ImGui.SameLine()
-            ImGui.TextColored(statusColor[1], statusColor[2], statusColor[3], statusColor[4], "[" .. statusIcon .. "] " .. statusText)
-            
-            ImGui.Spacing()
-            ImGui.Separator()
-            ImGui.Spacing()
-            
-            -- Action buttons
-            local buttonWidth = 140
-            local buttonHeight = 32
-            
-            -- Define color schemes
-            local colors = {
-                success = {
-                    base = {r=0.20, g=0.76, b=0.51, a=0.8},
-                    hover = {r=0.25, g=0.81, b=0.56, a=0.9},
-                    active = {r=0.15, g=0.71, b=0.46, a=1.0}
-                },
-                warning = {
-                    base = {r=0.95, g=0.61, b=0.22, a=0.8},
-                    hover = {r=1.0, g=0.66, b=0.27, a=0.9},
-                    active = {r=0.90, g=0.56, b=0.17, a=1.0}
-                },
-                primary = {
-                    base = {r=0.29, g=0.73, b=0.96, a=0.8},
-                    hover = {r=0.34, g=0.78, b=1.0, a=0.9},
-                    active = {r=0.24, g=0.68, b=0.91, a=1.0}
-                },
-                secondary = {
-                    base = {r=0.22, g=0.31, b=0.42, a=0.8},
-                    hover = {r=0.27, g=0.36, b=0.47, a=0.9},
-                    active = {r=0.17, g=0.26, b=0.37, a=1.0}
-                }
-            }
-            
-            -- Row 1: Primary Actions
-            if lootUI.paused then
-                if createModernButton("RESUME", buttonWidth, buttonHeight, colors.success.base, colors.success.hover, colors.success.active) then
-                    lootUI.paused = false
-                    if util and util.printSmartLoot then
-                        util.printSmartLoot("SmartLoot resumed")
-                    end
-                end
-            else
-                if createModernButton("PAUSE", buttonWidth, buttonHeight, colors.warning.base, colors.warning.hover, colors.warning.active) then
-                    lootUI.paused = true
-                    if util and util.printSmartLoot then
-                        util.printSmartLoot("SmartLoot paused", "warning")
-                    end
-                end
-            end
-            
-            ImGui.SameLine()
-            if createModernButton("MAIN UI", buttonWidth, buttonHeight, colors.primary.base, colors.primary.hover, colors.primary.active) then
-                toggle_ui()
-            end
-            
-            -- Row 2: Utility Actions
-            if createModernButton("CLEAR CACHE", buttonWidth, buttonHeight, colors.secondary.base, colors.secondary.hover, colors.secondary.active) then
-                mq.cmd('/sl_clearcache')
-            end
-            
-            ImGui.SameLine()
-            if createModernButton("LOOT ONCE", buttonWidth, buttonHeight, colors.primary.base, colors.primary.hover, colors.primary.active) then
-                if loot and loot.lootCorpses then
-                    if util and util.printSmartLoot then
-                        util.printSmartLoot("Manual loot pass initiated from floating UI", "info")
-                    end
-                    loot.lootCorpses(lootUI, settings)
-                else
-                    mq.cmd('/sl_doloot')
-                end
-            end
-            
-            -- Row 3: Advanced Actions
-            if createModernButton("PEER CMDS", buttonWidth, buttonHeight, colors.secondary.base, colors.secondary.hover, colors.secondary.active) then
-                lootUI.showPeerCommands = not (lootUI.showPeerCommands or false)
-            end
-            
-            ImGui.SameLine()
-            if createModernButton("AUTO KNOWN", buttonWidth, buttonHeight, colors.primary.base, colors.primary.hover, colors.primary.active) then
-                mq.cmd('/slautolootknown')
-            end
-            
-            ImGui.Spacing()
-            ImGui.Separator()
-            ImGui.Spacing()
-            
-            -- Connected Peers Section
-            ImGui.TextColored(0.29, 0.73, 0.96, 1.0 * alpha, "Connected Peers")
-            local connectedPeers = util and util.getConnectedPeers and util.getConnectedPeers() or {}
-            
-            if #connectedPeers > 0 then
-                ImGui.BeginChild("PeersList", 0, 80, true)
-                for i = 1, math.min(#connectedPeers, 4) do
-                    local peer = connectedPeers[i]
-                    ImGui.Text("• " .. peer)
-                    ImGui.SameLine()
-                    ImGui.SetCursorPosX(ImGui.GetWindowWidth() - 60)
-                
-                    if createModernButton("LOOT##" .. peer, 50, 20, colors.primary.base, colors.primary.hover, colors.primary.active) then
-                        -- Use the centralized communication system from config
-                        local config = require("modules.config")
-                        local lootType = (config.lootCommandType or ""):lower()
-                        
-                        if lootType == "dannet" then
-                            mq.cmdf('/dex %s /smartloot_doloot', peer)
-                            if util and util.printSmartLoot then
-                                util.printSmartLoot("Sent DanNet loot command to " .. peer, "info")
-                            end
-                            
-                        elseif lootType == "e3" then
-                            mq.cmdf('/e3bct %s /smartloot_doloot', peer)
-                            if util and util.printSmartLoot then
-                                util.printSmartLoot("Sent E3 loot command to " .. peer, "info")
-                            end
-                            
-                        elseif lootType == "bc" then
-                            mq.cmdf('/bct %s /smartloot_doloot', peer)
-                            if util and util.printSmartLoot then
-                                util.printSmartLoot("Sent EQBC loot command to " .. peer, "info")
-                            end
-                            
-                        else
-                            -- Fallback to util function if available
-                            if util and util.sendPeerCommand then
-                                util.sendPeerCommand(peer, "/smartloot_doloot")
-                                if util and util.printSmartLoot then
-                                    util.printSmartLoot("Sent loot command to " .. peer, "info")
-                                end
-                            else
-                                -- Last resort fallback (assume e3 for backward compatibility)
-                                mq.cmdf('/e3bct %s /smartloot_doloot', peer)
-                                if util and util.printSmartLoot then
-                                    util.printSmartLoot("Sent fallback loot command to " .. peer, "warning")
-                                end
-                            end
-                        end
-                    end
-                end
-                ImGui.EndChild()
-            else
-                ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "No connected peers found")
-            end
-            
-            ImGui.Spacing()
-            ImGui.Separator()
-            ImGui.Spacing()
-            
-            -- Quick Settings
-            ImGui.TextColored(0.29, 0.73, 0.96, 1.0 * alpha, "Quick Settings")
-            ImGui.Text("Transparency:")
-            ImGui.SameLine()
-            ImGui.SetNextItemWidth(120)
-            local newAlpha, changedAlpha = ImGui.SliderFloat("##AlphaSlider", floatingButtonState.alpha, 0.3, 1.0, "%.1f")
-            if changedAlpha then
-                floatingButtonState.alpha = newAlpha
-            end
-            
-            -- Pop styles at the end, before ImGui.End()
-            ImGui.PopStyleColor(styleColorCount)
-            ImGui.PopStyleVar(styleVarCount)
-        end
-        ImGui.End()
-        
-        if not panelOpen then
-            floatingButtonState.expanded = false
-        end
-    end
     
     if not buttonOpen then
         floatingButtonState.show = false
@@ -661,22 +395,6 @@ end
 
 function uiFloatingButton.isVisible()
     return floatingButtonState.show
-end
-
-function uiFloatingButton.expand()
-    floatingButtonState.expanded = true
-end
-
-function uiFloatingButton.collapse()
-    floatingButtonState.expanded = false
-end
-
-function uiFloatingButton.toggleExpansion()
-    floatingButtonState.expanded = not floatingButtonState.expanded
-end
-
-function uiFloatingButton.isExpanded()
-    return floatingButtonState.expanded
 end
 
 function uiFloatingButton.setPosition(x, y)
