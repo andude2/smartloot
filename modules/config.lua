@@ -25,6 +25,30 @@ config.useChaseCommands = false  -- Whether to use chase commands at all
 config.chasePauseCommand = "/luachase pause on"  -- Command to pause chase
 config.chaseResumeCommand = "/luachase pause off"  -- Command to resume chase
 
+-- NEW: Hotbar configuration
+config.hotbar = {
+    position = { x = 100, y = 300 },
+    buttonSize = 50,
+    alpha = 0.8,
+    vertical = false,
+    showLabels = false,
+    compactMode = false,
+    useTextLabels = false,
+    show = true,
+    buttonVisibility = {
+        startBG = true,
+        stopBG = true,
+        clearCache = true,
+        lootAll = true,
+        autoKnown = true,
+        pausePeer = true,
+        toggleUI = true,
+        addRule = true,
+        peerCommands = true,
+        settings = true
+    }
+}
+
 -- Valid chat output modes
 config.validChatModes = {
     "rsay",
@@ -52,6 +76,8 @@ local configData = {
         useChaseCommands = config.useChaseCommands,
         chasePauseCommand = config.chasePauseCommand,
         chaseResumeCommand = config.chaseResumeCommand,
+        -- NEW: Hotbar configuration in global settings
+        hotbar = config.hotbar,
     },
     servers = {}
 }
@@ -81,6 +107,11 @@ function config.load()
             config.useChaseCommands = configData.global.useChaseCommands or config.useChaseCommands
             config.chasePauseCommand = configData.global.chasePauseCommand or config.chasePauseCommand
             config.chaseResumeCommand = configData.global.chaseResumeCommand or config.chaseResumeCommand
+            
+            -- NEW: Apply hotbar settings
+            if configData.global.hotbar then
+                config.hotbar = configData.global.hotbar
+            end
             
             -- Apply per-server settings
             local serverConfig = configData.servers[sanitizedServerName] or {}
@@ -112,6 +143,9 @@ function config.save()
     configData.global.useChaseCommands = config.useChaseCommands
     configData.global.chasePauseCommand = config.chasePauseCommand
     configData.global.chaseResumeCommand = config.chaseResumeCommand
+    
+    -- NEW: Update hotbar settings
+    configData.global.hotbar = config.hotbar
     
     -- Ensure server config exists
     if not configData.servers[sanitizedServerName] then
@@ -360,6 +394,100 @@ function config.getConfiguredServers()
     return servers
 end
 
+-- NEW: Hotbar configuration helper functions
+function config.saveHotbarSettings(hotbarSettings)
+    if hotbarSettings then
+        config.hotbar = hotbarSettings
+        config.save()
+        return true
+    end
+    return false
+end
+
+function config.getHotbarSettings()
+    return config.hotbar
+end
+
+function config.setHotbarPosition(x, y)
+    config.hotbar.position.x = x
+    config.hotbar.position.y = y
+    config.save()
+end
+
+function config.setHotbarButtonVisible(buttonId, visible)
+    if config.hotbar.buttonVisibility[buttonId] ~= nil then
+        config.hotbar.buttonVisibility[buttonId] = visible
+        config.save()
+        return true
+    end
+    return false
+end
+
+function config.getHotbarButtonVisible(buttonId)
+    return config.hotbar.buttonVisibility[buttonId] or false
+end
+
+function config.setHotbarUseTextLabels(useText)
+    config.hotbar.useTextLabels = useText
+    config.save()
+end
+
+function config.setHotbarVertical(vertical)
+    config.hotbar.vertical = vertical
+    config.save()
+end
+
+function config.setHotbarAlpha(alpha)
+    config.hotbar.alpha = math.max(0.1, math.min(1.0, alpha))
+    config.save()
+end
+
+function config.setHotbarButtonSize(size)
+    config.hotbar.buttonSize = math.max(25, math.min(80, size))
+    config.save()
+end
+
+function config.setHotbarShowLabels(show)
+    config.hotbar.showLabels = show
+    config.save()
+end
+
+function config.setHotbarCompactMode(compact)
+    config.hotbar.compactMode = compact
+    config.save()
+end
+
+function config.setHotbarShow(show)
+    config.hotbar.show = show
+    config.save()
+end
+
+function config.resetHotbarToDefaults()
+    config.hotbar = {
+        position = { x = 100, y = 300 },
+        buttonSize = 50,
+        alpha = 0.8,
+        vertical = false,
+        showLabels = false,
+        compactMode = false,
+        useTextLabels = false,
+        show = true,
+        buttonVisibility = {
+            startBG = true,
+            stopBG = true,
+            clearCache = true,
+            lootAll = true,
+            autoKnown = true,
+            pausePeer = true,
+            toggleUI = true,
+            addRule = true,
+            peerCommands = true,
+            settings = true
+        }
+    }
+    config.save()
+end
+
 -- Updated debug function to show current configuration
 function config.debugPrint()
     print("=== SmartLoot Configuration Debug ===")
@@ -379,6 +507,13 @@ function config.debugPrint()
         print("  Chase Pause Command: " .. tostring(config.chasePauseCommand))
         print("  Chase Resume Command: " .. tostring(config.chaseResumeCommand))
     end
+    print("Hotbar Configuration:")
+    print("  Position: " .. config.hotbar.position.x .. ", " .. config.hotbar.position.y)
+    print("  Button Size: " .. config.hotbar.buttonSize)
+    print("  Alpha: " .. config.hotbar.alpha)
+    print("  Vertical: " .. tostring(config.hotbar.vertical))
+    print("  Use Text Labels: " .. tostring(config.hotbar.useTextLabels))
+    print("  Show: " .. tostring(config.hotbar.show))
     print("Per-Server Settings:")
     print("  Peer Loot Order: " .. (#config.peerLootOrder > 0 and table.concat(config.peerLootOrder, ", ") or "(empty)"))
     print("All Configured Servers:")
