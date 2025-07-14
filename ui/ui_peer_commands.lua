@@ -2,7 +2,8 @@
 local mq = require("mq")
 local ImGui = require("ImGui")
 local logging = require("modules.logging")
-local SmartLootEngine = require("modules.SmartLootEngine")  -- NEW: For mode check
+local SmartLootEngine = require("modules.SmartLootEngine")
+local config = require("modules.config")
 
 local uiPeerCommands = {}
 
@@ -49,12 +50,7 @@ function uiPeerCommands.draw(lootUI, loot, util)
             ImGui.Spacing()
             ImGui.Separator()
             ImGui.Spacing()
-            
-            -- Individual peer commands section
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.2, 0.8, 0.2, 1.0)  -- Green section header
-            ImGui.Text("Individual Commands:")
-            ImGui.PopStyleColor()
-            
+                        
             local buttonWidth = (ImGui.GetContentRegionAvail() - 10) / 2 -- Two buttons per row with spacing
             
             -- Add rounded edges to all buttons
@@ -64,7 +60,7 @@ function uiPeerCommands.draw(lootUI, loot, util)
             ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.8, 0.8)  -- Blue for Loot
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.7, 0.9, 0.9)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.5, 0.7, 0.9)
-            if ImGui.Button("Send Loot", buttonWidth, 30) then
+            if ImGui.Button("Peer Loot", buttonWidth, 30) then
                 if util.sendPeerCommand(lootUI.selectedPeer, "/sl_doloot") then
                     logging.log("Sent loot command to peer: " .. lootUI.selectedPeer)
                     util.printSmartLoot("Sent loot command to " .. lootUI.selectedPeer, "success")
@@ -75,22 +71,32 @@ function uiPeerCommands.draw(lootUI, loot, util)
             end
             ImGui.PopStyleColor(3)
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Trigger a one-time loot on the selected peer")
+                ImGui.SetTooltip("Trigger a the selected peer to loot corpses")
             end
             
             ImGui.SameLine()
             
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.6, 0.2, 0.8)  -- Yellow for Pause
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.9, 0.7, 0.3, 0.9)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.7, 0.5, 0.1, 0.9)
-            if ImGui.Button("Pause", buttonWidth, 30) then
-                if util.sendPeerCommand(lootUI.selectedPeer, "/sl_pause on") then
-                    logging.log("Sent pause command to peer: " .. lootUI.selectedPeer)
-                    util.printSmartLoot("Paused " .. lootUI.selectedPeer, "warning")
-                else
-                    logging.log("Failed to send pause command to peer: " .. lootUI.selectedPeer)
-                    util.printSmartLoot("Failed to pause " .. lootUI.selectedPeer, "error")
-                end
+            -- Dynamic button text and colors
+            local buttonText = (lootUI.peerTriggerPaused or false) and "Resume" or "Pause"
+            local isPaused = lootUI.peerTriggerPaused or false
+
+            if isPaused then
+                -- Dark red for paused state
+                ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.2, 0.2, 0.8)        -- Dark red
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.3, 0.3, 0.9)  -- Lighter red on hover
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.1, 0.1, 0.9)   -- Darker red when pressed
+            else
+                -- Yellow for active state
+                ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.6, 0.2, 0.8)        -- Yellow
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.9, 0.7, 0.3, 0.9)  -- Lighter yellow on hover
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.7, 0.5, 0.1, 0.9)   -- Darker yellow when pressed
+            end
+
+            if ImGui.Button(buttonText, buttonWidth, 30) then
+                lootUI.peerTriggerPaused = not (lootUI.peerTriggerPaused or false)
+                local status = lootUI.peerTriggerPaused and "paused" or "resumed"
+                logging.log("Peer triggering " .. status)
+                util.printSmartLoot("Peer triggering " .. status, lootUI.peerTriggerPaused and "warning" or "info")
             end
             ImGui.PopStyleColor(3)
             if ImGui.IsItemHovered() then
@@ -100,21 +106,41 @@ function uiPeerCommands.draw(lootUI, loot, util)
             ImGui.Spacing()
             
             -- Row 2: Resume and Clear Cache
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.8, 0.2, 0.8)  -- Green for Resume
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.9, 0.3, 0.9)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.7, 0.1, 0.9)
-            if ImGui.Button("Resume", buttonWidth, 30) then
-                if util.sendPeerCommand(lootUI.selectedPeer, "/sl_pause off") then
-                    logging.log("Sent resume command to peer: " .. lootUI.selectedPeer)
-                    util.printSmartLoot("Resumed " .. lootUI.selectedPeer, "success")
+            -- Dynamic button text and colors based on chase state
+            local buttonText = (lootUI.chasePaused or false) and "Resume Chase" or "Pause Chase"
+            local isChasePaused = lootUI.chasePaused or false
+
+            if isChasePaused then
+                -- Green for resume
+                ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.8, 0.2, 0.8)
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.9, 0.3, 0.9)
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.7, 0.1, 0.9)
+            else
+                -- Red for pause
+                ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.2, 0.2, 0.8)
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.9, 0.3, 0.3, 0.9)
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.7, 0.1, 0.1, 0.9)
+            end
+
+            if ImGui.Button(buttonText, buttonWidth, 30) then
+                local action = isChasePaused and "resume" or "pause"
+                local success, message = config.executeChaseCommand(action)
+                
+                if success then
+                    -- Toggle the CHASE state, not peer trigger state
+                    lootUI.chasePaused = not isChasePaused
+                    logging.log("Chase command executed: " .. message)
+                    util.printSmartLoot("Chase " .. action .. "d", action == "pause" and "warning" or "success")
                 else
-                    logging.log("Failed to send resume command to peer: " .. lootUI.selectedPeer)
-                    util.printSmartLoot("Failed to resume " .. lootUI.selectedPeer, "error")
+                    logging.log("Failed to execute chase command: " .. message)
+                    util.printSmartLoot("Chase command failed: " .. message, "error")
                 end
             end
             ImGui.PopStyleColor(3)
+
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Resume SmartLoot on the selected peer")
+                local tooltipText = isChasePaused and "Resume chase mode" or "Pause chase mode"
+                ImGui.SetTooltip(tooltipText)
             end
             
             ImGui.SameLine()

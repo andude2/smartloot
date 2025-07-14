@@ -88,7 +88,7 @@ function uiTempRules.draw(lootUI, database, settings, util)
         ImGui.SameLine()
         
         -- Rule dropdown
-        ImGui.SetNextItemWidth(120)
+        ImGui.SetNextItemWidth(80)
         if ImGui.BeginCombo("##tempRule", tempRuleState.newRule) then
             for _, rule in ipairs(RULE_TYPES) do
                 local isSelected = (tempRuleState.newRule == rule)
@@ -122,12 +122,38 @@ function uiTempRules.draw(lootUI, database, settings, util)
                 tempRuleState.newThreshold = math.max(1, newThreshold)
             end
         end
-
-        -- Peer assignment input
+        ImGui.SameLine()
+        -- Peer assignment dropdown
         ImGui.Text("Assign to Peer (Optional):")
         ImGui.SetNextItemWidth(200)
-        local newPeer, changedPeer = ImGui.InputText("##tempAssignedPeer", tempRuleState.newAssignedPeer, 64)
-        tempRuleState.newAssignedPeer = newPeer
+
+        -- Create peer list with "None" option
+        local assignmentPeerList = {"None"}
+        local connectedPeers = util.getConnectedPeers()
+        for _, peer in ipairs(connectedPeers) do
+            table.insert(assignmentPeerList, peer)
+        end
+
+        -- Ensure we have a valid selection
+        if not tempRuleState.newAssignedPeer or tempRuleState.newAssignedPeer == "" then
+            tempRuleState.newAssignedPeer = "None"
+        end
+        ImGui.SameLine()
+        if ImGui.BeginCombo("##tempAssignedPeer", tempRuleState.newAssignedPeer) then
+            for i, peer in ipairs(assignmentPeerList) do
+                local selected = (tempRuleState.newAssignedPeer == peer)
+                if ImGui.Selectable(peer, selected) then
+                    tempRuleState.newAssignedPeer = peer
+                end
+                if selected then
+                    ImGui.SetItemDefaultFocus()
+                end
+            end
+            ImGui.EndCombo()
+        end
+
+        -- Convert "None" back to empty string for processing
+        local actualAssignedPeer = (tempRuleState.newAssignedPeer == "None") and "" or tempRuleState.newAssignedPeer
 
         
         if ImGui.IsItemHovered() then
@@ -174,46 +200,9 @@ function uiTempRules.draw(lootUI, database, settings, util)
         end
         
         ImGui.PopStyleColor(2)
-        
-        ImGui.Separator()
-        
-        -- Search filter
-        ImGui.Text("Search:")
-        ImGui.SameLine()
-        ImGui.SetNextItemWidth(250)
-        local searchFilter, changedSearch = ImGui.InputText("##tempRulesSearch", tempRuleState.searchFilter, 256)
-        if changedSearch then
-            tempRuleState.searchFilter = searchFilter
-        end
-        
-        ImGui.SameLine()
-        
-        -- Clear all button
-        ImGui.PushStyleColor(ImGuiCol.Button, COLORS.DANGER_COLOR[1], COLORS.DANGER_COLOR[2], COLORS.DANGER_COLOR[3], 0.8)
-        if ImGui.Button("Clear All") then
-            ImGui.OpenPopup("ClearAllTempRules")
-        end
-        ImGui.PopStyleColor()
-        
-        -- Clear all confirmation popup
-        if ImGui.BeginPopupModal("ClearAllTempRules", nil, ImGuiWindowFlags.AlwaysAutoResize) then
-            ImGui.Text("Are you sure you want to clear all temporary rules?")
-            ImGui.Separator()
-            
-            if ImGui.Button("Yes", 120, 0) then
-                tempRules.clearAll()
-                ImGui.CloseCurrentPopup()
-            end
-            ImGui.SameLine()
-            if ImGui.Button("No", 120, 0) then
-                ImGui.CloseCurrentPopup()
-            end
-            
-            ImGui.EndPopup()
-        end
-        
+                
         -- Temporary rules table
-        ImGui.BeginChild("TempRulesTable", 0, 0, true)
+        ImGui.BeginChild("TempRulesTable", 0, 0)
         
         if ImGui.BeginTable("TempRulesTableContent", 6, 
             ImGuiTableFlags.Borders + ImGuiTableFlags.RowBg + ImGuiTableFlags.Resizable + ImGuiTableFlags.ScrollY) then

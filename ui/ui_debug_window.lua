@@ -331,39 +331,7 @@ function debugWindow.draw(SmartLootEngine, lootUI)
         ImGui.SameLine()
         if ImGui.Button("Set Background Mode") then
             SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Background, "Debug Window")
-        end
-        
-        -- RGMercs Integration Buttons
-        ImGui.Separator()
-        ImGui.Text("RGMercs Integration:")
-        
-        if ImGui.Button("Send 'Processing' to RGMercs") then
-            SmartLootEngine.notifyRGMercsProcessing()
-            print("[Debug] Sent 'processing' message to RGMercs")
-        end
-        ImGui.SameLine()
-        if ImGui.Button("Send 'Done Looting' to RGMercs") then
-            SmartLootEngine.notifyRGMercsComplete()
-            print("[Debug] Sent 'done_looting' message to RGMercs")
-        end
-        
-        -- Manual Actor Message Button
-        if ImGui.Button("Manual RGMercs Done Message") then
-            local success, err = pcall(function()
-                local actors = require("actors")
-                actors.send({to='loot_module'}, {
-                    Subject = 'done_looting',
-                    Who = mq.TLO.Me.Name(),
-                    CombatLooting = false
-                })
-                print("[Debug] Manual 'done_looting' message sent to RGMercs loot_module")
-            end)
-            
-            if not success then
-                print("[Debug] Failed to send manual message: " .. tostring(err))
-            end
-        end
-        
+        end        
     end
     ImGui.End()
     

@@ -7,128 +7,6 @@ local SmartLootEngine = require("modules.SmartLootEngine")
 
 local uiSettings = {}
 
-local function draw_memory_settings(settings)
-    -- Memory Management Settings Section
-    ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.6, 0.8, 1.0)  -- Light pink header
-    if ImGui.CollapsingHeader("Memory Management Settings") then
-        ImGui.PopStyleColor()
-        ImGui.SameLine()
-    
-    -- Help button
-    ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
-    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)
-    if ImGui.Button("(?)##MemoryHelp") then
-        ImGui.OpenPopup("MemorySettingsHelp")
-    end
-    ImGui.PopStyleColor(2)
-    
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Session tracking memory cleanup settings")
-    end
-    
-    -- Memory Settings Help Popup
-    if ImGui.BeginPopup("MemorySettingsHelp") then
-        ImGui.Text("Memory Management Settings")
-        ImGui.Separator()
-        ImGui.BulletText("Cleanup Interval: How often to check for old session data")
-        ImGui.BulletText("Max Age: How long to keep session tracking data")
-        ImGui.BulletText("Max Entries: Force cleanup when this many entries exist")
-        ImGui.Separator()
-        ImGui.Text("Session tracking prevents processing the same items/corpses")
-        ImGui.Text("repeatedly, but uses memory. These settings control cleanup.")
-        ImGui.EndPopup()
-    end
-    
-    ImGui.Columns(2, nil, false)
-    ImGui.SetColumnWidth(0, 300)
-    ImGui.SetColumnWidth(1, 300)
-    
-    -- Cleanup Interval
-    ImGui.AlignTextToFramePadding()
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-    ImGui.Text("Session Cleanup Interval:")
-    ImGui.PopStyleColor()
-    ImGui.SameLine()
-    ImGui.PushItemWidth(100)
-    local newInterval, changedInterval = ImGui.InputInt("##SessionCleanupInterval", settings.sessionCleanupIntervalMinutes, 1, 5)
-    if changedInterval then 
-        settings.sessionCleanupIntervalMinutes = math.max(1, math.min(60, newInterval))
-    end
-    ImGui.PopItemWidth()
-    ImGui.SameLine()
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.8, 0.8, 1.0)  -- Light gray for units
-    ImGui.Text("minutes")
-    ImGui.PopStyleColor()
-    
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("How often to check for old session data (1-60 minutes)")
-    end
-    
-    ImGui.NextColumn()
-    
-    -- Max Age
-    ImGui.AlignTextToFramePadding()
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-    ImGui.Text("Session Data Max Age:")
-    ImGui.PopStyleColor()
-    ImGui.SameLine()
-    ImGui.PushItemWidth(100)
-    local newMaxAge, changedMaxAge = ImGui.InputInt("##SessionMaxAge", settings.sessionTrackingMaxAgeMinutes, 5, 15)
-    if changedMaxAge then 
-        settings.sessionTrackingMaxAgeMinutes = math.max(5, math.min(480, newMaxAge))
-    end
-    ImGui.PopItemWidth()
-    ImGui.SameLine()
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.8, 0.8, 1.0)  -- Light gray for units
-    ImGui.Text("minutes")
-    ImGui.PopStyleColor()
-    
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("How long to keep session tracking data (5-480 minutes)")
-    end
-    
-    ImGui.NextColumn()
-    
-    -- Max Entries
-    ImGui.AlignTextToFramePadding()
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-    ImGui.Text("Max Session Entries:")
-    ImGui.PopStyleColor()
-    ImGui.SameLine()
-    ImGui.PushItemWidth(100)
-    local newMaxEntries, changedMaxEntries = ImGui.InputInt("##MaxSessionEntries", settings.maxSessionTrackingEntries, 100, 500)
-    if changedMaxEntries then 
-        settings.maxSessionTrackingEntries = math.max(100, math.min(10000, newMaxEntries))
-    end
-    ImGui.PopItemWidth()
-    
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Force cleanup when this many entries exist (100-10000)")
-    end
-    
-    ImGui.NextColumn()
-    
-    -- Manual Cleanup Button
-    ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.3, 0.3, 1.0)  -- Red button
-    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.9, 0.4, 0.4, 1.0)
-    ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.7, 0.2, 0.2, 1.0)
-    
-    if ImGui.Button("Clean Session Data Now") then
-        SmartLootEngine.cleanupSessionTracking(true)
-        logging.log("Manual session tracking cleanup performed")
-    end
-    ImGui.PopStyleColor(3)
-    
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Immediately clean up old session tracking data")
-    end
-    
-        ImGui.Columns(1)
-    else
-        ImGui.PopStyleColor()  -- Pop the color even if header is closed
-    end
-end
-
 local function draw_chat_settings(config)
     -- Chat Output Settings Section
     ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 1.0, 1.0)  -- Light cyan header
@@ -568,7 +446,7 @@ function uiSettings.draw(lootUI, settings, config)
         
         -- Core Performance Settings Section
         ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0)  -- Light blue header
-        if ImGui.CollapsingHeader("⚙ Core Performance Settings", ImGuiTreeNodeFlags.DefaultOpen) then
+        if ImGui.CollapsingHeader("Core Performance Settings", ImGuiTreeNodeFlags.DefaultOpen) then
             ImGui.PopStyleColor()
             ImGui.Spacing()
 
@@ -643,7 +521,7 @@ function uiSettings.draw(lootUI, settings, config)
             ImGui.Columns(3, nil, false)  -- Three-column layout
             ImGui.SetColumnWidth(0, 200)  -- Set a fixed width for column 1
             ImGui.SetColumnWidth(1, 200)  -- Set a fixed width for column 2
-            ImGui.SetColumnWidth(2, 300)
+            ImGui.SetColumnWidth(2, 200)
         
         -- **Row 1: Is Main Looter & Loot Command Type**
         ImGui.AlignTextToFramePadding()
@@ -755,6 +633,13 @@ function uiSettings.draw(lootUI, settings, config)
         end
         
             ImGui.NextColumn()  -- 3rd Column
+            ImGui.AlignTextToFramePadding()
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
+            ImGui.Text("Pause Peer Triggering:")
+            ImGui.PopStyleColor()
+            ImGui.SameLine(150)  -- Ensure spacing for alignment
+            local peerTriggerPaused, changedPausePeerTrigger = ImGui.Checkbox("##PausePeerTriggering", settings.peerTriggerPaused)
+            if changedPausePeerTrigger then settings.peerTriggerPaused = peerTriggerPaused end
             ImGui.Columns(1)  -- End columns for coordination section
             ImGui.Spacing()
         else
@@ -851,49 +736,6 @@ function uiSettings.draw(lootUI, settings, config)
             ImGui.PopStyleColor()  -- Pop the color even if header is closed
         end
         
-        -- Additional Settings Section  
-        ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.8, 0.4, 1.0)  -- Orange header
-        if ImGui.CollapsingHeader("Additional Settings", ImGuiTreeNodeFlags.DefaultOpen) then
-            ImGui.PopStyleColor()
-            ImGui.Spacing()
-            
-            ImGui.Columns(2, nil, false)  -- Two-column layout
-            ImGui.SetColumnWidth(0, 300)
-            ImGui.SetColumnWidth(1, 300)
-        
-        -- **Row 2: Pause Peer Triggering & Show Log Window**
-        ImGui.AlignTextToFramePadding()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-        ImGui.Text("Pause Peer Triggering:")
-        ImGui.PopStyleColor()
-        ImGui.SameLine(150)  -- Ensure spacing for alignment
-        local peerTriggerPaused, changedPausePeerTrigger = ImGui.Checkbox("##PausePeerTriggering", settings.peerTriggerPaused)
-        if changedPausePeerTrigger then settings.peerTriggerPaused = peerTriggerPaused end
-        
-        ImGui.NextColumn()  -- Move to second column
-        
-        ImGui.AlignTextToFramePadding()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-        ImGui.Text("Show Log Window:")
-        ImGui.PopStyleColor()
-        ImGui.SameLine()
-        
-        -- **Ensure perfect alignment by reserving the same vertical space as the dropdown**
-        ImGui.Dummy(0, ImGui.GetFrameHeight() * 0.25)  
-        ImGui.SameLine(150)
-        local newShowLog, changedShowLog = ImGui.Checkbox("##ShowLogWindow", settings.showLogWindow)
-        if changedShowLog then 
-            settings.showLogWindow = newShowLog 
-        end
-
-            ImGui.Columns(1)  -- End the column layout for additional settings
-            ImGui.Spacing()
-        else
-            ImGui.PopStyleColor()  -- Pop the color even if header is closed
-        end
-        
-        -- NEW: Draw settings sections
-        draw_memory_settings(settings)
         draw_chat_settings(config)
         draw_chase_settings(config)
         ImGui.EndTabItem()

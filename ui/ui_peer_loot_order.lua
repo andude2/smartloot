@@ -24,31 +24,31 @@ function uiPeerLootOrder.draw(lootUI, config, util)
             if config.lootCommandType == "dannet" then
                 local dannetLoaded = mq.TLO.Plugin("MQ2DanNet").IsLoaded()
                 if dannetLoaded then
-                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "✓ MQ2DanNet Plugin: Loaded")
+                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "MQ2DanNet Plugin: Loaded")
                     local rawPeers = mq.TLO.DanNet.Peers()
                     ImGui.Text("Raw DanNet Peers: " .. tostring(rawPeers or "nil"))
                 else
-                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "✗ MQ2DanNet Plugin: NOT LOADED")
+                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "MQ2DanNet Plugin: NOT LOADED")
                     ImGui.TextWrapped("Load MQ2DanNet plugin to use DanNet peer discovery")
                 end
             elseif config.lootCommandType == "e3" then
                 local monoLoaded = mq.TLO.Plugin("MQ2Mono").IsLoaded()
                 if monoLoaded then
-                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "✓ MQ2Mono Plugin: Loaded")
+                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "MQ2Mono Plugin: Loaded")
                     local rawPeers = mq.TLO.MQ2Mono.Query("e3,E3Bots.ConnectedClients")()
                     ImGui.Text("Raw E3 Peers: " .. tostring(rawPeers or "nil"))
                 else
-                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "✗ MQ2Mono Plugin: NOT LOADED")
+                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "MQ2Mono Plugin: NOT LOADED")
                     ImGui.TextWrapped("Load MQ2Mono plugin or switch to DanNet for peer discovery")
                 end
             elseif config.lootCommandType == "bc" then
                 local eqbcLoaded = mq.TLO.Plugin("MQ2EQBC").IsLoaded()
                 if eqbcLoaded then
-                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "✓ MQ2EQBC Plugin: Loaded")
+                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "MQ2EQBC Plugin: Loaded")
                     local rawPeers = mq.TLO.EQBC.Names()
                     ImGui.Text("Raw EQBC Peers: " .. tostring(rawPeers or "nil"))
                 else
-                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "✗ MQ2EQBC Plugin: NOT LOADED")
+                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "MQ2EQBC Plugin: NOT LOADED")
                     ImGui.TextWrapped("Load MQ2EQBC plugin or switch to DanNet for peer discovery")
                 end
             end

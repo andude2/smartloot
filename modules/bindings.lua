@@ -3,6 +3,7 @@ local bindings = {}
 local mq = require("mq")
 local logging = require("modules.logging")
 local util = require("modules.util")
+local config = require("modules.config")
 
 -- Module will be initialized with references to required components
 local SmartLootEngine = nil
@@ -851,6 +852,10 @@ local function bindUtilityCommands()
         if lootUI then
             lootUI.showGettingStartedPopup = not lootUI.showGettingStartedPopup
         end
+    end)
+
+    mq.bind("/sl_save", function()
+        config.save()
     end)
 end
 

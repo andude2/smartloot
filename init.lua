@@ -931,7 +931,7 @@ mq.imgui.init("SmartLoot", function()
         
         local windowFlags = bit32.bor(ImGuiWindowFlags.None)
         
-        local open, shouldClose = ImGui.Begin("SmartLoot State Engine Interface", true, windowFlags)
+        local open, shouldClose = ImGui.Begin("SmartLoot - Loot Smarter, Not Harder", true, windowFlags)
         if open then
             if ImGui.BeginTabBar("MainTabBar") then
                 if uiLootRules then
@@ -953,7 +953,7 @@ mq.imgui.init("SmartLoot", function()
                     uiPeerLootOrder.draw(lootUI, config, util)
                 end
                 
-                -- Engine Stats Tab
+                --[[Engine Stats Tab
                 if ImGui.BeginTabItem("Engine Stats") then
                     local state = SmartLootEngine.getState()
                     local perf = SmartLootEngine.getPerformanceMetrics()
@@ -1032,7 +1032,7 @@ mq.imgui.init("SmartLoot", function()
                     end
                     
                     ImGui.EndTabItem()
-                end
+                end]]
                 
                 ImGui.EndTabBar()
             end
@@ -1055,16 +1055,16 @@ mq.imgui.init("SmartLoot", function()
                 end
             end, nil, util, SmartLootEngine)
         end
-    else
-        if uiHotbar and uiHotbar.draw then
-            uiHotbar.draw(lootUI, settings, function() 
-                lootUI.showUI = not lootUI.showUI
-                if lootUI.showUI then
-                    lootUI.forceWindowVisible = true
-                    lootUI.forceWindowUncollapsed = true
-                end
-            end, nil, util)
-        end
+    end
+
+    if uiHotbar and uiHotbar.draw then
+        uiHotbar.draw(lootUI, settings, function() 
+            lootUI.showUI = not lootUI.showUI
+            if lootUI.showUI then
+                lootUI.forceWindowVisible = true
+                lootUI.forceWindowUncollapsed = true
+            end
+        end, nil, util)
     end
 
     -- Always show popups

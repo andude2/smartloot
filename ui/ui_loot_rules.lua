@@ -405,10 +405,6 @@ end
 
 -- Draw the universal rule management section (Search + Add combined in one input)
 local function drawUniversalRuleSection(lootUI, database, util, allRules)
-    -- Header section with drag-and-drop zone
-    ImGui.Text("Rule Management")
-    ImGui.Separator()
-    
     -- Drag and Drop Zone
     ImGui.Text("Quick Rule Creation:")
     drawItemDropZone(lootUI)

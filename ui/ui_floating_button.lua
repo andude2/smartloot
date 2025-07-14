@@ -32,22 +32,6 @@ local function colorToU32(r, g, b, a)
     return aInt * 16777216 + bInt * 65536 + gInt * 256 + rInt
 end
 
--- Helper function to create gradient button with standard ImGui
-local function createModernButton(text, width, height, baseColor, hoverColor, activeColor)
-    -- Apply global alpha to button colors
-    local alpha = floatingButtonState.alpha
-    ImGui.PushStyleColor(ImGuiCol.Button, baseColor.r, baseColor.g, baseColor.b, baseColor.a * alpha)
-    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverColor.r, hoverColor.g, hoverColor.b, hoverColor.a * alpha)
-    ImGui.PushStyleColor(ImGuiCol.ButtonActive, activeColor.r, activeColor.g, activeColor.b, activeColor.a * alpha)
-    ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
-    
-    local result = ImGui.Button(text, width, height)
-    
-    ImGui.PopStyleVar(1)
-    ImGui.PopStyleColor(3)
-    return result
-end
-
 function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLootEngine)
     if not floatingButtonState.show then return end
     

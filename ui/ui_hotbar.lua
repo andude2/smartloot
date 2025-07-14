@@ -21,10 +21,7 @@ local hotbarState = {
 }
 
 function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
-    if not hotbarState.show then return end
-
-    -- Don't show hotbar if floating button is being used
-    if lootUI.useFloatingButton then return end
+    if not lootUI.showHotbar then return end 
 
     local windowFlags = ImGuiWindowFlags.NoTitleBar +
                        ImGuiWindowFlags.NoScrollbar +
@@ -35,35 +32,12 @@ function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
     -- Set transparency
     ImGui.SetNextWindowBgAlpha(hotbarState.alpha)
     
-    -- Set position
-    ImGui.SetNextWindowPos(hotbarState.position.x, hotbarState.position.y, ImGuiCond.Always)
+    if not hotbarState.isDragging then
+        ImGui.SetNextWindowPos(hotbarState.position.x, hotbarState.position.y, ImGuiCond.FirstUseEver)
+    end
 
     local open = true
     if ImGui.Begin("SmartLoot Hotbar", open, windowFlags) then
-        -- Handle dragging
-        local windowPos = ImGui.GetWindowPos()
-        local mousePos = ImGui.GetMousePos()
-        
-        if ImGui.IsWindowHovered() and ImGui.IsMouseDragging(ImGuiMouseButton.Left) then
-            if not hotbarState.isDragging then
-                hotbarState.isDragging = true
-                hotbarState.dragOffset = mousePos - windowPos
-            end
-        end
-
-        if hotbarState.isDragging then
-            if ImGui.IsMouseDragging(ImGuiMouseButton.Left) then
-                hotbarState.position.x = mousePos - hotbarState.dragOffset.x
-                hotbarState.position.y = mousePos - hotbarState.dragOffset.y
-            else
-                hotbarState.isDragging = false
-            end
-        end
-
-        if not hotbarState.isDragging then
-            hotbarState.position.x = windowPos
-            hotbarState.position.y = windowPos
-        end
 
         local buttonSize = hotbarState.buttonSize
         local spacing = hotbarState.spacing
