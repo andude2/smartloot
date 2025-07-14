@@ -954,12 +954,12 @@ end
 -- PEER COORDINATION
 -- ============================================================================
 
-function SmartLootEngine.queueIgnoredItem(itemName)
-    table.insert(SmartLootEngine.state.ignoredItemsThisSession, itemName)
-    logging.debug(string.format("[Engine] Queued ignored item for peer processing: %s", itemName))
+function SmartLootEngine.queueIgnoredItem(itemName, itemID)
+    table.insert(SmartLootEngine.state.ignoredItemsThisSession, {name = itemName, id = itemID})
+    logging.debug(string.format("[Engine] Queued ignored item for peer processing: %s (ID: %d)", itemName, itemID))
 end
 
-function SmartLootEngine.findNextInterestedPeer(itemName)
+function SmartLootEngine.findNextInterestedPeer(itemName, itemID)
     if not SmartLootEngine.config.enablePeerCoordination then
         return nil
     end
@@ -1010,7 +1010,16 @@ function SmartLootEngine.findNextInterestedPeer(itemName)
         
         if isConnected then
             local peerRules = database.getLootRulesForPeer(peer)
-            local ruleData = peerRules[itemName]
+            local ruleData = nil
+            if itemID and itemID > 0 then
+                local compositeKey = string.format("%s_%d", itemName, itemID)
+                ruleData = peerRules[compositeKey]
+            end
+            
+            if not ruleData then
+                local lowerName = string.lower(itemName)
+                ruleData = peerRules[lowerName] or peerRules[itemName]
+            end
             
             if ruleData and (ruleData.rule == "Keep" or ruleData.rule:find("KeepIfFewerThan")) then
                 return peer
@@ -1021,13 +1030,13 @@ function SmartLootEngine.findNextInterestedPeer(itemName)
     return nil
 end
 
-function SmartLootEngine.triggerPeerForItem(itemName)
+function SmartLootEngine.triggerPeerForItem(itemName, itemID)
     local now = mq.gettime()
     if now - SmartLootEngine.state.lastPeerTriggerTime < SmartLootEngine.config.peerTriggerDelay then
         return false
     end
     
-    local interestedPeer = SmartLootEngine.findNextInterestedPeer(itemName)
+    local interestedPeer = SmartLootEngine.findNextInterestedPeer(itemName, itemID)
     if not interestedPeer then
         return false
     end
@@ -1382,7 +1391,7 @@ function SmartLootEngine.processProcessingItemsState()
         
     elseif rule == "Ignore" or rule == "LeftBehind" then
         SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
-        SmartLootEngine.queueIgnoredItem(itemInfo.name)
+        SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
         
         local actionText = rule == "LeftBehind" and "Left Behind" or "Ignored"
         SmartLootEngine.recordLootAction(actionText, itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
@@ -1396,7 +1405,7 @@ function SmartLootEngine.processProcessingItemsState()
         -- Unknown rule - treat as ignore
         logging.debug(string.format("[Engine] Unknown rule '%s' for item %s - treating as ignore", rule, itemInfo.name))
         SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
-        SmartLootEngine.queueIgnoredItem(itemInfo.name)
+        SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
         SmartLootEngine.recordLootAction("Ignored (Unknown Rule)", itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
         SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
         
@@ -1478,8 +1487,8 @@ function SmartLootEngine.processProcessingPeersState()
     if #SmartLootEngine.state.ignoredItemsThisSession > 0 then
         local triggeredAny = false
         
-        for _, itemName in ipairs(SmartLootEngine.state.ignoredItemsThisSession) do
-            if SmartLootEngine.triggerPeerForItem(itemName) then
+        for _, item in ipairs(SmartLootEngine.state.ignoredItemsThisSession) do
+            if SmartLootEngine.triggerPeerForItem(item.name, item.id) then
                 triggeredAny = true
                 break -- Only trigger one peer per cycle
             end

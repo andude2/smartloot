@@ -535,46 +535,50 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                     newRuleValue = ""
                                 end
 
-                                -- Use the itemID and iconID from the popup if available, otherwise fall back to database values
-                                local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
-                                local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
-                                
-                                local success = false
-                                if peer == currentCharacter then
-                                    success = database.saveLootRule(itemName, itemID, newRuleValue, iconID)
-                                else
-                                    success = database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
-                                    if connectedPeerSet[peer] then
-                                        util.sendPeerCommand(peer, "/sl_rulescache")
-                                    end
-                                end
-                                
-                                if success then
-                                    -- Update persistent state
-                                    peerState.displayRule = (option == "KeepIfFewerThan") and "KeepIfFewerThan" or option
-                                    peerState.recentlyChanged = true
-                                    peerState.changeTime = mq.gettime()
-                                    logging.debug(string.format("[PeerRules] Successfully saved rule '%s' for %s -> %s (itemID=%d, iconID=%d)", 
-                                        newRuleValue, peer, itemName, itemID, iconID))
+                                if newRuleValue ~= currentRuleStr then
+                                    -- Use the itemID and iconID from the popup if available, otherwise fall back to database values
+                                    local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
+                                    local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                                     
-                                    -- Force refresh of rules cache
+                                    local success = false
                                     if peer == currentCharacter then
-                                        database.refreshLootRuleCache()
+                                        success = database.saveLootRule(itemName, itemID, newRuleValue, iconID)
                                     else
-                                        database.refreshLootRuleCacheForPeer(peer)
+                                        success = database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
                                     end
                                     
-                                    -- Debug: Check if rule is in cache after refresh
-                                    local testRules = database.getLootRulesForPeer(peer)
-                                    local testKey = itemID > 0 and string.format("%s_%d", itemName, itemID) or itemName
-                                    local testRule = testRules[testKey]
-                                    if testRule then
-                                        logging.debug(string.format("[PeerRules] Verified rule in cache: key=%s, rule=%s", testKey, testRule.rule))
+                                    if success then
+                                        -- Update persistent state
+                                        peerState.displayRule = (option == "KeepIfFewerThan") and "KeepIfFewerThan" or option
+                                        peerState.recentlyChanged = true
+                                        peerState.changeTime = mq.gettime()
+                                        logging.debug(string.format("[PeerRules] Successfully saved rule '%s' for %s -> %s (itemID=%d, iconID=%d)", 
+                                            newRuleValue, peer, itemName, itemID, iconID))
+                                        
+                                        -- Force refresh of rules cache
+                                        if peer == currentCharacter then
+                                            database.refreshLootRuleCache()
+                                        else
+                                            database.refreshLootRuleCacheForPeer(peer)
+                                        end
+                                        
+                                        -- Send command only for connected peers after change
+                                        if peer ~= currentCharacter and connectedPeerSet[peer] then
+                                            util.sendPeerCommand(peer, "/sl_rulescache")
+                                        end
+                                        
+                                        -- Debug: Check if rule is in cache after refresh
+                                        local testRules = database.getLootRulesForPeer(peer)
+                                        local testKey = itemID > 0 and string.format("%s_%d", itemName, itemID) or itemName
+                                        local testRule = testRules[testKey]
+                                        if testRule then
+                                            logging.debug(string.format("[PeerRules] Verified rule in cache: key=%s, rule=%s", testKey, testRule.rule))
+                                        else
+                                            logging.debug(string.format("[PeerRules] WARNING: Rule not found in cache after refresh! key=%s", testKey))
+                                        end
                                     else
-                                        logging.debug(string.format("[PeerRules] WARNING: Rule not found in cache after refresh! key=%s", testKey))
+                                        logging.debug(string.format("[PeerRules] Failed to save rule '%s' for %s -> %s", newRuleValue, peer, itemName))
                                     end
-                                else
-                                    logging.debug(string.format("[PeerRules] Failed to save rule '%s' for %s -> %s", newRuleValue, peer, itemName))
                                 end
                             end
                             if isSelected then
@@ -601,9 +605,6 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                     success = database.saveLootRule(itemName, itemID, updatedRule, iconID)
                                 else
                                     success = database.saveLootRuleFor(peer, itemName, itemID, updatedRule, iconID)
-                                    if connectedPeerSet[peer] then
-                                        util.sendPeerCommand(peer, "/sl_rulescache")
-                                    end
                                 end
                                 
                                 if success then
@@ -618,6 +619,11 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                     else
                                         database.refreshLootRuleCacheForPeer(peer)
                                     end
+                                    
+                                    -- Send command only for connected peers after change
+                                    if peer ~= currentCharacter and connectedPeerSet[peer] then
+                                        util.sendPeerCommand(peer, "/sl_rulescache")
+                                    end
                                 else
                                     logging.debug(string.format("[PeerRules] Failed to update threshold to %d for %s -> %s", newThreshold, peer, itemName))
                                 end
@@ -627,34 +633,38 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
 
                     ImGui.TableSetColumnIndex(2)
                     if ImGui.Button("Unset##" .. peer) then
-                        -- Use the itemID and iconID from the popup if available, otherwise fall back to database values
-                        local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
-                        local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
-                        
-                        local success = false
-                        if peer == currentCharacter then
-                            success = database.saveLootRule(itemName, itemID, "", iconID)
-                        else
-                            success = database.saveLootRuleFor(peer, itemName, itemID, "", iconID)
-                            if connectedPeerSet[peer] then
-                                util.sendPeerCommand(peer, "/sl_rulescache")
-                            end
-                        end
-                        
-                        if success then
-                            peerState.displayRule = "Unset"
-                            peerState.recentlyChanged = true
-                            peerState.changeTime = mq.gettime()
-                            logging.debug(string.format("[PeerRules] Successfully unset rule for %s -> %s", peer, itemName))
+                        if currentRuleStr ~= "" then
+                            -- Use the itemID and iconID from the popup if available, otherwise fall back to database values
+                            local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
+                            local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                             
-                            -- Force refresh of rules cache
+                            local success = false
                             if peer == currentCharacter then
-                                database.refreshLootRuleCache()
+                                success = database.saveLootRule(itemName, itemID, "", iconID)
                             else
-                                database.refreshLootRuleCacheForPeer(peer)
+                                success = database.saveLootRuleFor(peer, itemName, itemID, "", iconID)
                             end
-                        else
-                            logging.debug(string.format("[PeerRules] Failed to unset rule for %s -> %s", peer, itemName))
+                            
+                            if success then
+                                peerState.displayRule = "Unset"
+                                peerState.recentlyChanged = true
+                                peerState.changeTime = mq.gettime()
+                                logging.debug(string.format("[PeerRules] Successfully unset rule for %s -> %s", peer, itemName))
+                                
+                                -- Force refresh of rules cache
+                                if peer == currentCharacter then
+                                    database.refreshLootRuleCache()
+                                else
+                                    database.refreshLootRuleCacheForPeer(peer)
+                                end
+                                
+                                -- Send command only for connected peers after change
+                                if peer ~= currentCharacter and connectedPeerSet[peer] then
+                                    util.sendPeerCommand(peer, "/sl_rulescache")
+                                end
+                            else
+                                logging.debug(string.format("[PeerRules] Failed to unset rule for %s -> %s", peer, itemName))
+                            end
                         end
                     end
                 end
