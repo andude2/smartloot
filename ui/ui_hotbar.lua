@@ -203,6 +203,11 @@ function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
             
             local colorPushed = false
             local disabledPushed = false
+            local roundingPushed = false
+            
+            -- Push rounded corners style
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
+            roundingPushed = true
             
             -- Handle disabled state (overrides color)
             if not enabled then
@@ -239,6 +244,11 @@ function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
                 ImGui.PopStyleColor(3)
             elseif colorPushed then
                 ImGui.PopStyleColor(3)
+            end
+            
+            -- Pop rounding style
+            if roundingPushed then
+                ImGui.PopStyleVar(1)
             end
             
             -- Add spacing between buttons

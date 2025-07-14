@@ -13,6 +13,58 @@ local actors = require ("actors")
 local tempRules = require("modules.temp_rules")
 
 -- ============================================================================
+-- NAVIGATION HELPER FUNCTIONS
+-- ============================================================================
+
+-- Check if MQ2Nav is available and navmesh is loaded
+local function isNavAvailable()
+    local navPlugin = mq.TLO.Plugin("MQ2Nav")
+    if not navPlugin or not navPlugin.IsLoaded() then
+        return false
+    end
+    
+    local navigation = mq.TLO.Navigation
+    if not navigation or not navigation.MeshLoaded() then
+        return false
+    end
+    
+    return true
+end
+
+-- Smart navigation function that falls back to /moveto if nav is unavailable
+local function smartNavigate(spawnID, reason)
+    reason = reason or "navigation"
+    
+    if isNavAvailable() then
+        logging.debug(string.format("[Engine] Using /nav for %s (ID: %d)", reason, spawnID))
+        mq.cmdf("/nav id %d", spawnID)
+        return "nav"
+    else
+        logging.debug(string.format("[Engine] Nav unavailable, using /moveto for %s (ID: %d)", reason, spawnID))
+        mq.cmdf("/moveto id %d", spawnID)
+        return "moveto"
+    end
+end
+
+-- Stop navigation/movement
+local function stopMovement()
+    if isNavAvailable() and mq.TLO.Navigation.Active() then
+        mq.cmd("/nav stop")
+    end
+    -- Note: /moveto doesn't have a stop command, it completes automatically
+end
+
+-- Check if we're currently moving (nav or moveto)
+local function isMoving()
+    if isNavAvailable() then
+        return mq.TLO.Navigation.Active()
+    else
+        -- For /moveto, we check if we're moving towards our target
+        return mq.TLO.Me.Moving()
+    end
+end
+
+-- ============================================================================
 -- STATE MACHINE DEFINITIONS
 -- ============================================================================
 
@@ -139,7 +191,10 @@ SmartLootEngine.state = {
     -- Performance tracking
     lastTickTime = 0,
     averageTickTime = 0,
-    tickCount = 0
+    tickCount = 0,
+    
+    -- Corpse cache cleanup tracking
+    lastCorpseCacheCleanup = 0
 }
 
 -- ============================================================================
@@ -605,7 +660,7 @@ function SmartLootEngine.findNearestCorpse()
             local distance = corpse.Distance() or 999
             
             -- Skip if already processed
-            if not SmartLootEngine.state.processedCorpsesThisSession[corpseID] then
+            if not SmartLootEngine.isCorpseProcessed(corpseID) then
                 local corpseName = corpse.Name() or ""
                 local deity = corpse.Deity() or 0
                 
@@ -639,12 +694,85 @@ function SmartLootEngine.findNearestCorpse()
 end
 
 function SmartLootEngine.markCorpseProcessed(corpseID)
-    SmartLootEngine.state.processedCorpsesThisSession[corpseID] = true
+    -- Store corpse with timestamp for automated cleanup
+    SmartLootEngine.state.processedCorpsesThisSession[corpseID] = {
+        timestamp = mq.gettime(),
+        processed = true
+    }
     SmartLootEngine.stats.corpsesProcessed = SmartLootEngine.stats.corpsesProcessed + 1
     SmartLootEngine.state.sessionCorpseCount = SmartLootEngine.state.sessionCorpseCount + 1
     
     logging.debug(string.format("[Engine] Marked corpse %d as processed (total: %d)", 
                   corpseID, SmartLootEngine.stats.corpsesProcessed))
+end
+
+-- Clean up expired corpses from cache
+function SmartLootEngine.cleanupCorpseCache()
+    local currentTime = mq.gettime()
+    local expireTime = 30 * 60 * 1000 -- 30 minutes in milliseconds
+    local removedCount = 0
+    local totalCount = 0
+    
+    for corpseID, corpseData in pairs(SmartLootEngine.state.processedCorpsesThisSession) do
+        totalCount = totalCount + 1
+        
+        -- Handle legacy boolean entries (convert to new format)
+        if type(corpseData) == "boolean" then
+            if corpseData then
+                -- Convert old boolean true to new format with current timestamp
+                SmartLootEngine.state.processedCorpsesThisSession[corpseID] = {
+                    timestamp = currentTime,
+                    processed = true
+                }
+            else
+                -- Remove false entries
+                SmartLootEngine.state.processedCorpsesThisSession[corpseID] = nil
+                removedCount = removedCount + 1
+            end
+        elseif type(corpseData) == "table" then
+            local age = currentTime - corpseData.timestamp
+            
+            -- Remove if older than 30 minutes
+            if age > expireTime then
+                SmartLootEngine.state.processedCorpsesThisSession[corpseID] = nil
+                removedCount = removedCount + 1
+                logging.debug(string.format("[Engine] Removed expired corpse %d from cache (age: %.1f minutes)", 
+                              corpseID, age / 60000))
+            else
+                -- Check if corpse still exists in world
+                local corpse = mq.TLO.Spawn(corpseID)
+                if not corpse() then
+                    SmartLootEngine.state.processedCorpsesThisSession[corpseID] = nil
+                    removedCount = removedCount + 1
+                    logging.debug(string.format("[Engine] Removed disappeared corpse %d from cache", corpseID))
+                end
+            end
+        end
+    end
+    
+    if removedCount > 0 then
+        logging.debug(string.format("[Engine] Corpse cache cleanup: removed %d/%d entries", removedCount, totalCount))
+    end
+end
+
+-- Check if corpse is processed (handles both old and new format)
+function SmartLootEngine.isCorpseProcessed(corpseID)
+    local corpseData = SmartLootEngine.state.processedCorpsesThisSession[corpseID]
+    if not corpseData then
+        return false
+    end
+    
+    -- Handle legacy boolean format
+    if type(corpseData) == "boolean" then
+        return corpseData
+    end
+    
+    -- Handle new table format
+    if type(corpseData) == "table" then
+        return corpseData.processed or false
+    end
+    
+    return false
 end
 
 function SmartLootEngine.isCorpseInRange(corpse)
@@ -1195,7 +1323,7 @@ function SmartLootEngine.processFindingCorpseState()
         SmartLootEngine.state.navTargetX = corpse.x
         SmartLootEngine.state.navTargetY = corpse.y
         SmartLootEngine.state.navTargetZ = corpse.z
-        mq.cmdf("/nav id %d", corpse.spawnID)
+        SmartLootEngine.state.navMethod = smartNavigate(corpse.spawnID, "corpse navigation")
         scheduleNextTick(SmartLootEngine.config.navRetryDelayMs)
     end
 end
@@ -1205,7 +1333,7 @@ function SmartLootEngine.processNavigatingToCorpseState()
     local corpse = mq.TLO.Spawn(SmartLootEngine.state.currentCorpseSpawnID)
     if not corpse() then
         logging.debug("[Engine] Navigation target disappeared")
-        mq.cmd("/nav stop")
+        stopMovement()
         setState(SmartLootEngine.LootState.FindingCorpse, "Target disappeared")
         scheduleNextTick(100)
         return
@@ -1217,7 +1345,7 @@ function SmartLootEngine.processNavigatingToCorpseState()
     -- Check if we're now in range
     if distance <= SmartLootEngine.config.lootRange then
         logging.debug(string.format("[Engine] Navigation successful, distance: %.1f", distance))
-        mq.cmd("/nav stop")
+        stopMovement()
         setState(SmartLootEngine.LootState.OpeningLootWindow, "Navigation complete")
         scheduleNextTick(250)
         return
@@ -1235,7 +1363,7 @@ function SmartLootEngine.processNavigatingToCorpseState()
     
     if navElapsed > SmartLootEngine.config.maxNavTimeMs then
         logging.debug(string.format("[Engine] Navigation timeout after %dms", navElapsed))
-        mq.cmd("/nav stop")
+        stopMovement()
         SmartLootEngine.markCorpseProcessed(SmartLootEngine.state.currentCorpseID)
         SmartLootEngine.stats.navigationTimeouts = SmartLootEngine.stats.navigationTimeouts + 1
         setState(SmartLootEngine.LootState.FindingCorpse, "Navigation timeout")
@@ -1606,9 +1734,7 @@ function SmartLootEngine.processCombatDetectedState()
     end
     
     -- Stop navigation if active
-    if mq.TLO.Navigation.Active() then
-        mq.cmd("/nav stop")
-    end
+    stopMovement()
     
     -- Auto-inventory any cursor item
     if SmartLootEngine.isItemOnCursor() and SmartLootEngine.config.autoInventoryOnLoot then
@@ -1636,7 +1762,7 @@ function SmartLootEngine.processEmergencyStopState()
         mq.cmd("/notify LootWnd DoneButton leftmouseup")
     end
     
-    mq.cmd("/nav stop")
+    stopMovement()
     
     if SmartLootEngine.isItemOnCursor() then
         mq.cmd("/autoinv")
@@ -1747,6 +1873,12 @@ function SmartLootEngine.processTick()
     -- Check if it's time to process
     if tickStart < SmartLootEngine.state.nextActionTime then
         return
+    end
+    
+    -- Automated corpse cache cleanup (every 5 minutes)
+    if tickStart - SmartLootEngine.state.lastCorpseCacheCleanup > 300000 then -- 5 minutes in milliseconds
+        SmartLootEngine.cleanupCorpseCache()
+        SmartLootEngine.state.lastCorpseCacheCleanup = tickStart
     end
     
     -- Safety checks
@@ -1966,6 +2098,7 @@ function SmartLootEngine.resetProcessedCorpses()
     SmartLootEngine.state.processedCorpsesThisSession = {}
     SmartLootEngine.state.ignoredItemsThisSession = {}
     SmartLootEngine.state.recordedDropsThisSession = {}
+    logging.debug("[Engine] Corpse cache manually cleared")
     SmartLootEngine.state.sessionCorpseCount = 0
 
     logging.debug("[Engine] Reset all processed corpse tracking")
