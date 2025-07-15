@@ -1342,14 +1342,14 @@ function SmartLootEngine.processNavigatingToCorpseState()
     if distance <= SmartLootEngine.config.lootRange then
         logging.debug(string.format("[Engine] Navigation successful, distance: %.1f", distance))
         stopMovement()
-        
+
         -- Wait a moment for movement to fully stop before opening loot window
         if isMoving() then
             logging.debug("[Engine] Reached corpse but still moving - waiting for full stop")
             scheduleNextTick(150)
             return
         end
-        
+
         setState(SmartLootEngine.LootState.OpeningLootWindow, "Navigation complete")
         scheduleNextTick(150) -- Slightly longer delay to ensure stability
         return
@@ -1396,17 +1396,20 @@ function SmartLootEngine.processOpeningLootWindowState()
         if corpse() then
             local distance = corpse.Distance() or 999
             if distance > SmartLootEngine.config.lootRange + SmartLootEngine.config.lootRangeTolerance then
-                logging.debug(string.format("[Engine] Too far from corpse after stopping (%.1f) - closing loot window", distance))
+                logging.debug(string.format("[Engine] Too far from corpse after stopping (%.1f) - closing loot window",
+                    distance))
                 mq.cmd("/notify LootWnd DoneButton leftmouseup")
                 setState(SmartLootEngine.LootState.NavigatingToCorpse, "Out of range after stopping")
                 SmartLootEngine.state.navStartTime = mq.gettime()
-                SmartLootEngine.state.navMethod = smartNavigate(SmartLootEngine.state.currentCorpseSpawnID, "re-navigation")
+                SmartLootEngine.state.navMethod = smartNavigate(SmartLootEngine.state.currentCorpseSpawnID,
+                    "re-navigation")
                 scheduleNextTick(SmartLootEngine.config.navRetryDelayMs)
                 return
             end
         end
 
-        logging.debug(string.format("[Engine] Loot window opened for corpse %d, movement stopped", SmartLootEngine.state.currentCorpseID))
+        logging.debug(string.format("[Engine] Loot window opened for corpse %d, movement stopped",
+            SmartLootEngine.state.currentCorpseID))
 
         SmartLootEngine.state.totalItemsOnCorpse = SmartLootEngine.getCorpseItemCount()
 
