@@ -67,6 +67,30 @@ local commandCategories = {
         }
     },
     {
+        name = "Mode Control",
+        commands = {
+            {cmd = "/sl_mode", params = "<mode>", desc = "Set loot mode. Valid modes: main, background, rgmain, rgonce, once, disabled.", hasRequiredParam = true}
+        }
+    },
+    {
+        name = "Temporary Rules (AFK Farming)",
+        commands = {
+            {cmd = "/sl_addtemp", params = "<itemname> <rule> [threshold]", desc = "Add temporary loot rule. Rules: Keep, Ignore, Destroy, KeepIfFewerThan. Example: /sl_addtemp \"Short Sword\" Keep", hasRequiredParam = true},
+            {cmd = "/sl_listtemp", params = "", desc = "List all active temporary loot rules.", hasOptionalParam = false},
+            {cmd = "/sl_removetemp", params = "<itemname>", desc = "Remove a specific temporary loot rule.", hasRequiredParam = true},
+            {cmd = "/sl_cleartemp", params = "", desc = "Clear all temporary rules (requires confirmation with /sl_cleartemp_confirm).", hasOptionalParam = false},
+            {cmd = "/sl_cleartemp_confirm", params = "", desc = "Confirm clearing all temporary rules.", hasOptionalParam = false},
+            {cmd = "/sl_afkfarm", params = "[status|list|help]", desc = "AFK farming mode status and help. Shows temporary rule status and usage examples.", hasOptionalParam = true}
+        }
+    },
+    {
+        name = "System Commands",
+        commands = {
+            {cmd = "/sl_save", params = "", desc = "Manually save SmartLoot configuration to disk.", hasOptionalParam = false},
+            {cmd = "/sl_rulescache", params = "", desc = "Refresh loot rules cache from database (internal command, usually sent to peers).", hasOptionalParam = false}
+        }
+    },
+    {
         name = "Advanced/Debug",
         commands = {
             {cmd = "/sl_waterfall_debug", params = "", desc = "Show detailed waterfall chain debugging information.", hasOptionalParam = false},

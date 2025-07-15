@@ -442,6 +442,127 @@ local function draw_timing_settings()
     ImGui.Spacing()
 end
 
+local function draw_speed_settings()
+    -- Speed Settings Section
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.9, 0.4, 1.0)  -- Light green header
+    if ImGui.CollapsingHeader("Processing Speed") then
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+        -- Help button
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)  -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)  -- Slight highlight on hover
+        if ImGui.Button("(?)##SpeedHelp") then
+            ImGui.OpenPopup("SpeedSettingsHelp")
+        end
+        ImGui.PopStyleColor(2)
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Click for speed setting descriptions")
+        end
+        
+        -- Get current speed settings
+        local speedMultiplier = config.getSpeedMultiplier()
+        local speedPercentage = config.getSpeedPercentage()
+        
+        -- Display current speed as percentage
+        local speedText = "Normal"
+        local speedColor = {0.9, 0.9, 0.9, 1.0}  -- White for normal
+        if speedPercentage < 0 then
+            speedText = string.format("%d%% Faster", -speedPercentage)
+            speedColor = {0.4, 0.9, 0.4, 1.0}  -- Green for faster
+        elseif speedPercentage > 0 then
+            speedText = string.format("%d%% Slower", speedPercentage)
+            speedColor = {0.9, 0.4, 0.4, 1.0}  -- Red for slower
+        end
+        
+        ImGui.Text("Current Speed: ")
+        ImGui.SameLine()
+        ImGui.TextColored(speedColor[1], speedColor[2], speedColor[3], speedColor[4], speedText)
+        
+        -- Slider for speed adjustment
+        ImGui.Text("Speed Adjustment:")
+        ImGui.PushItemWidth(300)
+        local newPercentage = ImGui.SliderInt("##SpeedSlider", speedPercentage, -75, 200, "%d%%")
+        if newPercentage ~= speedPercentage then
+            config.setSpeedPercentage(newPercentage)
+            logging.log(string.format("Speed adjusted to %d%% (%s)", 
+                newPercentage, 
+                newPercentage < 0 and "faster" or (newPercentage > 0 and "slower" or "normal")))
+        end
+        ImGui.PopItemWidth()
+        
+        -- Preset buttons
+        ImGui.Text("Speed Presets:")
+        if ImGui.Button("Very Fast (50% faster)") then
+            config.applySpeedPreset("very_fast")
+            logging.log("Applied Very Fast speed preset (50% faster)")
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Fast (25% faster)") then
+            config.applySpeedPreset("fast")
+            logging.log("Applied Fast speed preset (25% faster)")
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Normal") then
+            config.applySpeedPreset("normal")
+            logging.log("Applied Normal speed preset")
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Slow (50% slower)") then
+            config.applySpeedPreset("slow")
+            logging.log("Applied Slow speed preset (50% slower)")
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Very Slow (100% slower)") then
+            config.applySpeedPreset("very_slow")
+            logging.log("Applied Very Slow speed preset (100% slower)")
+        end
+        
+        -- Help Popup
+        if ImGui.BeginPopup("SpeedSettingsHelp") then
+            ImGui.Text("SmartLoot Speed Settings Help")
+            ImGui.Separator()
+            ImGui.BulletText("Speed affects all timing operations in SmartLoot")
+            ImGui.BulletText("Negative percentages = faster processing")
+            ImGui.BulletText("Positive percentages = slower processing")
+            ImGui.BulletText("0% = normal speed (default)")
+            ImGui.Separator()
+            ImGui.Text("Recommendations:")
+            ImGui.BulletText("Fast computers, good connection: Try 25-50% faster")
+            ImGui.BulletText("Slower computers, high latency: Try 25-50% slower")
+            ImGui.BulletText("If experiencing errors: Increase speed percentage")
+            ImGui.EndPopup()
+        end
+        
+        -- Show current timing values
+        if ImGui.CollapsingHeader("Current Timing Values", ImGuiTreeNodeFlags.None) then
+            ImGui.BeginTable("TimingValuesTable", 2, ImGuiTableFlags.Borders)
+            ImGui.TableSetupColumn("Setting")
+            ImGui.TableSetupColumn("Value (ms)")
+            ImGui.TableHeadersRow()
+            
+            local function showTimingRow(name, value)
+                ImGui.TableNextRow()
+                ImGui.TableSetColumnIndex(0)
+                ImGui.Text(name)
+                ImGui.TableSetColumnIndex(1)
+                ImGui.Text(tostring(value) .. " ms")
+            end
+            
+            showTimingRow("Item Population Delay", config.engineTiming.itemPopulationDelayMs)
+            showTimingRow("Item Processing Delay", config.engineTiming.itemProcessingDelayMs)
+            showTimingRow("Loot Action Delay", config.engineTiming.lootActionDelayMs)
+            showTimingRow("Ignored Item Delay", config.engineTiming.ignoredItemDelayMs)
+            showTimingRow("Navigation Retry Delay", config.engineTiming.navRetryDelayMs)
+            showTimingRow("Combat Wait Delay", config.engineTiming.combatWaitDelayMs)
+            showTimingRow("Max Navigation Time", config.engineTiming.maxNavTimeMs)
+            ImGui.EndTable()
+        end
+    else
+        ImGui.PopStyleColor()
+    end
+    ImGui.Spacing()
+end
+
 local function draw_chase_settings(config)
     -- Chase Integration Settings Section
     ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.8, 0.6, 1.0)  -- Light orange header
@@ -860,6 +981,9 @@ function uiSettings.draw(lootUI, settings, config)
         
         -- Timing Settings Section
         draw_timing_settings()
+        
+        -- Speed Settings Section
+        draw_speed_settings()
         
         -- Decision Settings Section
         ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.6, 1.0, 1.0)  -- Light purple header

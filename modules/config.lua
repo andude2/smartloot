@@ -49,9 +49,37 @@ config.hotbar = {
     }
 }
 
--- NEW: SmartLoot Engine Timing configuration
+-- NEW: SmartLoot Engine Speed Configuration
+config.engineSpeed = {
+    -- Speed multiplier: 1.0 = normal, 0.75 = 25% faster, 1.25 = 25% slower
+    -- Lower values = faster processing, higher values = slower processing
+    multiplier = 1.0,
+    
+    -- Base timing settings (in milliseconds) - these are the reference values
+    baseTiming = {
+        tickIntervalMs = 25,
+        itemPopulationDelayMs = 100,
+        itemProcessingDelayMs = 50,
+        ignoredItemDelayMs = 25,
+        lootActionDelayMs = 200,
+        navRetryDelayMs = 500,
+        combatWaitDelayMs = 1500,
+        
+        -- Timeout settings
+        maxNavTimeMs = 30000,
+        pendingDecisionTimeoutMs = 30000,
+        maxLootWaitTime = 5000,
+        errorRecoveryDelayMs = 2000,
+        maxItemProcessingTime = 10000,
+        
+        -- Peer coordination timing
+        peerTriggerDelay = 10000
+    }
+}
+
+-- NEW: SmartLoot Engine Timing configuration (computed from speed settings)
 config.engineTiming = {
-    -- Timing settings (in milliseconds)
+    -- These will be computed based on speed multiplier
     tickIntervalMs = 25,
     itemPopulationDelayMs = 100,
     itemProcessingDelayMs = 50,
@@ -102,6 +130,8 @@ local configData = {
         hotbar = config.hotbar,
         -- NEW: Engine timing configuration in global settings
         engineTiming = config.engineTiming,
+        -- NEW: Engine speed configuration in global settings
+        engineSpeed = config.engineSpeed,
     },
     servers = {}
 }
@@ -142,6 +172,11 @@ function config.load()
                 config.engineTiming = configData.global.engineTiming
             end
             
+            -- NEW: Apply engine speed settings
+            if configData.global.engineSpeed then
+                config.engineSpeed = configData.global.engineSpeed
+            end
+            
             -- Apply per-server settings
             local serverConfig = configData.servers[sanitizedServerName] or {}
             config.peerLootOrder = serverConfig.peerLootOrder or {}
@@ -178,6 +213,9 @@ function config.save()
     
     -- NEW: Update engine timing settings
     configData.global.engineTiming = config.engineTiming
+    
+    -- NEW: Update engine speed settings
+    configData.global.engineSpeed = config.engineSpeed
     
     -- Ensure server config exists
     if not configData.servers[sanitizedServerName] then
@@ -643,6 +681,63 @@ function config.syncTimingToEngine()
         return true
     end
     return false
+end
+
+-- NEW: Speed Multiplier Functions
+-- Function to apply speed multiplier to all timing settings
+function config.applySpeedMultiplier(multiplier)
+    -- Validate multiplier (prevent negative or extreme values)
+    multiplier = math.max(0.25, math.min(4.0, multiplier))
+    
+    -- Store the new multiplier
+    config.engineSpeed.multiplier = multiplier
+    
+    -- Apply multiplier to all timing settings
+    for key, baseValue in pairs(config.engineSpeed.baseTiming) do
+        config.engineTiming[key] = math.floor(baseValue * multiplier + 0.5)
+    end
+    
+    -- Sync to engine
+    config.syncTimingToEngine()
+    config.save()
+    return true
+end
+
+-- Function to get current speed multiplier
+function config.getSpeedMultiplier()
+    return config.engineSpeed.multiplier
+end
+
+-- Function to set speed as percentage faster/slower
+-- Examples: 
+--   -25 = 25% faster (multiplier = 0.75)
+--   +25 = 25% slower (multiplier = 1.25)
+function config.setSpeedPercentage(percentage)
+    local multiplier = 1.0 + (percentage / 100)
+    return config.applySpeedMultiplier(multiplier)
+end
+
+-- Function to get current speed as percentage
+function config.getSpeedPercentage()
+    local percentage = (config.engineSpeed.multiplier - 1.0) * 100
+    return math.floor(percentage + 0.5)
+end
+
+-- Preset speed profiles
+function config.applySpeedPreset(preset)
+    if preset == "very_fast" then
+        return config.applySpeedMultiplier(0.5)  -- 50% faster
+    elseif preset == "fast" then
+        return config.applySpeedMultiplier(0.75) -- 25% faster
+    elseif preset == "normal" then
+        return config.applySpeedMultiplier(1.0)  -- Normal speed
+    elseif preset == "slow" then
+        return config.applySpeedMultiplier(1.5)  -- 50% slower
+    elseif preset == "very_slow" then
+        return config.applySpeedMultiplier(2.0)  -- 100% slower
+    else
+        return false
+    end
 end
 
 -- Updated debug function to show current configuration
