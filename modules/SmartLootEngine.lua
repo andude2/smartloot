@@ -1311,7 +1311,7 @@ function SmartLootEngine.processFindingCorpseState()
     -- Check if we need to navigate
     if SmartLootEngine.isCorpseInRange(corpse) then
         setState(SmartLootEngine.LootState.OpeningLootWindow, "Within loot range")
-        scheduleNextTick(50)
+        scheduleNextTick(100)
     else
         setState(SmartLootEngine.LootState.NavigatingToCorpse, "Too far from corpse")
         SmartLootEngine.state.navStartTime = mq.gettime()
@@ -1342,8 +1342,16 @@ function SmartLootEngine.processNavigatingToCorpseState()
     if distance <= SmartLootEngine.config.lootRange then
         logging.debug(string.format("[Engine] Navigation successful, distance: %.1f", distance))
         stopMovement()
+        
+        -- Wait a moment for movement to fully stop before opening loot window
+        if isMoving() then
+            logging.debug("[Engine] Reached corpse but still moving - waiting for full stop")
+            scheduleNextTick(150)
+            return
+        end
+        
         setState(SmartLootEngine.LootState.OpeningLootWindow, "Navigation complete")
-        scheduleNextTick(50)
+        scheduleNextTick(150) -- Slightly longer delay to ensure stability
         return
     end
 
@@ -1375,7 +1383,30 @@ function SmartLootEngine.processOpeningLootWindowState()
     mq.cmdf("/target id %d", SmartLootEngine.state.currentCorpseSpawnID)
 
     if SmartLootEngine.isLootWindowOpen() then
-        logging.debug(string.format("[Engine] Loot window opened for corpse %d", SmartLootEngine.state.currentCorpseID))
+        -- Ensure we've stopped moving before processing items
+        if isMoving() then
+            logging.debug("[Engine] Loot window open but still moving - waiting for movement to stop")
+            stopMovement()
+            scheduleNextTick(200) -- Wait longer for movement to stop
+            return
+        end
+
+        -- Double-check we're still in range after stopping
+        local corpse = mq.TLO.Spawn(SmartLootEngine.state.currentCorpseSpawnID)
+        if corpse() then
+            local distance = corpse.Distance() or 999
+            if distance > SmartLootEngine.config.lootRange + SmartLootEngine.config.lootRangeTolerance then
+                logging.debug(string.format("[Engine] Too far from corpse after stopping (%.1f) - closing loot window", distance))
+                mq.cmd("/notify LootWnd DoneButton leftmouseup")
+                setState(SmartLootEngine.LootState.NavigatingToCorpse, "Out of range after stopping")
+                SmartLootEngine.state.navStartTime = mq.gettime()
+                SmartLootEngine.state.navMethod = smartNavigate(SmartLootEngine.state.currentCorpseSpawnID, "re-navigation")
+                scheduleNextTick(SmartLootEngine.config.navRetryDelayMs)
+                return
+            end
+        end
+
+        logging.debug(string.format("[Engine] Loot window opened for corpse %d, movement stopped", SmartLootEngine.state.currentCorpseID))
 
         SmartLootEngine.state.totalItemsOnCorpse = SmartLootEngine.getCorpseItemCount()
 
@@ -1389,11 +1420,18 @@ function SmartLootEngine.processOpeningLootWindowState()
             )
         end
 
-        setState(SmartLootEngine.LootState.ProcessingItems, "Loot window opened")
+        setState(SmartLootEngine.LootState.ProcessingItems, "Loot window opened and stable")
         scheduleNextTick(SmartLootEngine.config.itemPopulationDelayMs)
     else
         logging.debug(string.format("[Engine] Attempting to open loot window (attempt %d)",
             SmartLootEngine.state.openLootAttempts + 1))
+
+        -- Make sure we're not moving when trying to open loot window
+        if isMoving() then
+            stopMovement()
+            scheduleNextTick(100) -- Short delay to let movement stop
+            return
+        end
 
         mq.cmd("/loot")
         SmartLootEngine.state.openLootAttempts = SmartLootEngine.state.openLootAttempts + 1
@@ -1406,7 +1444,7 @@ function SmartLootEngine.processOpeningLootWindowState()
             setState(SmartLootEngine.LootState.FindingCorpse, "Loot window failed")
             scheduleNextTick(50)
         else
-            scheduleNextTick(50)
+            scheduleNextTick(200) -- Longer delay between loot attempts
         end
     end
 end
@@ -1452,7 +1490,7 @@ function SmartLootEngine.processProcessingItemsState()
         -- Empty slot, increment streak and move to next
         SmartLootEngine.state.emptySlotStreak = SmartLootEngine.state.emptySlotStreak + 1
         SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
-        scheduleNextTick(10)
+        scheduleNextTick(5)
         return
     end
 
@@ -1462,7 +1500,7 @@ function SmartLootEngine.processProcessingItemsState()
     if not SmartLootEngine.hasInventorySpace() then
         logging.debug("[Engine] Skipping corpse due to insufficient inventory space")
         setState(SmartLootEngine.LootState.CleaningUpCorpse, "Inventory full")
-        scheduleNextTick(100)
+        scheduleNextTick(50)
         return
     end
 
@@ -1582,7 +1620,7 @@ function SmartLootEngine.processCleaningUpCorpseState()
     -- Close loot window
     if SmartLootEngine.isLootWindowOpen() then
         mq.cmd("/notify LootWnd DoneButton leftmouseup")
-        scheduleNextTick(50)
+        scheduleNextTick(75)
         return
     end
 

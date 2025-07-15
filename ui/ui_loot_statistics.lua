@@ -31,28 +31,36 @@ local function getTimeFrameFilter(timeFrame)
 
     if timeFrame == "Today" then
         local startOfDay = os.time({ year = today.year, month = today.month, day = today.day, hour = 0, min = 0, sec = 0 })
-        return os.date("%Y-%m-%d", startOfDay), os.date("%Y-%m-%d", now)
+        local endOfDay = startOfDay + 86399 -- End of today
+        return os.date("%Y-%m-%d %H:%M:%S", startOfDay), os.date("%Y-%m-%d %H:%M:%S", endOfDay)
     elseif timeFrame == "Yesterday" then
         local yesterday = now - 86400
         local yesterdayDate = os.date("*t", yesterday)
         local startOfYesterday = os.time({
             year = yesterdayDate.year,
             month = yesterdayDate.month,
-            day = yesterdayDate
-                .day,
+            day = yesterdayDate.day,
             hour = 0,
             min = 0,
             sec = 0
         })
         local endOfYesterday = startOfYesterday + 86399
-        return os.date("%Y-%m-%d", startOfYesterday), os.date("%Y-%m-%d", endOfYesterday)
+        return os.date("%Y-%m-%d %H:%M:%S", startOfYesterday), os.date("%Y-%m-%d %H:%M:%S", endOfYesterday)
     elseif timeFrame == "This Week" then
         local daysBack = (today.wday - 2) % 7 -- Monday as start of week
         local startOfWeek = now - (daysBack * 86400)
-        return os.date("%Y-%m-%d", startOfWeek), os.date("%Y-%m-%d", now)
+        local startOfWeekDay = os.time({
+            year = os.date("*t", startOfWeek).year,
+            month = os.date("*t", startOfWeek).month,
+            day = os.date("*t", startOfWeek).day,
+            hour = 0,
+            min = 0,
+            sec = 0
+        })
+        return os.date("%Y-%m-%d %H:%M:%S", startOfWeekDay), os.date("%Y-%m-%d %H:%M:%S", now)
     elseif timeFrame == "This Month" then
         local startOfMonth = os.time({ year = today.year, month = today.month, day = 1, hour = 0, min = 0, sec = 0 })
-        return os.date("%Y-%m-%d", startOfMonth), os.date("%Y-%m-%d", now)
+        return os.date("%Y-%m-%d %H:%M:%S", startOfMonth), os.date("%Y-%m-%d %H:%M:%S", now)
     end
 
     return "", ""
