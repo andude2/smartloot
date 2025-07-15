@@ -1206,6 +1206,80 @@ function database.checkRecentCorpseRecord(zoneName, corpseID, timeWindowMinutes)
     return found
 end
 
+-- Get zone breakdown for a specific item
+function database.getItemZoneBreakdown(itemName, itemID, timeFrame)
+    if not db then
+        logging.error("[Database] Database not initialized")
+        return {}
+    end
+    
+    local timeFilter = ""
+    if timeFrame and timeFrame ~= "All Time" then
+        if timeFrame == "Today" then
+            timeFilter = "AND d.timestamp >= date('now', 'start of day')"
+        elseif timeFrame == "Yesterday" then
+            timeFilter = "AND d.timestamp >= date('now', '-1 day', 'start of day') AND d.timestamp < date('now', 'start of day')"
+        elseif timeFrame == "This Week" then
+            timeFilter = "AND d.timestamp >= date('now', 'weekday 1', '-7 days')"
+        elseif timeFrame == "This Month" then
+            timeFilter = "AND d.timestamp >= date('now', 'start of month')"
+        end
+    end
+    
+    local query = string.format([[
+        SELECT 
+            d.zone_name,
+            COUNT(d.id) as drop_count,
+            SUM(d.item_count) as total_quantity,
+            (
+                SELECT COUNT(*) 
+                FROM loot_stats_corpses c 
+                WHERE c.zone_name = d.zone_name 
+                %s
+            ) as corpse_count
+        FROM loot_stats_drops d
+        WHERE (d.item_name = ? OR (d.item_id = ? AND d.item_id > 0))
+        %s
+        GROUP BY d.zone_name
+        ORDER BY drop_count DESC
+    ]], timeFilter:gsub("d%.timestamp", "c.timestamp"), timeFilter)
+    
+    local stmt = prepareStatement(query)
+    if not stmt then
+        return {}
+    end
+    
+    stmt:bind_values(itemName, itemID or 0)
+    
+    local results = {}
+    local totalDrops = 0
+    
+    -- First pass: collect data and calculate total drops
+    for row in stmt:nrows() do
+        local dropCount = tonumber(row.drop_count) or 0
+        local corpseCount = tonumber(row.corpse_count) or 0
+        totalDrops = totalDrops + dropCount
+        
+        -- Calculate proper drop rate: drops per corpse * 100
+        local dropRate = corpseCount > 0 and (dropCount / corpseCount * 100) or 0
+        
+        table.insert(results, {
+            zone_name = row.zone_name,
+            drop_count = dropCount,
+            corpse_count = corpseCount,
+            drop_rate = math.floor(dropRate * 100 + 0.5) / 100, -- Round to 2 decimal places
+            total_quantity = tonumber(row.total_quantity) or 0
+        })
+    end
+    
+    -- Second pass: calculate percentage of total drops per zone
+    for _, result in ipairs(results) do
+        result.zone_percentage = totalDrops > 0 and math.floor((result.drop_count / totalDrops) * 100 + 0.5) or 0
+    end
+    
+    stmt:finalize()
+    return results
+end
 
 function database.cleanup()
     if db then
