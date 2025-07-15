@@ -1173,6 +1173,10 @@ if dbInitialized then
     SmartLootEngine.config.pendingDecisionTimeoutMs = settings.pendingDecisionTimeout
     SmartLootEngine.config.defaultUnknownItemAction = settings.defaultUnknownItemAction
     logging.log("[SmartLoot] Pending decision timeout set to: " .. (settings.pendingDecisionTimeout / 1000) .. " seconds")
+    
+    -- Sync timing settings from persistent config to engine
+    config.syncTimingToEngine()
+    logging.log("[SmartLoot] Timing settings loaded from persistent config")
 end
 if uiLiveStats then
     logging.log("[SmartLoot] Live Stats Window: Available")

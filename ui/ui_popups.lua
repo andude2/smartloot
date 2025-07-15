@@ -12,12 +12,12 @@ local uiPopups = {}
 -- Loot Decision Popup - REDESIGNED with better layout and consistent button sizing
 function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
     if lootUI.currentItem then
-        ImGui.SetNextWindowSize(520, 420)
+        ImGui.SetNextWindowSize(520, 350)
         local decisionOpen = ImGui.Begin("SmartLoot - Choose Action", true, ImGuiWindowFlags.NoResize)
         if decisionOpen then
             -- Header with item info in a styled box
             ImGui.PushStyleColor(ImGuiCol.ChildBg, 0.1, 0.1, 0.2, 0.8)
-            ImGui.BeginChild("ItemHeader", 0, 60, true)
+            ImGui.BeginChild("ItemHeader", 0, 70, true)
             ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 8)
             ImGui.Text("Item requiring decision:")
             ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2)

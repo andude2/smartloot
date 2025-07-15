@@ -49,6 +49,28 @@ config.hotbar = {
     }
 }
 
+-- NEW: SmartLoot Engine Timing configuration
+config.engineTiming = {
+    -- Timing settings (in milliseconds)
+    tickIntervalMs = 25,
+    itemPopulationDelayMs = 100,
+    itemProcessingDelayMs = 50,
+    ignoredItemDelayMs = 25,
+    lootActionDelayMs = 200,
+    navRetryDelayMs = 500,
+    combatWaitDelayMs = 1500,
+    
+    -- Timeout settings
+    maxNavTimeMs = 30000,
+    pendingDecisionTimeoutMs = 30000,
+    maxLootWaitTime = 5000,
+    errorRecoveryDelayMs = 2000,
+    maxItemProcessingTime = 10000,
+    
+    -- Peer coordination timing
+    peerTriggerDelay = 10000
+}
+
 -- Valid chat output modes
 config.validChatModes = {
     "rsay",
@@ -78,6 +100,8 @@ local configData = {
         chaseResumeCommand = config.chaseResumeCommand,
         -- NEW: Hotbar configuration in global settings
         hotbar = config.hotbar,
+        -- NEW: Engine timing configuration in global settings
+        engineTiming = config.engineTiming,
     },
     servers = {}
 }
@@ -113,6 +137,11 @@ function config.load()
                 config.hotbar = configData.global.hotbar
             end
             
+            -- NEW: Apply engine timing settings
+            if configData.global.engineTiming then
+                config.engineTiming = configData.global.engineTiming
+            end
+            
             -- Apply per-server settings
             local serverConfig = configData.servers[sanitizedServerName] or {}
             config.peerLootOrder = serverConfig.peerLootOrder or {}
@@ -146,6 +175,9 @@ function config.save()
     
     -- NEW: Update hotbar settings
     configData.global.hotbar = config.hotbar
+    
+    -- NEW: Update engine timing settings
+    configData.global.engineTiming = config.engineTiming
     
     -- Ensure server config exists
     if not configData.servers[sanitizedServerName] then
@@ -486,6 +518,131 @@ function config.resetHotbarToDefaults()
         }
     }
     config.save()
+end
+
+-- NEW: Engine Timing configuration helper functions
+function config.getEngineTiming()
+    return config.engineTiming
+end
+
+function config.setEngineTimingValue(key, value)
+    if config.engineTiming[key] ~= nil then
+        config.engineTiming[key] = value
+        config.save()
+        return true
+    end
+    return false
+end
+
+function config.setItemPopulationDelay(delayMs)
+    config.engineTiming.itemPopulationDelayMs = delayMs
+    config.save()
+end
+
+function config.setItemProcessingDelay(delayMs)
+    config.engineTiming.itemProcessingDelayMs = delayMs
+    config.save()
+end
+
+function config.setLootActionDelay(delayMs)
+    config.engineTiming.lootActionDelayMs = delayMs
+    config.save()
+end
+
+function config.setIgnoredItemDelay(delayMs)
+    config.engineTiming.ignoredItemDelayMs = delayMs
+    config.save()
+end
+
+function config.setNavRetryDelay(delayMs)
+    config.engineTiming.navRetryDelayMs = delayMs
+    config.save()
+end
+
+function config.setMaxNavTime(timeMs)
+    config.engineTiming.maxNavTimeMs = timeMs
+    config.save()
+end
+
+function config.setCombatWaitDelay(delayMs)
+    config.engineTiming.combatWaitDelayMs = delayMs
+    config.save()
+end
+
+function config.applyTimingPreset(preset)
+    if preset == "fast" then
+        config.engineTiming.itemPopulationDelayMs = 75
+        config.engineTiming.itemProcessingDelayMs = 25
+        config.engineTiming.lootActionDelayMs = 150
+        config.engineTiming.ignoredItemDelayMs = 10
+        config.engineTiming.navRetryDelayMs = 250
+        config.engineTiming.combatWaitDelayMs = 1000
+    elseif preset == "balanced" then
+        config.engineTiming.itemPopulationDelayMs = 100
+        config.engineTiming.itemProcessingDelayMs = 50
+        config.engineTiming.lootActionDelayMs = 200
+        config.engineTiming.ignoredItemDelayMs = 25
+        config.engineTiming.navRetryDelayMs = 500
+        config.engineTiming.combatWaitDelayMs = 1500
+    elseif preset == "conservative" then
+        config.engineTiming.itemPopulationDelayMs = 200
+        config.engineTiming.itemProcessingDelayMs = 100
+        config.engineTiming.lootActionDelayMs = 300
+        config.engineTiming.ignoredItemDelayMs = 50
+        config.engineTiming.navRetryDelayMs = 750
+        config.engineTiming.combatWaitDelayMs = 2500
+    else
+        return false
+    end
+    config.save()
+    return true
+end
+
+function config.resetEngineTimingToDefaults()
+    config.engineTiming = {
+        -- Timing settings (in milliseconds)
+        tickIntervalMs = 25,
+        itemPopulationDelayMs = 100,
+        itemProcessingDelayMs = 50,
+        ignoredItemDelayMs = 25,
+        lootActionDelayMs = 200,
+        navRetryDelayMs = 500,
+        combatWaitDelayMs = 1500,
+        
+        -- Timeout settings
+        maxNavTimeMs = 30000,
+        pendingDecisionTimeoutMs = 30000,
+        maxLootWaitTime = 5000,
+        errorRecoveryDelayMs = 2000,
+        maxItemProcessingTime = 10000,
+        
+        -- Peer coordination timing
+        peerTriggerDelay = 10000
+    }
+    config.save()
+end
+
+-- Sync engine timing settings to SmartLootEngine
+function config.syncTimingToEngine()
+    local SmartLootEngine = require("modules.SmartLootEngine")
+    if SmartLootEngine and SmartLootEngine.config then
+        -- Sync timing settings from persistent config to engine config
+        SmartLootEngine.config.tickIntervalMs = config.engineTiming.tickIntervalMs
+        SmartLootEngine.config.itemPopulationDelayMs = config.engineTiming.itemPopulationDelayMs
+        SmartLootEngine.config.itemProcessingDelayMs = config.engineTiming.itemProcessingDelayMs
+        SmartLootEngine.config.ignoredItemDelayMs = config.engineTiming.ignoredItemDelayMs
+        SmartLootEngine.config.lootActionDelayMs = config.engineTiming.lootActionDelayMs
+        SmartLootEngine.config.navRetryDelayMs = config.engineTiming.navRetryDelayMs
+        SmartLootEngine.config.combatWaitDelayMs = config.engineTiming.combatWaitDelayMs
+        SmartLootEngine.config.maxNavTimeMs = config.engineTiming.maxNavTimeMs
+        SmartLootEngine.config.pendingDecisionTimeoutMs = config.engineTiming.pendingDecisionTimeoutMs
+        SmartLootEngine.config.maxLootWaitTime = config.engineTiming.maxLootWaitTime
+        SmartLootEngine.config.errorRecoveryDelayMs = config.engineTiming.errorRecoveryDelayMs
+        SmartLootEngine.config.maxItemProcessingTime = config.engineTiming.maxItemProcessingTime
+        SmartLootEngine.config.peerTriggerDelay = config.engineTiming.peerTriggerDelay
+        return true
+    end
+    return false
 end
 
 -- Updated debug function to show current configuration

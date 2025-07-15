@@ -261,6 +261,187 @@ local function draw_chat_settings(config)
     end
 end
 
+local function draw_timing_settings()
+    -- Timing Settings Section
+    ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.9, 0.4, 1.0)  -- Light yellow header
+    if ImGui.CollapsingHeader("Timing Settings") then
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+        
+        -- Help button
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)  -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)  -- Slight highlight on hover
+        if ImGui.Button("(?)##TimingHelp") then
+            ImGui.OpenPopup("TimingSettingsHelp")
+        end
+        ImGui.PopStyleColor(2)
+        
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Click for timing setting descriptions and recommendations")
+        end
+        
+        ImGui.Spacing()
+        
+        -- Get current persistent config and sync to engine
+        local persistentConfig = config.getEngineTiming()
+        config.syncTimingToEngine()  -- Ensure engine is synced with persistent config
+        
+        -- Helper function for compact timing input
+        local function drawTimingInput(label, value, setValue, minVal, maxVal, unit, tooltip, step1, step2)
+            step1 = step1 or 1
+            step2 = step2 or 10
+            
+            ImGui.AlignTextToFramePadding()
+            ImGui.Text(label)
+            ImGui.SameLine(125) -- Fixed alignment position
+            ImGui.PushItemWidth(100)
+            local newValue, changed = ImGui.InputInt("##" .. label:gsub(" ", ""), value, step1, step2)
+            if changed and newValue >= minVal and newValue <= maxVal then
+                setValue(newValue)
+                config.syncTimingToEngine()
+                logging.log(string.format("%s set to %d %s", label, newValue, unit))
+            end
+            ImGui.PopItemWidth()
+            ImGui.SameLine()
+            ImGui.Text(unit)
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip(tooltip)
+            end
+        end
+        
+        -- Compact timing settings in organized sections
+        -- Helper function for compact timing input on same line
+        local function drawTimingInputCompact(label, value, setValue, minVal, maxVal, unit, tooltip, step1, step2)
+            step1 = step1 or 1
+            step2 = step2 or 10
+            
+            ImGui.AlignTextToFramePadding()
+            ImGui.Text(label)
+            ImGui.SameLine(400) -- Shorter alignment for compact layout
+            ImGui.PushItemWidth(100)
+            local newValue, changed = ImGui.InputInt("##" .. label:gsub(" ", ""):gsub("/", ""), value, step1, step2)
+            if changed and newValue >= minVal and newValue <= maxVal then
+                setValue(newValue)
+                config.syncTimingToEngine()
+                logging.log(string.format("%s set to %d %s", label, newValue, unit))
+            end
+            ImGui.PopItemWidth()
+            ImGui.SameLine()
+            ImGui.Text(unit)
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip(tooltip)
+            end
+        end
+        
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow section headers
+        ImGui.Text("Corpse Processing")
+        ImGui.PopStyleColor()
+        ImGui.Separator()
+        
+        -- Row 1: Open to Loot Start and Between Items
+        drawTimingInput("Open to Loot", persistentConfig.itemPopulationDelayMs, 
+            config.setItemPopulationDelay, 10, 5000, "ms", 
+            "Time after opening corpse before starting to loot\nRecommended: 100-300ms")
+        
+        ImGui.SameLine(280) -- Position for second column
+        drawTimingInputCompact("Between Items", persistentConfig.itemProcessingDelayMs, 
+            config.setItemProcessingDelay, 5, 2000, "ms", 
+            "Delay between processing each item slot\nRecommended: 25-100ms")
+        
+        -- Row 2: After Loot Action and Empty/Ignored Slots
+        drawTimingInput("After Loot", persistentConfig.lootActionDelayMs, 
+            config.setLootActionDelay, 25, 3000, "ms", 
+            "Wait time after looting/destroying an item\nRecommended: 100-300ms")
+        
+        ImGui.SameLine(280) -- Position for second column
+        drawTimingInputCompact("Ignored Slots", persistentConfig.ignoredItemDelayMs, 
+            config.setIgnoredItemDelay, 1, 500, "ms", 
+            "Fast processing for empty or ignored slots\nRecommended: 10-50ms", 1, 5)
+        
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 0.9, 1.0)  -- Light cyan section headers
+        ImGui.Text("Navigation")
+        ImGui.PopStyleColor()
+        ImGui.Separator()
+        
+        drawTimingInput("Retry Delay", persistentConfig.navRetryDelayMs, 
+            config.setNavRetryDelay, 50, 5000, "ms", 
+            "Time between navigation attempts\nRecommended: 250-750ms", 10, 50)
+        
+        drawTimingInput("Timeout", persistentConfig.maxNavTimeMs / 1000, 
+            function(val) config.setMaxNavTime(val * 1000) end, 5, 300, "sec", 
+            "Maximum time to spend reaching a corpse\nRecommended: 15-45 seconds", 1, 5)
+        
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.7, 0.7, 1.0)  -- Light red section headers
+        ImGui.Text("Combat Detection")
+        ImGui.PopStyleColor()
+        ImGui.Separator()
+        
+        drawTimingInput("Wait Time", persistentConfig.combatWaitDelayMs, 
+            config.setCombatWaitDelay, 250, 10000, "ms", 
+            "Delay between combat detection checks\nRecommended: 1000-3000ms", 50, 100)
+        
+        ImGui.Spacing()
+        
+        -- Preset Buttons
+        ImGui.Text("Timing Presets:")
+        ImGui.SameLine()
+        
+        if ImGui.Button("Fast##TimingPreset") then
+            config.applyTimingPreset("fast")
+            config.syncTimingToEngine()
+            logging.log("Applied Fast timing preset")
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Optimized for speed - may be less stable on slower connections")
+        end
+        
+        ImGui.SameLine()
+        if ImGui.Button("Balanced##TimingPreset") then
+            config.applyTimingPreset("balanced")
+            config.syncTimingToEngine()
+            logging.log("Applied Balanced timing preset (default)")
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Default balanced settings - good for most situations")
+        end
+        
+        ImGui.SameLine()
+        if ImGui.Button("Conservative##TimingPreset") then
+            config.applyTimingPreset("conservative")
+            config.syncTimingToEngine()
+            logging.log("Applied Conservative timing preset")
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Slower but more stable - recommended for high latency or unstable connections")
+        end
+        
+        -- Help Popup
+        if ImGui.BeginPopup("TimingSettingsHelp") then
+            ImGui.Text("SmartLoot Timing Settings Help")
+            ImGui.Separator()
+            ImGui.BulletText("Corpse Open to Loot Start: Wait time after opening corpse")
+            ImGui.BulletText("Between Item Processing: Delay between checking each item slot")
+            ImGui.BulletText("After Loot Action: Wait time after looting/destroying items")
+            ImGui.BulletText("Empty/Ignored Slots: Fast processing for empty slots")
+            ImGui.BulletText("Navigation Retry: Time between navigation attempts")
+            ImGui.BulletText("Navigation Timeout: Max time to reach a corpse")
+            ImGui.BulletText("Combat Wait Time: Delay between combat checks")
+            ImGui.Separator()
+            ImGui.Text("Recommendations:")
+            ImGui.BulletText("Fast: Good ping, stable connection")
+            ImGui.BulletText("Balanced: Most users (default)")
+            ImGui.BulletText("Conservative: High latency, unstable connection")
+            ImGui.EndPopup()
+        end
+        
+    else
+        ImGui.PopStyleColor()
+    end
+    ImGui.Spacing()
+end
+
 local function draw_chase_settings(config)
     -- Chase Integration Settings Section
     ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.8, 0.6, 1.0)  -- Light orange header
@@ -442,6 +623,37 @@ function uiSettings.draw(lootUI, settings, config)
         
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip(lootUI.paused and "Resume loot processing" or "Pause loot processing")
+        end
+        
+        -- Database info on same line
+        ImGui.SameLine()
+        ImGui.Text("  |  ")
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0)  -- Gray text
+        ImGui.Text("DB:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.9, 1.0)  -- Light text
+        local dbPath = config.filePath or "smartloot_config.json"
+        local dbName = dbPath:match("([^/\\]+)$") or dbPath  -- Extract filename from path
+        ImGui.Text(dbName)
+        ImGui.PopStyleColor()
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Database Config File:\n" .. dbPath)
+        end
+        
+        ImGui.SameLine()
+        ImGui.Text("  |  ")
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0)  -- Gray text
+        ImGui.Text("SQLite:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0)  -- Light green text
+        ImGui.Text("Connected")
+        ImGui.PopStyleColor()
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Database Status: SQLite database is connected and operational")
         end
         
         -- Core Performance Settings Section
@@ -645,6 +857,9 @@ function uiSettings.draw(lootUI, settings, config)
         else
             ImGui.PopStyleColor()  -- Pop the color even if header is closed
         end
+        
+        -- Timing Settings Section
+        draw_timing_settings()
         
         -- Decision Settings Section
         ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.6, 1.0, 1.0)  -- Light purple header
