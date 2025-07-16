@@ -38,19 +38,32 @@ local function smartNavigate(spawnID, reason)
     if isNavAvailable() then
         logging.debug(string.format("[Engine] Using /nav for %s (ID: %d)", reason, spawnID))
         mq.cmdf("/nav id %d", spawnID)
+        -- Mark that SmartLoot initiated this navigation
+        SmartLootEngine.state.smartLootNavigationActive = true
         return "nav"
     else
         logging.debug(string.format("[Engine] Nav unavailable, using /moveto for %s (ID: %d)", reason, spawnID))
         mq.cmdf("/moveto id %d", spawnID)
+        -- Mark that SmartLoot initiated this navigation
+        SmartLootEngine.state.smartLootNavigationActive = true
         return "moveto"
     end
 end
 
--- Stop navigation/movement
+-- Stop navigation/movement - only if SmartLoot initiated it
 local function stopMovement()
-    if isNavAvailable() and mq.TLO.Navigation.Active() then
+    -- Only stop navigation if SmartLoot was responsible for initiating it
+    if SmartLootEngine.state.smartLootNavigationActive and isNavAvailable() and mq.TLO.Navigation.Active() then
         mq.cmd("/nav stop")
+        logging.debug("[Engine] Stopped SmartLoot-initiated navigation due to combat")
+    elseif SmartLootEngine.state.smartLootNavigationActive then
+        logging.debug("[Engine] SmartLoot navigation was active but no nav plugin or navigation not active")
+    else
+        logging.debug("[Engine] Skipping nav stop - navigation not initiated by SmartLoot")
     end
+    
+    -- Clear the flag regardless
+    SmartLootEngine.state.smartLootNavigationActive = false
     -- Note: /moveto doesn't have a stop command, it completes automatically
 end
 
