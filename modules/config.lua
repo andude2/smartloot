@@ -403,7 +403,7 @@ function config.shouldAnnounceItem(action)
     elseif mode == "all" then
         return true
     elseif mode == "ignored" then
-        return action == "Ignore"
+        return action == "Ignored"
     else
         return false -- Default to no announcement if mode is unknown
     end

@@ -25,47 +25,34 @@ local COLORS = {
 }
 
 -- Time frame utilities
+-- Time frame utilities (UPDATED TO USE UTC BOUNDARIES)
 local function getTimeFrameFilter(timeFrame)
     local now = os.time()
-    local today = os.date("*t", now) -- Use LOCAL time for user's "today"
+    local utc_t = os.date("!*t", now)  -- UTC time components
+    local seconds_since_midnight = utc_t.hour * 3600 + utc_t.min * 60 + utc_t.sec
+    local start_of_today_unix = now - seconds_since_midnight
 
     if timeFrame == "Today" then
-        -- Create local time boundaries
-        local startOfDay = os.time({ year = today.year, month = today.month, day = today.day, hour = 0, min = 0, sec = 0 })
-        local endOfDay = startOfDay + 86399 -- End of today
-        -- Convert to UTC for database comparison
-        return os.date("!%Y-%m-%d %H:%M:%S", startOfDay), os.date("!%Y-%m-%d %H:%M:%S", endOfDay)
+        local startDate = os.date("!%Y-%m-%d %H:%M:%S", start_of_today_unix)
+        local endDate = os.date("!%Y-%m-%d %H:%M:%S", start_of_today_unix + 86399)
+        return startDate, endDate
     elseif timeFrame == "Yesterday" then
-        local yesterday = now - 86400
-        local yesterdayDate = os.date("*t", yesterday) -- Use LOCAL time
-        local startOfYesterday = os.time({
-            year = yesterdayDate.year,
-            month = yesterdayDate.month,
-            day = yesterdayDate.day,
-            hour = 0,
-            min = 0,
-            sec = 0
-        })
-        local endOfYesterday = startOfYesterday + 86399
-        -- Convert to UTC for database comparison
-        return os.date("!%Y-%m-%d %H:%M:%S", startOfYesterday), os.date("!%Y-%m-%d %H:%M:%S", endOfYesterday)
+        local start_unix = start_of_today_unix - 86400
+        local startDate = os.date("!%Y-%m-%d %H:%M:%S", start_unix)
+        local endDate = os.date("!%Y-%m-%d %H:%M:%S", start_unix + 86399)
+        return startDate, endDate
     elseif timeFrame == "This Week" then
-        local daysBack = (today.wday - 2) % 7 -- Monday as start of week
-        local startOfWeek = now - (daysBack * 86400)
-        local startOfWeekDay = os.time({
-            year = os.date("*t", startOfWeek).year,
-            month = os.date("*t", startOfWeek).month,
-            day = os.date("*t", startOfWeek).day,
-            hour = 0,
-            min = 0,
-            sec = 0
-        })
-        -- Convert to UTC for database comparison
-        return os.date("!%Y-%m-%d %H:%M:%S", startOfWeekDay), os.date("!%Y-%m-%d %H:%M:%S", now)
+        local days_back = (utc_t.wday - 2 + 7) % 7  -- Days back to Monday (wday: 1=Sun, 2=Mon)
+        local start_unix = start_of_today_unix - (days_back * 86400)
+        local startDate = os.date("!%Y-%m-%d %H:%M:%S", start_unix)
+        local endDate = os.date("!%Y-%m-%d %H:%M:%S", now)
+        return startDate, endDate
     elseif timeFrame == "This Month" then
-        local startOfMonth = os.time({ year = today.year, month = today.month, day = 1, hour = 0, min = 0, sec = 0 })
-        -- Convert to UTC for database comparison
-        return os.date("!%Y-%m-%d %H:%M:%S", startOfMonth), os.date("!%Y-%m-%d %H:%M:%S", now)
+        local days_in_month_so_far = utc_t.day - 1
+        local start_unix = start_of_today_unix - (days_in_month_so_far * 86400)
+        local startDate = os.date("!%Y-%m-%d %H:%M:%S", start_unix)
+        local endDate = os.date("!%Y-%m-%d %H:%M:%S", now)
+        return startDate, endDate
     end
 
     return "", ""
