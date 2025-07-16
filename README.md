@@ -15,11 +15,11 @@ From there, you can set it for everyone, just yourself, or open the peer rules e
 
 <img width="475" height="768" alt="image" src="https://github.com/user-attachments/assets/69c61cd4-fe95-4c3a-ab8f-ea54f4f79b07" />
 
-## But How Does It Work?!
+<p align="center">## But How Does It Work?!</p>
 
 Simple! Your Main Looter is responsible for processing all those pesky corpses laying around.  That character will, when not in combat, begin cycling through nearby corpses and looting according to their rule set. When they've finished looted/processing the corpses, they'll go back through the list of items they ignored, and check to see if any of their buddies need or want that item based on their rules.  If anyone has a rule of "Keep" or "KeepIfFewerThan", the main looter will send a command telling them to go loot!  Then the process repeats on the triggered character, and down the line it goes until either all characters have processed the corpse, or there's no items left/no interested peers left.
 
-## Ok, but How Do I Get Started?!
+<p align="center">## Ok, but How Do I Get Started?!</p>
 
 Once you've got the script loaded, you can /sl_getstarted for an in game help, OR...
 
@@ -78,9 +78,9 @@ This is still a work in progress.  I've done what I can to test, but MY use case
       * SmartLoot.SafeToLoot - a simple true/false to identify if we're in a mode and conditions are met for looting (e.g., out of combat, not casting, not moving)
       * SmartLoot.NeedsDecision - are we in a pending decision mode?  This can be helpful if you're not paying attention to the chat spam.  This'll return True for background peers if they're pending a decision. (Add a monitor to your HUD for your backgroung guys!)
 
-## <p align="center">AFK Farming Mode</p>
+## <p align="center">AFK Temp Rules Mode</p>
 
-What's this AFK Farm Rules tab?!  Good question!  The system is designed around saving loot rules based on itemID's (You can thank Luclin Shards for that fun fact!).  As such, since we don't have a precompiled database, in order to save a loot rule we need the item ID.  AFK Farm Rules solves this temporarily.  If you're going to let this run overnight (provided it's permitted on your server!), you can set temporary rules based on item names alone, and assign it to a peer.  Camping Lord Begurgle?  Add the Crown by name, set the rule, and assign it to your cleric (or whoever needs it, I guess).  When it's encountered over night, it'll apply the rule, and save the item to the database with all the pertinent information!
+What's this AFK Rules tab?!  Good question!  The system is designed around saving loot rules based on itemID's (You can thank Luclin Shards for that fun fact!).  As such, since we don't have a precompiled database, in order to save a loot rule we need the item ID.  AFK Farm Rules solves this temporarily.  If you're going to let this run overnight (provided it's permitted on your server!), you can set temporary rules based on item names alone, and assign it to a peer.  Camping Lord Begurgle?  Add the Crown by name, set the rule, and assign it to your cleric (or whoever needs it, I guess).  When it's encountered over night, it'll apply the rule, and save the item to the database with all the pertinent information!
 
 
   
