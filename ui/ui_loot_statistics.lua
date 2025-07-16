@@ -27,15 +27,17 @@ local COLORS = {
 -- Time frame utilities
 local function getTimeFrameFilter(timeFrame)
     local now = os.time()
-    local today = os.date("*t", now)
+    local today = os.date("*t", now) -- Use LOCAL time for user's "today"
 
     if timeFrame == "Today" then
+        -- Create local time boundaries
         local startOfDay = os.time({ year = today.year, month = today.month, day = today.day, hour = 0, min = 0, sec = 0 })
         local endOfDay = startOfDay + 86399 -- End of today
-        return os.date("%Y-%m-%d %H:%M:%S", startOfDay), os.date("%Y-%m-%d %H:%M:%S", endOfDay)
+        -- Convert to UTC for database comparison
+        return os.date("!%Y-%m-%d %H:%M:%S", startOfDay), os.date("!%Y-%m-%d %H:%M:%S", endOfDay)
     elseif timeFrame == "Yesterday" then
         local yesterday = now - 86400
-        local yesterdayDate = os.date("*t", yesterday)
+        local yesterdayDate = os.date("*t", yesterday) -- Use LOCAL time
         local startOfYesterday = os.time({
             year = yesterdayDate.year,
             month = yesterdayDate.month,
@@ -45,7 +47,8 @@ local function getTimeFrameFilter(timeFrame)
             sec = 0
         })
         local endOfYesterday = startOfYesterday + 86399
-        return os.date("%Y-%m-%d %H:%M:%S", startOfYesterday), os.date("%Y-%m-%d %H:%M:%S", endOfYesterday)
+        -- Convert to UTC for database comparison
+        return os.date("!%Y-%m-%d %H:%M:%S", startOfYesterday), os.date("!%Y-%m-%d %H:%M:%S", endOfYesterday)
     elseif timeFrame == "This Week" then
         local daysBack = (today.wday - 2) % 7 -- Monday as start of week
         local startOfWeek = now - (daysBack * 86400)
@@ -57,10 +60,12 @@ local function getTimeFrameFilter(timeFrame)
             min = 0,
             sec = 0
         })
-        return os.date("%Y-%m-%d %H:%M:%S", startOfWeekDay), os.date("%Y-%m-%d %H:%M:%S", now)
+        -- Convert to UTC for database comparison
+        return os.date("!%Y-%m-%d %H:%M:%S", startOfWeekDay), os.date("!%Y-%m-%d %H:%M:%S", now)
     elseif timeFrame == "This Month" then
         local startOfMonth = os.time({ year = today.year, month = today.month, day = 1, hour = 0, min = 0, sec = 0 })
-        return os.date("%Y-%m-%d %H:%M:%S", startOfMonth), os.date("%Y-%m-%d %H:%M:%S", now)
+        -- Convert to UTC for database comparison
+        return os.date("!%Y-%m-%d %H:%M:%S", startOfMonth), os.date("!%Y-%m-%d %H:%M:%S", now)
     end
 
     return "", ""
@@ -164,14 +169,7 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
         lootUI.currentPage = lootUI.currentPage or 1
         lootUI.itemsPerPage = lootUI.itemsPerPage or 20
 
-        -- Add debug info at the top
-        if lootUI.showDebug then
-            ImGui.TextColored(0.8, 0.8, 0.2, 1.0, "DEBUG INFO:")
-            ImGui.Text("needsRefetch: " .. tostring(lootUI.needsRefetch))
-            ImGui.Text("totalItems: " .. tostring(lootUI.totalItems or "nil"))
-            ImGui.Text("statsData count: " .. tostring(lootUI.statsData and #lootUI.statsData or "nil"))
-            ImGui.Separator()
-        end
+
 
         -- Controls section (first row)
         ImGui.Text("Search:")
@@ -232,11 +230,7 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
             ImGui.SetTooltip("Refresh dropdown lists and reload statistics data")
         end
 
-        -- Add debug toggle button
-        ImGui.SameLine()
-        if ImGui.Button("Debug##statsTab") then
-            lootUI.showDebug = not lootUI.showDebug
-        end
+
 
         ImGui.Separator()
 
@@ -266,10 +260,15 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
                 offset = (lootUI.currentPage - 1) * lootUI.itemsPerPage
             }
 
+            -- Debug logging for zone name with apostrophes
+            if filters.zoneName and string.find(filters.zoneName, "'") then
+                logging.log("[DEBUG] Zone name contains apostrophe: '" .. tostring(filters.zoneName) .. "'")
+            end
+
             -- Log the filters being used
-            logging.log("[UI] Using filters: " .. tostring(filters.zoneName) .. ", " ..
-                tostring(filters.itemName) .. ", " .. tostring(filters.startDate) .. ", " ..
-                tostring(filters.endDate))
+            logging.log("[UI] Using filters: zoneName='" .. tostring(filters.zoneName) .. "', " ..
+                "itemName='" .. tostring(filters.itemName) .. "', startDate='" .. tostring(filters.startDate) .. "', " ..
+                "endDate='" .. tostring(filters.endDate) .. "', timeFrame='" .. tostring(lootUI.selectedTimeFrame) .. "'")
 
             -- Get total count - USE LOOT_STATS MODULE
             if lootStats.getLootStatsCount then
@@ -280,6 +279,22 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
                 else
                     lootUI.totalItems = totalItems or 0
                     logging.log("[UI] Total items found: " .. tostring(lootUI.totalItems))
+                    
+                    -- If no items found with time filter, check what dates exist for this zone
+                    if lootUI.totalItems == 0 and filters.zoneName and (filters.startDate or filters.endDate) then
+                        logging.log("[DEBUG] No items found with time filter. Checking available dates for zone: " .. tostring(filters.zoneName))
+                        -- Check recent dates in this zone
+                        local recentFilters = { zoneName = filters.zoneName, limit = 5 }
+                        local recentData, recentErr = lootStats.getLootStats(recentFilters)
+                        if recentData and #recentData > 0 then
+                            logging.log("[DEBUG] Recent loot dates in this zone:")
+                            for i, item in ipairs(recentData) do
+                                logging.log("[DEBUG]   " .. tostring(item.item_name) .. " - Last seen: " .. tostring(item.last_timestamp or "unknown"))
+                            end
+                        else
+                            logging.log("[DEBUG] No recent loot data found for this zone")
+                        end
+                    end
                 end
             else
                 logging.log("[UI] lootStats.getLootStatsCount function not found!")

@@ -9,288 +9,289 @@ local uiSettings = {}
 
 local function draw_chat_settings(config)
     -- Chat Output Settings Section
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 1.0, 1.0)  -- Light cyan header
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 1.0, 1.0) -- Light cyan header
     if ImGui.CollapsingHeader("Chat Output Settings") then
         ImGui.PopStyleColor()
         ImGui.SameLine()
-    
-    -- Help button that opens popup
-    ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)  -- Transparent background
-    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)  -- Slight highlight on hover
-    if ImGui.Button("(?)##ChatHelp") then
-        ImGui.OpenPopup("ChatSettingsHelp")
-    end
-    ImGui.PopStyleColor(2)
-    
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Click for chat mode descriptions and testing options")
-    end
-    
-    -- Chat Output Mode Selection
-    ImGui.Text("Chat Output Mode:")
-    ImGui.SameLine()
-    ImGui.PushItemWidth(120)
-    
-    local chatModes = {"rsay", "group", "guild", "custom", "silent"}
-    local chatModeNames = {
-        ["rsay"] = "Raid Say",
-        ["group"] = "Group", 
-        ["guild"] = "Guild",
-        ["custom"] = "Custom",
-        ["silent"] = "Silent"
-    }
-    
-    -- Get current mode directly from config - ensure it's valid
-    local currentMode = config.chatOutputMode or "group"
-    
-    -- Validate that currentMode is in our list
-    local isValidMode = false
-    for _, mode in ipairs(chatModes) do
-        if mode == currentMode then
-            isValidMode = true
-            break
+
+        -- Help button that opens popup
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)                -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3) -- Slight highlight on hover
+        if ImGui.Button("(?)##ChatHelp") then
+            ImGui.OpenPopup("ChatSettingsHelp")
         end
-    end
-    
-    -- If invalid mode, default to group
-    if not isValidMode then
-        currentMode = "group"
-        config.chatOutputMode = currentMode
-        if config.save then
-            config.save()
+        ImGui.PopStyleColor(2)
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Click for chat mode descriptions and testing options")
         end
-    end
-    
-    local currentIndex = 0
-    
-    -- Find current mode index
-    for i, mode in ipairs(chatModes) do
-        if mode == currentMode then
-            currentIndex = i - 1
-            break
+
+        -- Chat Output Mode Selection
+        ImGui.Text("Chat Output Mode:")
+        ImGui.SameLine()
+        ImGui.PushItemWidth(120)
+
+        local chatModes = { "rsay", "group", "guild", "custom", "silent" }
+        local chatModeNames = {
+            ["rsay"] = "Raid Say",
+            ["group"] = "Group",
+            ["guild"] = "Guild",
+            ["custom"] = "Custom",
+            ["silent"] = "Silent"
+        }
+
+        -- Get current mode directly from config - ensure it's valid
+        local currentMode = config.chatOutputMode or "group"
+
+        -- Validate that currentMode is in our list
+        local isValidMode = false
+        for _, mode in ipairs(chatModes) do
+            if mode == currentMode then
+                isValidMode = true
+                break
+            end
         end
-    end
-    
-    -- Display current mode name
-    local displayName = chatModeNames[currentMode] or currentMode
-    
-    if ImGui.BeginCombo("##ChatMode", displayName) then
+
+        -- If invalid mode, default to group
+        if not isValidMode then
+            currentMode = "group"
+            config.chatOutputMode = currentMode
+            if config.save then
+                config.save()
+            end
+        end
+
+        local currentIndex = 0
+
+        -- Find current mode index
         for i, mode in ipairs(chatModes) do
-            local isSelected = (currentIndex == i - 1)
-            local modeDisplayName = chatModeNames[mode] or mode
-            
-            if ImGui.Selectable(modeDisplayName, isSelected) then
-                -- Immediately update the config when selected
-                config.chatOutputMode = mode
-                
-                -- Try the new setChatMode function first
-                if config.setChatMode then
-                    local success, errorMsg = config.setChatMode(mode)
-                    if success then
-                        logging.log("Chat output mode changed to: " .. (config.getChatModeDescription and config.getChatModeDescription() or mode))
+            if mode == currentMode then
+                currentIndex = i - 1
+                break
+            end
+        end
+
+        -- Display current mode name
+        local displayName = chatModeNames[currentMode] or currentMode
+
+        if ImGui.BeginCombo("##ChatMode", displayName) then
+            for i, mode in ipairs(chatModes) do
+                local isSelected = (currentIndex == i - 1)
+                local modeDisplayName = chatModeNames[mode] or mode
+
+                if ImGui.Selectable(modeDisplayName, isSelected) then
+                    -- Immediately update the config when selected
+                    config.chatOutputMode = mode
+
+                    -- Try the new setChatMode function first
+                    if config.setChatMode then
+                        local success, errorMsg = config.setChatMode(mode)
+                        if success then
+                            logging.log("Chat output mode changed to: " ..
+                                (config.getChatModeDescription and config.getChatModeDescription() or mode))
+                        else
+                            logging.log("Failed to set chat mode: " .. tostring(errorMsg))
+                            -- Fallback: set directly and save
+                            config.chatOutputMode = mode
+                            if config.save then
+                                config.save()
+                            end
+                        end
                     else
-                        logging.log("Failed to set chat mode: " .. tostring(errorMsg))
-                        -- Fallback: set directly and save
-                        config.chatOutputMode = mode
+                        -- Fallback: directly set the mode and save
                         if config.save then
                             config.save()
                         end
+                        logging.log("Chat output mode changed to: " .. mode)
+                    end
+
+                    -- Update currentMode for immediate UI feedback
+                    currentMode = mode
+                    currentIndex = i - 1
+                end
+
+                if isSelected then
+                    ImGui.SetItemDefaultFocus()
+                end
+            end
+            ImGui.EndCombo()
+        end
+        ImGui.PopItemWidth()
+
+        -- Show current chat command
+        ImGui.SameLine()
+        local chatCommand = ""
+        if config.getChatCommand then
+            chatCommand = config.getChatCommand() or ""
+        else
+            -- Fallback display based on mode
+            if currentMode == "rsay" then
+                chatCommand = "/rsay"
+            elseif currentMode == "group" then
+                chatCommand = "/g"
+            elseif currentMode == "guild" then
+                chatCommand = "/gu"
+            elseif currentMode == "custom" then
+                chatCommand = config.customChatCommand or "/say"
+            elseif currentMode == "silent" then
+                chatCommand = "No Output"
+            end
+        end
+
+        if chatCommand and chatCommand ~= "" then
+            if currentMode == "silent" then
+                ImGui.Text("(No Output)")
+            else
+                ImGui.Text("(" .. chatCommand .. ")")
+            end
+        else
+            ImGui.Text("(No Output)")
+        end
+
+        -- Custom chat command input (only show if custom mode is selected)
+        if currentMode == "custom" then
+            ImGui.Text("Custom Command:")
+            ImGui.SameLine()
+            ImGui.PushItemWidth(150)
+
+            local customCommand = config.customChatCommand or "/say"
+            local newCustomCommand, changed = ImGui.InputText("##CustomChatCommand", customCommand, 128)
+
+            if changed then
+                if config.setCustomChatCommand then
+                    local success, errorMsg = config.setCustomChatCommand(newCustomCommand)
+                    if success then
+                        logging.log("Custom chat command set to: " .. newCustomCommand)
+                    else
+                        logging.log("Failed to set custom chat command: " .. tostring(errorMsg))
                     end
                 else
-                    -- Fallback: directly set the mode and save
+                    -- Fallback: directly set the command
+                    config.customChatCommand = newCustomCommand
                     if config.save then
                         config.save()
                     end
-                    logging.log("Chat output mode changed to: " .. mode)
-                end
-                
-                -- Update currentMode for immediate UI feedback
-                currentMode = mode
-                currentIndex = i - 1
-            end
-            
-            if isSelected then
-                ImGui.SetItemDefaultFocus()
-            end
-        end
-        ImGui.EndCombo()
-    end
-    ImGui.PopItemWidth()
-    
-    -- Show current chat command
-    ImGui.SameLine()
-    local chatCommand = ""
-    if config.getChatCommand then
-        chatCommand = config.getChatCommand() or ""
-    else
-        -- Fallback display based on mode
-        if currentMode == "rsay" then
-            chatCommand = "/rsay"
-        elseif currentMode == "group" then
-            chatCommand = "/g"
-        elseif currentMode == "guild" then
-            chatCommand = "/gu"
-        elseif currentMode == "custom" then
-            chatCommand = config.customChatCommand or "/say"
-        elseif currentMode == "silent" then
-            chatCommand = "No Output"
-        end
-    end
-    
-    if chatCommand and chatCommand ~= "" then
-        if currentMode == "silent" then
-            ImGui.Text("(No Output)")
-        else
-            ImGui.Text("(" .. chatCommand .. ")")
-        end
-    else
-        ImGui.Text("(No Output)")
-    end
-    
-    -- Custom chat command input (only show if custom mode is selected)
-    if currentMode == "custom" then
-        ImGui.Text("Custom Command:")
-        ImGui.SameLine()
-        ImGui.PushItemWidth(150)
-        
-        local customCommand = config.customChatCommand or "/say"
-        local newCustomCommand, changed = ImGui.InputText("##CustomChatCommand", customCommand, 128)
-        
-        if changed then
-            if config.setCustomChatCommand then
-                local success, errorMsg = config.setCustomChatCommand(newCustomCommand)
-                if success then
                     logging.log("Custom chat command set to: " .. newCustomCommand)
-                else
-                    logging.log("Failed to set custom chat command: " .. tostring(errorMsg))
                 end
-            else
-                -- Fallback: directly set the command
-                config.customChatCommand = newCustomCommand
-                if config.save then
-                    config.save()
-                end
-                logging.log("Custom chat command set to: " .. newCustomCommand)
+            end
+
+            ImGui.PopItemWidth()
+
+            -- Help text for custom commands
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Enter any chat command (e.g., /say, /tell playername, /ooc, etc.)")
             end
         end
-        
-        ImGui.PopItemWidth()
-        
-        -- Help text for custom commands
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Enter any chat command (e.g., /say, /tell playername, /ooc, etc.)")
+
+        -- Chat mode description
+        local modeDescription = ""
+        if config.getChatModeDescription then
+            modeDescription = config.getChatModeDescription()
+        else
+            modeDescription = chatModeNames[currentMode] or currentMode
         end
-    end
-    
-    -- Chat mode description
-    local modeDescription = ""
-    if config.getChatModeDescription then
-        modeDescription = config.getChatModeDescription()
-    else
-        modeDescription = chatModeNames[currentMode] or currentMode
-    end
-    
-    ImGui.Text("Current Mode: " .. modeDescription)
-    
-    -- Help Popup
-    if ImGui.BeginPopup("ChatSettingsHelp") then
-        ImGui.Text("Chat Mode Help & Testing")
-        ImGui.Separator()
-        
-        -- Chat mode descriptions
-        ImGui.Text("Chat Mode Descriptions:")
-        ImGui.BulletText("Raid Say: Sends messages to raid chat (/rsay)")
-        ImGui.BulletText("Group: Sends messages to group chat (/g)")
-        ImGui.BulletText("Guild: Sends messages to guild chat (/gu)")
-        ImGui.BulletText("Custom: Use your own chat command")
-        ImGui.BulletText("Silent: No chat output (logs only)")
-        
-        ImGui.Separator()
-        
-        -- Test button
-        if ImGui.Button("Test Chat Output") then
-            local testMessage = "SmartLoot chat test from " .. (mq.TLO.Me.Name() or "Unknown")
-            if config.sendChatMessage then
-                config.sendChatMessage(testMessage)
-                logging.log("Sent test message via " .. modeDescription)
-            else
-                -- Fallback test
-                if currentMode == "rsay" then
-                    mq.cmd("/rsay " .. testMessage)
-                elseif currentMode == "group" then
-                    mq.cmd("/g " .. testMessage)
-                elseif currentMode == "guild" then
-                    mq.cmd("/gu " .. testMessage)
-                elseif currentMode == "custom" then
-                    mq.cmd((config.customChatCommand or "/say") .. " " .. testMessage)
-                elseif currentMode == "silent" then
-                    logging.log("Silent mode - no chat output")
-                end
-                
-                if currentMode ~= "silent" then
+
+        ImGui.Text("Current Mode: " .. modeDescription)
+
+        -- Help Popup
+        if ImGui.BeginPopup("ChatSettingsHelp") then
+            ImGui.Text("Chat Mode Help & Testing")
+            ImGui.Separator()
+
+            -- Chat mode descriptions
+            ImGui.Text("Chat Mode Descriptions:")
+            ImGui.BulletText("Raid Say: Sends messages to raid chat (/rsay)")
+            ImGui.BulletText("Group: Sends messages to group chat (/g)")
+            ImGui.BulletText("Guild: Sends messages to guild chat (/gu)")
+            ImGui.BulletText("Custom: Use your own chat command")
+            ImGui.BulletText("Silent: No chat output (logs only)")
+
+            ImGui.Separator()
+
+            -- Test button
+            if ImGui.Button("Test Chat Output") then
+                local testMessage = "SmartLoot chat test from " .. (mq.TLO.Me.Name() or "Unknown")
+                if config.sendChatMessage then
+                    config.sendChatMessage(testMessage)
                     logging.log("Sent test message via " .. modeDescription)
+                else
+                    -- Fallback test
+                    if currentMode == "rsay" then
+                        mq.cmd("/rsay " .. testMessage)
+                    elseif currentMode == "group" then
+                        mq.cmd("/g " .. testMessage)
+                    elseif currentMode == "guild" then
+                        mq.cmd("/gu " .. testMessage)
+                    elseif currentMode == "custom" then
+                        mq.cmd((config.customChatCommand or "/say") .. " " .. testMessage)
+                    elseif currentMode == "silent" then
+                        logging.log("Silent mode - no chat output")
+                    end
+
+                    if currentMode ~= "silent" then
+                        logging.log("Sent test message via " .. modeDescription)
+                    end
                 end
             end
-        end
-        
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Send a test message using the current chat output mode")
-        end
-        
-        ImGui.SameLine()
-        
-        -- Debug button
-        if ImGui.Button("Debug Chat Config") then
-            if config.debugChatConfig then
-                config.debugChatConfig()
-            else
-                logging.log("Chat Debug - Mode: " .. tostring(config.chatOutputMode))
-                logging.log("Chat Debug - Custom Command: " .. tostring(config.customChatCommand))
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Send a test message using the current chat output mode")
             end
+
+            ImGui.SameLine()
+
+            -- Debug button
+            if ImGui.Button("Debug Chat Config") then
+                if config.debugChatConfig then
+                    config.debugChatConfig()
+                else
+                    logging.log("Chat Debug - Mode: " .. tostring(config.chatOutputMode))
+                    logging.log("Chat Debug - Custom Command: " .. tostring(config.customChatCommand))
+                end
+            end
+
+            ImGui.Separator()
+            if ImGui.Button("Close") then
+                ImGui.CloseCurrentPopup()
+            end
+
+            ImGui.EndPopup()
         end
-        
-        ImGui.Separator()
-        if ImGui.Button("Close") then
-            ImGui.CloseCurrentPopup()
-        end
-        
-        ImGui.EndPopup()
-    end
     else
-        ImGui.PopStyleColor()  -- Pop the color even if header is closed
+        ImGui.PopStyleColor() -- Pop the color even if header is closed
     end
 end
 
 local function draw_timing_settings()
     -- Timing Settings Section
-    ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.9, 0.4, 1.0)  -- Light yellow header
+    ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.9, 0.4, 1.0) -- Light yellow header
     if ImGui.CollapsingHeader("Timing Settings") then
         ImGui.PopStyleColor()
         ImGui.SameLine()
-        
+
         -- Help button
-        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)  -- Transparent background
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)  -- Slight highlight on hover
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)                -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3) -- Slight highlight on hover
         if ImGui.Button("(?)##TimingHelp") then
             ImGui.OpenPopup("TimingSettingsHelp")
         end
         ImGui.PopStyleColor(2)
-        
+
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Click for timing setting descriptions and recommendations")
         end
-        
+
         ImGui.Spacing()
-        
+
         -- Get current persistent config and sync to engine
         local persistentConfig = config.getEngineTiming()
-        config.syncTimingToEngine()  -- Ensure engine is synced with persistent config
-        
+        config.syncTimingToEngine() -- Ensure engine is synced with persistent config
+
         -- Helper function for compact timing input
         local function drawTimingInput(label, value, setValue, minVal, maxVal, unit, tooltip, step1, step2)
             step1 = step1 or 1
             step2 = step2 or 10
-            
+
             ImGui.AlignTextToFramePadding()
             ImGui.Text(label)
             ImGui.SameLine(125) -- Fixed alignment position
@@ -308,13 +309,13 @@ local function draw_timing_settings()
                 ImGui.SetTooltip(tooltip)
             end
         end
-        
+
         -- Compact timing settings in organized sections
         -- Helper function for compact timing input on same line
         local function drawTimingInputCompact(label, value, setValue, minVal, maxVal, unit, tooltip, step1, step2)
             step1 = step1 or 1
             step2 = step2 or 10
-            
+
             ImGui.AlignTextToFramePadding()
             ImGui.Text(label)
             ImGui.SameLine(400) -- Shorter alignment for compact layout
@@ -332,62 +333,62 @@ local function draw_timing_settings()
                 ImGui.SetTooltip(tooltip)
             end
         end
-        
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow section headers
+
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow section headers
         ImGui.Text("Corpse Processing")
         ImGui.PopStyleColor()
         ImGui.Separator()
-        
+
         -- Row 1: Open to Loot Start and Between Items
-        drawTimingInput("Open to Loot", persistentConfig.itemPopulationDelayMs, 
-            config.setItemPopulationDelay, 10, 5000, "ms", 
+        drawTimingInput("Open to Loot", persistentConfig.itemPopulationDelayMs,
+            config.setItemPopulationDelay, 10, 5000, "ms",
             "Time after opening corpse before starting to loot\nRecommended: 100-300ms")
-        
+
         ImGui.SameLine(280) -- Position for second column
-        drawTimingInputCompact("Between Items", persistentConfig.itemProcessingDelayMs, 
-            config.setItemProcessingDelay, 5, 2000, "ms", 
+        drawTimingInputCompact("Between Items", persistentConfig.itemProcessingDelayMs,
+            config.setItemProcessingDelay, 5, 2000, "ms",
             "Delay between processing each item slot\nRecommended: 25-100ms")
-        
+
         -- Row 2: After Loot Action and Empty/Ignored Slots
-        drawTimingInput("After Loot", persistentConfig.lootActionDelayMs, 
-            config.setLootActionDelay, 25, 3000, "ms", 
+        drawTimingInput("After Loot", persistentConfig.lootActionDelayMs,
+            config.setLootActionDelay, 25, 3000, "ms",
             "Wait time after looting/destroying an item\nRecommended: 100-300ms")
-        
+
         ImGui.SameLine(280) -- Position for second column
-        drawTimingInputCompact("Ignored Slots", persistentConfig.ignoredItemDelayMs, 
-            config.setIgnoredItemDelay, 1, 500, "ms", 
+        drawTimingInputCompact("Ignored Slots", persistentConfig.ignoredItemDelayMs,
+            config.setIgnoredItemDelay, 1, 500, "ms",
             "Fast processing for empty or ignored slots\nRecommended: 10-50ms", 1, 5)
-        
+
         ImGui.Spacing()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 0.9, 1.0)  -- Light cyan section headers
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 0.9, 1.0) -- Light cyan section headers
         ImGui.Text("Navigation")
         ImGui.PopStyleColor()
         ImGui.Separator()
-        
-        drawTimingInput("Retry Delay", persistentConfig.navRetryDelayMs, 
-            config.setNavRetryDelay, 50, 5000, "ms", 
+
+        drawTimingInput("Retry Delay", persistentConfig.navRetryDelayMs,
+            config.setNavRetryDelay, 50, 5000, "ms",
             "Time between navigation attempts\nRecommended: 250-750ms", 10, 50)
-        
-        drawTimingInput("Timeout", persistentConfig.maxNavTimeMs / 1000, 
-            function(val) config.setMaxNavTime(val * 1000) end, 5, 300, "sec", 
+
+        drawTimingInput("Timeout", persistentConfig.maxNavTimeMs / 1000,
+            function(val) config.setMaxNavTime(val * 1000) end, 5, 300, "sec",
             "Maximum time to spend reaching a corpse\nRecommended: 15-45 seconds", 1, 5)
-        
+
         ImGui.Spacing()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.7, 0.7, 1.0)  -- Light red section headers
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.7, 0.7, 1.0) -- Light red section headers
         ImGui.Text("Combat Detection")
         ImGui.PopStyleColor()
         ImGui.Separator()
-        
-        drawTimingInput("Wait Time", persistentConfig.combatWaitDelayMs, 
-            config.setCombatWaitDelay, 250, 10000, "ms", 
+
+        drawTimingInput("Wait Time", persistentConfig.combatWaitDelayMs,
+            config.setCombatWaitDelay, 250, 10000, "ms",
             "Delay between combat detection checks\nRecommended: 1000-3000ms", 50, 100)
-        
+
         ImGui.Spacing()
-        
+
         -- Preset Buttons
         ImGui.Text("Timing Presets:")
         ImGui.SameLine()
-        
+
         if ImGui.Button("Fast##TimingPreset") then
             config.applyTimingPreset("fast")
             config.syncTimingToEngine()
@@ -396,7 +397,7 @@ local function draw_timing_settings()
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Optimized for speed - may be less stable on slower connections")
         end
-        
+
         ImGui.SameLine()
         if ImGui.Button("Balanced##TimingPreset") then
             config.applyTimingPreset("balanced")
@@ -406,7 +407,7 @@ local function draw_timing_settings()
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Default balanced settings - good for most situations")
         end
-        
+
         ImGui.SameLine()
         if ImGui.Button("Conservative##TimingPreset") then
             config.applyTimingPreset("conservative")
@@ -416,7 +417,7 @@ local function draw_timing_settings()
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Slower but more stable - recommended for high latency or unstable connections")
         end
-        
+
         -- Help Popup
         if ImGui.BeginPopup("TimingSettingsHelp") then
             ImGui.Text("SmartLoot Timing Settings Help")
@@ -435,7 +436,6 @@ local function draw_timing_settings()
             ImGui.BulletText("Conservative: High latency, unstable connection")
             ImGui.EndPopup()
         end
-        
     else
         ImGui.PopStyleColor()
     end
@@ -444,13 +444,13 @@ end
 
 local function draw_speed_settings()
     -- Speed Settings Section
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.9, 0.4, 1.0)  -- Light green header
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.9, 0.4, 1.0) -- Light green header
     if ImGui.CollapsingHeader("Processing Speed") then
         ImGui.PopStyleColor()
         ImGui.SameLine()
         -- Help button
-        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)  -- Transparent background
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)  -- Slight highlight on hover
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)                -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3) -- Slight highlight on hover
         if ImGui.Button("(?)##SpeedHelp") then
             ImGui.OpenPopup("SpeedSettingsHelp")
         end
@@ -458,38 +458,38 @@ local function draw_speed_settings()
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Click for speed setting descriptions")
         end
-        
+
         -- Get current speed settings
         local speedMultiplier = config.getSpeedMultiplier()
         local speedPercentage = config.getSpeedPercentage()
-        
+
         -- Display current speed as percentage
         local speedText = "Normal"
-        local speedColor = {0.9, 0.9, 0.9, 1.0}  -- White for normal
+        local speedColor = { 0.9, 0.9, 0.9, 1.0 } -- White for normal
         if speedPercentage < 0 then
             speedText = string.format("%d%% Faster", -speedPercentage)
-            speedColor = {0.4, 0.9, 0.4, 1.0}  -- Green for faster
+            speedColor = { 0.4, 0.9, 0.4, 1.0 } -- Green for faster
         elseif speedPercentage > 0 then
             speedText = string.format("%d%% Slower", speedPercentage)
-            speedColor = {0.9, 0.4, 0.4, 1.0}  -- Red for slower
+            speedColor = { 0.9, 0.4, 0.4, 1.0 } -- Red for slower
         end
-        
+
         ImGui.Text("Current Speed: ")
         ImGui.SameLine()
         ImGui.TextColored(speedColor[1], speedColor[2], speedColor[3], speedColor[4], speedText)
-        
+
         -- Slider for speed adjustment
         ImGui.Text("Speed Adjustment:")
         ImGui.PushItemWidth(300)
         local newPercentage = ImGui.SliderInt("##SpeedSlider", speedPercentage, -75, 200, "%d%%")
         if newPercentage ~= speedPercentage then
             config.setSpeedPercentage(newPercentage)
-            logging.log(string.format("Speed adjusted to %d%% (%s)", 
-                newPercentage, 
+            logging.log(string.format("Speed adjusted to %d%% (%s)",
+                newPercentage,
                 newPercentage < 0 and "faster" or (newPercentage > 0 and "slower" or "normal")))
         end
         ImGui.PopItemWidth()
-        
+
         -- Preset buttons
         ImGui.Text("Speed Presets:")
         if ImGui.Button("Very Fast (50% faster)") then
@@ -516,7 +516,7 @@ local function draw_speed_settings()
             config.applySpeedPreset("very_slow")
             logging.log("Applied Very Slow speed preset (100% slower)")
         end
-        
+
         -- Help Popup
         if ImGui.BeginPopup("SpeedSettingsHelp") then
             ImGui.Text("SmartLoot Speed Settings Help")
@@ -532,14 +532,14 @@ local function draw_speed_settings()
             ImGui.BulletText("If experiencing errors: Increase speed percentage")
             ImGui.EndPopup()
         end
-        
+
         -- Show current timing values
         if ImGui.CollapsingHeader("Current Timing Values", ImGuiTreeNodeFlags.None) then
             ImGui.BeginTable("TimingValuesTable", 2, ImGuiTableFlags.Borders)
             ImGui.TableSetupColumn("Setting")
             ImGui.TableSetupColumn("Value (ms)")
             ImGui.TableHeadersRow()
-            
+
             local function showTimingRow(name, value)
                 ImGui.TableNextRow()
                 ImGui.TableSetColumnIndex(0)
@@ -547,7 +547,7 @@ local function draw_speed_settings()
                 ImGui.TableSetColumnIndex(1)
                 ImGui.Text(tostring(value) .. " ms")
             end
-            
+
             showTimingRow("Item Population Delay", config.engineTiming.itemPopulationDelayMs)
             showTimingRow("Item Processing Delay", config.engineTiming.itemProcessingDelayMs)
             showTimingRow("Loot Action Delay", config.engineTiming.lootActionDelayMs)
@@ -563,232 +563,355 @@ local function draw_speed_settings()
     ImGui.Spacing()
 end
 
+local function draw_item_announce_settings(config)
+    -- Item Announce Settings Section
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.6, 0.9, 1.0) -- Light purple header
+    if ImGui.CollapsingHeader("Item Announce Settings") then
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+
+        -- Help button
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)                -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3) -- Slight highlight on hover
+        if ImGui.Button("(?)##ItemAnnounceHelp") then
+            ImGui.OpenPopup("ItemAnnounceSettingsHelp")
+        end
+        ImGui.PopStyleColor(2)
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Click for item announce mode descriptions")
+        end
+
+        -- Item Announce Mode Selection
+        ImGui.Text("Item Announce Mode:")
+        ImGui.SameLine()
+        ImGui.PushItemWidth(150)
+
+        local announceModes = { "all", "ignored", "none" }
+        local announceModeNames = {
+            ["all"] = "All Items",
+            ["ignored"] = "Ignored Items Only",
+            ["none"] = "No Announcements"
+        }
+
+        -- Get current mode directly from config
+        local currentMode = config.getItemAnnounceMode and config.getItemAnnounceMode() or "all"
+
+        -- Display current mode name
+        local displayName = announceModeNames[currentMode] or currentMode
+
+        if ImGui.BeginCombo("##ItemAnnounceMode", displayName) then
+            for i, mode in ipairs(announceModes) do
+                local isSelected = (currentMode == mode)
+                local modeDisplayName = announceModeNames[mode] or mode
+
+                if ImGui.Selectable(modeDisplayName .. "##ItemAnnounce" .. i, isSelected) then
+                    -- Only change if it's actually different
+                    if currentMode ~= mode then
+                        if config.setItemAnnounceMode then
+                            local success, errorMsg = config.setItemAnnounceMode(mode)
+                            if success then
+                                logging.log("Item announce mode changed to: " ..
+                                    (config.getItemAnnounceModeDescription and config.getItemAnnounceModeDescription() or mode))
+                            else
+                                logging.log("Failed to set item announce mode: " .. tostring(errorMsg))
+                            end
+                        else
+                            -- Fallback: directly set the mode
+                            config.itemAnnounceMode = mode
+                            if config.save then
+                                config.save()
+                            end
+                            logging.log("Item announce mode changed to: " .. mode)
+                        end
+                    end
+                end
+
+                if isSelected then
+                    ImGui.SetItemDefaultFocus()
+                end
+            end
+            ImGui.EndCombo()
+        end
+        ImGui.PopItemWidth()
+
+        -- Show current mode description
+        local modeDescription = ""
+        if config.getItemAnnounceModeDescription then
+            modeDescription = config.getItemAnnounceModeDescription()
+        else
+            modeDescription = announceModeNames[currentMode] or currentMode
+        end
+
+        ImGui.Text("Current Mode: " .. modeDescription)
+
+        -- Show examples based on current mode
+        ImGui.Spacing()
+        ImGui.Text("Examples:")
+        if currentMode == "all" then
+            ImGui.BulletText("Announces: 'Looted: Ancient Dragon Scale'")
+            ImGui.BulletText("Announces: 'Ignored: Rusty Sword'")
+            ImGui.BulletText("Announces: 'Destroyed: Tattered Cloth'")
+        elseif currentMode == "ignored" then
+            ImGui.BulletText("Announces: 'Ignored: Rusty Sword'")
+            ImGui.BulletText("Silent: Looted items")
+            ImGui.BulletText("Silent: Destroyed items")
+        elseif currentMode == "none" then
+            ImGui.BulletText("Silent: All item actions")
+            ImGui.BulletText("Only logs to console/file")
+        end
+
+        -- Help Popup
+        if ImGui.BeginPopup("ItemAnnounceSettingsHelp") then
+            ImGui.Text("Item Announce Settings Help")
+            ImGui.Separator()
+
+            ImGui.Text("Announce Mode Descriptions:")
+            ImGui.BulletText("All Items: Announces every loot action (keep, ignore, destroy)")
+            ImGui.BulletText("Ignored Items Only: Only announces items that are ignored")
+            ImGui.BulletText("No Announcements: Silent mode - no chat announcements")
+
+            ImGui.Separator()
+            ImGui.Text("Notes:")
+            ImGui.BulletText("Uses the configured chat output mode (group, raid, etc.)")
+            ImGui.BulletText("All actions are still logged to console regardless of setting")
+            ImGui.BulletText("Useful for reducing chat spam in busy looting sessions")
+
+            ImGui.EndPopup()
+        end
+    else
+        ImGui.PopStyleColor()
+    end
+    ImGui.Spacing()
+end
+
 local function draw_chase_settings(config)
     -- Chase Integration Settings Section
-    ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.8, 0.6, 1.0)  -- Light orange header
+    ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.8, 0.6, 1.0) -- Light orange header
     if ImGui.CollapsingHeader("Chase Integration Settings") then
         ImGui.PopStyleColor()
         ImGui.SameLine()
-    
-    -- Help button that opens popup
-    ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)  -- Transparent background
-    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)  -- Slight highlight on hover
-    if ImGui.Button("(?)##ChaseHelp") then
-        ImGui.OpenPopup("ChaseSettingsHelp")
-    end
-    ImGui.PopStyleColor(2)
-    
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Click for chase command examples and testing options")
-    end
-    
-    -- Enable/Disable chase commands
-    local useChase, chaseChanged = ImGui.Checkbox("Enable Chase Commands", config.useChaseCommands or false)
-    if chaseChanged then
-        config.useChaseCommands = useChase
-        if config.save then
-            config.save()
+
+        -- Help button that opens popup
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)                -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3) -- Slight highlight on hover
+        if ImGui.Button("(?)##ChaseHelp") then
+            ImGui.OpenPopup("ChaseSettingsHelp")
         end
-        
-        if config.useChaseCommands then
-            logging.log("Chase commands enabled")
-        else
-            logging.log("Chase commands disabled")
+        ImGui.PopStyleColor(2)
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Click for chase command examples and testing options")
         end
-    end
-    
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Enable custom chase pause/resume commands during looting")
-    end
-    
-    -- Only show command inputs if chase commands are enabled
-    if config.useChaseCommands then
-        ImGui.Spacing()
-        
-        -- Chase Pause Command
-        ImGui.Text("Chase Pause Command:")
-        ImGui.SameLine()
-        ImGui.PushItemWidth(200)
-        
-        local pauseCommand = config.chasePauseCommand or "/luachase pause on"
-        local newPauseCommand, pauseChanged = ImGui.InputText("##ChasePauseCommand", pauseCommand, 128)
-        
-        if pauseChanged then
-            -- Ensure command starts with /
-            if not newPauseCommand:match("^/") then
-                newPauseCommand = "/" .. newPauseCommand
-            end
-            config.chasePauseCommand = newPauseCommand
+
+        -- Enable/Disable chase commands
+        local useChase, chaseChanged = ImGui.Checkbox("Enable Chase Commands", config.useChaseCommands or false)
+        if chaseChanged then
+            config.useChaseCommands = useChase
             if config.save then
                 config.save()
             end
-            logging.log("Chase pause command set to: " .. newPauseCommand)
-        end
-        
-        ImGui.PopItemWidth()
-        
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Command to pause chase/follow during looting")
-        end
-        
-        -- Chase Resume Command
-        ImGui.Text("Chase Resume Command:")
-        ImGui.SameLine()
-        ImGui.PushItemWidth(200)
-        
-        local resumeCommand = config.chaseResumeCommand or "/luachase pause off"
-        local newResumeCommand, resumeChanged = ImGui.InputText("##ChaseResumeCommand", resumeCommand, 128)
-        
-        if resumeChanged then
-            -- Ensure command starts with /
-            if not newResumeCommand:match("^/") then
-                newResumeCommand = "/" .. newResumeCommand
+
+            if config.useChaseCommands then
+                logging.log("Chase commands enabled")
+            else
+                logging.log("Chase commands disabled")
             end
-            config.chaseResumeCommand = newResumeCommand
-            if config.save then
-                config.save()
-            end
-            logging.log("Chase resume command set to: " .. newResumeCommand)
         end
-        
-        ImGui.PopItemWidth()
-        
+
         if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Command to resume chase/follow after looting")
+            ImGui.SetTooltip("Enable custom chase pause/resume commands during looting")
         end
-        
-        -- Current configuration display
-        ImGui.Spacing()
-        ImGui.Text("Current Configuration:")
-        ImGui.BulletText("Pause: " .. (config.chasePauseCommand or "None"))
-        ImGui.BulletText("Resume: " .. (config.chaseResumeCommand or "None"))
-    end
-    
-    -- Help Popup
-    if ImGui.BeginPopup("ChaseSettingsHelp") then
-        ImGui.Text("Chase Command Help & Testing")
-        ImGui.Separator()
-        
-        -- Common chase commands
-        ImGui.Text("Common Chase Commands:")
-        ImGui.BulletText("LuaChase: /luachase pause on, /luachase pause off")
-        ImGui.BulletText("RGMercs: /rgl chaseon, /rgl chaseoff")
-        ImGui.BulletText("MQ2AdvPath: /afollow pause, /afollow unpause")
-        ImGui.BulletText("MQ2Nav: /nav pause, /nav unpause")
-        ImGui.BulletText("Custom: Any command you want to use")
-        
-        ImGui.Separator()
-        
-        -- Only show test buttons if chase commands are enabled
+
+        -- Only show command inputs if chase commands are enabled
         if config.useChaseCommands then
-            ImGui.Text("Test Chase Commands:")
-            
-            if ImGui.Button("Test Pause") then
-                if config.executeChaseCommand then
-                    local success, msg = config.executeChaseCommand("pause")
-                    if success then
-                        logging.log("Chase pause test: " .. msg)
-                    else
-                        logging.log("Chase pause test failed: " .. msg)
-                    end
-                else
-                    -- Fallback test
-                    mq.cmd(config.chasePauseCommand or "/luachase pause on")
-                    logging.log("Chase pause test executed: " .. (config.chasePauseCommand or "/luachase pause on"))
-                end
-            end
-            
+            ImGui.Spacing()
+
+            -- Chase Pause Command
+            ImGui.Text("Chase Pause Command:")
             ImGui.SameLine()
-            
-            if ImGui.Button("Test Resume") then
-                if config.executeChaseCommand then
-                    local success, msg = config.executeChaseCommand("resume")
-                    if success then
-                        logging.log("Chase resume test: " .. msg)
-                    else
-                        logging.log("Chase resume test failed: " .. msg)
-                    end
-                else
-                    -- Fallback test
-                    mq.cmd(config.chaseResumeCommand or "/luachase pause off")
-                    logging.log("Chase resume test executed: " .. (config.chaseResumeCommand or "/luachase pause off"))
+            ImGui.PushItemWidth(200)
+
+            local pauseCommand = config.chasePauseCommand or "/luachase pause on"
+            local newPauseCommand, pauseChanged = ImGui.InputText("##ChasePauseCommand", pauseCommand, 128)
+
+            if pauseChanged then
+                -- Ensure command starts with /
+                if not newPauseCommand:match("^/") then
+                    newPauseCommand = "/" .. newPauseCommand
                 end
+                config.chasePauseCommand = newPauseCommand
+                if config.save then
+                    config.save()
+                end
+                logging.log("Chase pause command set to: " .. newPauseCommand)
             end
-        else
-            ImGui.TextDisabled("Enable chase commands to test")
+
+            ImGui.PopItemWidth()
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Command to pause chase/follow during looting")
+            end
+
+            -- Chase Resume Command
+            ImGui.Text("Chase Resume Command:")
+            ImGui.SameLine()
+            ImGui.PushItemWidth(200)
+
+            local resumeCommand = config.chaseResumeCommand or "/luachase pause off"
+            local newResumeCommand, resumeChanged = ImGui.InputText("##ChaseResumeCommand", resumeCommand, 128)
+
+            if resumeChanged then
+                -- Ensure command starts with /
+                if not newResumeCommand:match("^/") then
+                    newResumeCommand = "/" .. newResumeCommand
+                end
+                config.chaseResumeCommand = newResumeCommand
+                if config.save then
+                    config.save()
+                end
+                logging.log("Chase resume command set to: " .. newResumeCommand)
+            end
+
+            ImGui.PopItemWidth()
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Command to resume chase/follow after looting")
+            end
+
+            -- Current configuration display
+            ImGui.Spacing()
+            ImGui.Text("Current Configuration:")
+            ImGui.BulletText("Pause: " .. (config.chasePauseCommand or "None"))
+            ImGui.BulletText("Resume: " .. (config.chaseResumeCommand or "None"))
         end
-        
-        ImGui.Separator()
-        if ImGui.Button("Close") then
-            ImGui.CloseCurrentPopup()
+
+        -- Help Popup
+        if ImGui.BeginPopup("ChaseSettingsHelp") then
+            ImGui.Text("Chase Command Help & Testing")
+            ImGui.Separator()
+
+            -- Common chase commands
+            ImGui.Text("Common Chase Commands:")
+            ImGui.BulletText("LuaChase: /luachase pause on, /luachase pause off")
+            ImGui.BulletText("RGMercs: /rgl chaseon, /rgl chaseoff")
+            ImGui.BulletText("MQ2AdvPath: /afollow pause, /afollow unpause")
+            ImGui.BulletText("MQ2Nav: /nav pause, /nav unpause")
+            ImGui.BulletText("Custom: Any command you want to use")
+
+            ImGui.Separator()
+
+            -- Only show test buttons if chase commands are enabled
+            if config.useChaseCommands then
+                ImGui.Text("Test Chase Commands:")
+
+                if ImGui.Button("Test Pause") then
+                    if config.executeChaseCommand then
+                        local success, msg = config.executeChaseCommand("pause")
+                        if success then
+                            logging.log("Chase pause test: " .. msg)
+                        else
+                            logging.log("Chase pause test failed: " .. msg)
+                        end
+                    else
+                        -- Fallback test
+                        mq.cmd(config.chasePauseCommand or "/luachase pause on")
+                        logging.log("Chase pause test executed: " .. (config.chasePauseCommand or "/luachase pause on"))
+                    end
+                end
+
+                ImGui.SameLine()
+
+                if ImGui.Button("Test Resume") then
+                    if config.executeChaseCommand then
+                        local success, msg = config.executeChaseCommand("resume")
+                        if success then
+                            logging.log("Chase resume test: " .. msg)
+                        else
+                            logging.log("Chase resume test failed: " .. msg)
+                        end
+                    else
+                        -- Fallback test
+                        mq.cmd(config.chaseResumeCommand or "/luachase pause off")
+                        logging.log("Chase resume test executed: " ..
+                            (config.chaseResumeCommand or "/luachase pause off"))
+                    end
+                end
+            else
+                ImGui.TextDisabled("Enable chase commands to test")
+            end
+
+            ImGui.Separator()
+            if ImGui.Button("Close") then
+                ImGui.CloseCurrentPopup()
+            end
+
+            ImGui.EndPopup()
         end
-        
-        ImGui.EndPopup()
-    end
     else
-        ImGui.PopStyleColor()  -- Pop the color even if header is closed
+        ImGui.PopStyleColor() -- Pop the color even if header is closed
     end
 end
 
 function uiSettings.draw(lootUI, settings, config)
     if ImGui.BeginTabItem("Settings") then
         -- Header section with pause/resume button
-        ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.4, 0.8, 1.0)  -- Blue button
+        ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.4, 0.8, 1.0) -- Blue button
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.5, 0.9, 1.0)
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.3, 0.7, 1.0)
-        
+
         if ImGui.Button(lootUI.paused and "Resume" or "Pause") then
             mq.cmd("/smartloot_pause " .. (lootUI.paused and "off" or "on"))
         end
         ImGui.PopStyleColor(3)
-        
+
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip(lootUI.paused and "Resume loot processing" or "Pause loot processing")
         end
-        
+
         -- Database info on same line
         ImGui.SameLine()
         ImGui.Text("  |  ")
         ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0)  -- Gray text
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0) -- Gray text
         ImGui.Text("DB:")
         ImGui.PopStyleColor()
         ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.9, 1.0)  -- Light text
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.9, 1.0) -- Light text
         local dbPath = config.filePath or "smartloot_config.json"
-        local dbName = dbPath:match("([^/\\]+)$") or dbPath  -- Extract filename from path
+        local dbName = dbPath:match("([^/\\]+)$") or dbPath     -- Extract filename from path
         ImGui.Text(dbName)
         ImGui.PopStyleColor()
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Database Config File:\n" .. dbPath)
         end
-        
+
         ImGui.SameLine()
         ImGui.Text("  |  ")
         ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0)  -- Gray text
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0) -- Gray text
         ImGui.Text("SQLite:")
         ImGui.PopStyleColor()
         ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0)  -- Light green text
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0) -- Light green text
         ImGui.Text("Connected")
         ImGui.PopStyleColor()
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Database Status: SQLite database is connected and operational")
         end
-        
+
         -- Core Performance Settings Section
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0)  -- Light blue header
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0) -- Light blue header
         if ImGui.CollapsingHeader("Core Performance Settings", ImGuiTreeNodeFlags.DefaultOpen) then
             ImGui.PopStyleColor()
             ImGui.Spacing()
 
-            ImGui.Columns(2, nil, false)  -- Two-column layout
-            ImGui.SetColumnWidth(0, 300)  -- Set a fixed width for column 1
-            ImGui.SetColumnWidth(1, 300)  -- Set a fixed width for column 2
+            ImGui.Columns(2, nil, false) -- Two-column layout
+            ImGui.SetColumnWidth(0, 300) -- Set a fixed width for column 1
+            ImGui.SetColumnWidth(1, 300) -- Set a fixed width for column 2
 
             ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
             ImGui.Text("Loop Delay:")
             ImGui.PopStyleColor()
             ImGui.SameLine(106)
@@ -800,7 +923,7 @@ function uiSettings.draw(lootUI, settings, config)
 
             ImGui.NextColumn()
             ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
             ImGui.Text("Loot Radius:")
             ImGui.PopStyleColor()
             ImGui.SameLine(125)
@@ -812,7 +935,7 @@ function uiSettings.draw(lootUI, settings, config)
 
             ImGui.NextColumn()
             ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
             ImGui.Text("Combat Delay:")
             ImGui.PopStyleColor()
             ImGui.SameLine()
@@ -824,237 +947,114 @@ function uiSettings.draw(lootUI, settings, config)
 
             ImGui.NextColumn()
             ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
             ImGui.Text("Main Toon Name:")
             ImGui.PopStyleColor()
             ImGui.SameLine()
-            ImGui.PushItemWidth(150)  -- Set input box width
+            ImGui.PushItemWidth(150) -- Set input box width
 
             local newMainToonName, changedMainToonName = ImGui.InputText("##MainToonName", config.mainToonName or "", 128)
             if changedMainToonName then
                 config.mainToonName = newMainToonName
                 if config.save then
-                    config.save()  -- Save to config file
+                    config.save() -- Save to config file
                 end
             end
 
             ImGui.PopItemWidth()
-            ImGui.Columns(1)  -- End columns for this section
+            ImGui.Columns(1) -- End columns for this section
             ImGui.Spacing()
         else
-            ImGui.PopStyleColor()  -- Pop the color even if header is closed
+            ImGui.PopStyleColor() -- Pop the color even if header is closed
         end
-        
+
         -- Coordination Settings Section
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0)  -- Light green header
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0) -- Light green header
         if ImGui.CollapsingHeader("Peer Coordination Settings", ImGuiTreeNodeFlags.DefaultOpen) then
             ImGui.PopStyleColor()
             ImGui.Spacing()
 
-            ImGui.Columns(3, nil, false)  -- Three-column layout
-            ImGui.SetColumnWidth(0, 200)  -- Set a fixed width for column 1
-            ImGui.SetColumnWidth(1, 200)  -- Set a fixed width for column 2
+            ImGui.Columns(3, nil, false) -- Three-column layout
+            ImGui.SetColumnWidth(0, 200) -- Set a fixed width for column 1
+            ImGui.SetColumnWidth(1, 200) -- Set a fixed width for column 2
             ImGui.SetColumnWidth(2, 200)
-        
-        -- **Row 1: Is Main Looter & Loot Command Type**
-        ImGui.AlignTextToFramePadding()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-        ImGui.Text("Is Main Looter:")
-        ImGui.PopStyleColor()
-        ImGui.SameLine(150)  -- Ensure spacing for alignment
-        local isMain, changedIsMain = ImGui.Checkbox("##IsMain", settings.isMain)
-        if changedIsMain then settings.isMain = isMain end
-        
-        ImGui.NextColumn()  -- Move to the second column
-        
-        ImGui.AlignTextToFramePadding()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-        ImGui.Text("Loot Command Type:")
-        ImGui.PopStyleColor()
-        ImGui.SameLine()
-        
-        local commandOptions = { "DanNet", "E3", "EQBC" }
-        local commandValues = { "dannet", "e3", "bc" }  -- Internal values that match util.lua
-        local commandNames = {
-            ["dannet"] = "DanNet",
-            ["e3"] = "E3",
-            ["bc"] = "EQBC"
-        }
-        
-        -- Get current mode directly from config - ensure it's valid (following ChatMode pattern)
-        local currentCommandType = config.lootCommandType or "dannet"
-        
-        -- Validate that currentCommandType is in our list
-        local isValidCommand = false
-        for _, value in ipairs(commandValues) do
-            if value == currentCommandType then
-                isValidCommand = true
-                break
-            end
-        end
-        
-        -- If invalid command, default to dannet (following ChatMode pattern)
-        if not isValidCommand then
-            currentCommandType = "dannet"
-            config.lootCommandType = currentCommandType
-            if config.save then
-                config.save()
-            end
-        end
-        
-        local currentIndex = 0  -- Use 0-based indexing like ChatMode
-        
-        -- Find current command type index (following ChatMode pattern)
-        for i, value in ipairs(commandValues) do
-            if value == currentCommandType then
-                currentIndex = i - 1  -- Convert to 0-based
-                break
-            end
-        end
-        
-        -- Display current command name (following ChatMode pattern)
-        local displayName = commandNames[currentCommandType] or currentCommandType
-        
-        ImGui.PushItemWidth(120)
-        if ImGui.BeginCombo("##LootCommandType", displayName) then
-            for i, option in ipairs(commandOptions) do
-                local isSelected = (currentIndex == i - 1)  -- 0-based comparison like ChatMode
-                if ImGui.Selectable(option, isSelected) then
-                    -- Immediately update the config when selected (following ChatMode pattern)
-                    local selectedValue = commandValues[i]
-                    config.lootCommandType = selectedValue
-                    
-                    logging.log("Loot command type changed to: " .. option .. " (" .. selectedValue .. ")")
-                    if config.save then
-                        config.save()
-                    end
-                    
-                    -- Update local variables for immediate UI feedback (following ChatMode pattern)
-                    currentCommandType = selectedValue
-                    currentIndex = i - 1
-                end
-                if isSelected then
-                    ImGui.SetItemDefaultFocus()
-                end
-            end
-            ImGui.EndCombo()
-        end
-        ImGui.PopItemWidth()
-        
-        -- Add a quick fix button
-        ImGui.SameLine()
-        if ImGui.Button("Reset##ResetCommandType") then
-            config.lootCommandType = "dannet"
-            if config.save then
-                config.save()
-            end
-            logging.log("Command type FORCE reset to dannet")
-        end
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Force reset command type to DanNet")
-        end
-        
-        -- Debug button to see what's in memory
-        ImGui.SameLine()
-        if ImGui.Button("Debug##DebugCommandType") then
-            logging.log("=== COMMAND TYPE DEBUG ===")
-            logging.log("config.lootCommandType = '" .. tostring(config.lootCommandType) .. "'")
-            logging.log("Raw type: " .. type(config.lootCommandType))
-            if config.debugPrint then
-                config.debugPrint()
-            end
-        end
-        
-            ImGui.NextColumn()  -- 3rd Column
+
+            -- **Row 1: Is Main Looter & Loot Command Type**
             ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-            ImGui.Text("Pause Peer Triggering:")
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
+            ImGui.Text("Is Main Looter:")
             ImGui.PopStyleColor()
-            ImGui.SameLine(150)  -- Ensure spacing for alignment
-            local peerTriggerPaused, changedPausePeerTrigger = ImGui.Checkbox("##PausePeerTriggering", settings.peerTriggerPaused)
-            if changedPausePeerTrigger then settings.peerTriggerPaused = peerTriggerPaused end
-            ImGui.Columns(1)  -- End columns for coordination section
-            ImGui.Spacing()
-        else
-            ImGui.PopStyleColor()  -- Pop the color even if header is closed
-        end
-        
-        -- Timing Settings Section
-        draw_timing_settings()
-        
-        -- Speed Settings Section
-        draw_speed_settings()
-        
-        -- Decision Settings Section
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.6, 1.0, 1.0)  -- Light purple header
-        if ImGui.CollapsingHeader("Decision Settings", ImGuiTreeNodeFlags.DefaultOpen) then
+            ImGui.SameLine(150) -- Ensure spacing for alignment
+            local isMain, changedIsMain = ImGui.Checkbox("##IsMain", settings.isMain)
+            if changedIsMain then settings.isMain = isMain end
+
+            ImGui.NextColumn() -- Move to the second column
+
+            ImGui.AlignTextToFramePadding()
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
+            ImGui.Text("Loot Command Type:")
             ImGui.PopStyleColor()
-            ImGui.Spacing()
-
-        -- Add checkbox for auto-resolve unknown items
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)  -- Light yellow labels
-        ImGui.Text("Auto Apply Rule:")
-        ImGui.PopStyleColor()
-        ImGui.SameLine(150)
-        local autoResolve, autoResolveChanged = ImGui.Checkbox("##Auto-resolve unknown items", SmartLootEngine.config.autoResolveUnknownItems or false)
-        if autoResolveChanged then
-            SmartLootEngine.config.autoResolveUnknownItems = autoResolve
-            if autoResolve then
-                logging.log("Auto-resolve unknown items enabled - will use default action after timeout")
-            else
-                logging.log("Auto-resolve unknown items disabled - will ignore after timeout")
-            end
-        end
-
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("When enabled, items without rules will be handled according to the default action after the timeout.\nWhen disabled, items will be ignored after timeout.")
-        end
-
-        -- Only show timeout setting if auto-resolve is enabled
-        if SmartLootEngine.config.autoResolveUnknownItems then
-            ImGui.Text("Pending Decision Timeout (s):")
             ImGui.SameLine()
-            ImGui.PushItemWidth(100)
-        
-            local newTimeout, changedTimeout = ImGui.InputInt("##PendingDecisionTimeout", settings.pendingDecisionTimeout / 1000, 0, 0)
-            if changedTimeout then
-                settings.pendingDecisionTimeout = math.max(5, newTimeout) * 1000  -- Min 5 seconds, convert to ms
-                -- Update the engine's config
-                SmartLootEngine.config.pendingDecisionTimeoutMs = settings.pendingDecisionTimeout
+
+            local commandOptions = { "DanNet", "E3", "EQBC" }
+            local commandValues = { "dannet", "e3", "bc" } -- Internal values that match util.lua
+            local commandNames = {
+                ["dannet"] = "DanNet",
+                ["e3"] = "E3",
+                ["bc"] = "EQBC"
+            }
+
+            -- Get current mode directly from config - ensure it's valid (following ChatMode pattern)
+            local currentCommandType = config.lootCommandType or "dannet"
+
+            -- Validate that currentCommandType is in our list
+            local isValidCommand = false
+            for _, value in ipairs(commandValues) do
+                if value == currentCommandType then
+                    isValidCommand = true
+                    break
+                end
             end
-        
-            ImGui.PopItemWidth()
-        
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Time before auto-resolving items with no rule (minimum 5 seconds)")
+
+            -- If invalid command, default to dannet (following ChatMode pattern)
+            if not isValidCommand then
+                currentCommandType = "dannet"
+                config.lootCommandType = currentCommandType
+                if config.save then
+                    config.save()
+                end
             end
-        
-            -- Default action selector
-            ImGui.Text("Default Action:")
-            ImGui.SameLine()
+
+            local currentIndex = 0 -- Use 0-based indexing like ChatMode
+
+            -- Find current command type index (following ChatMode pattern)
+            for i, value in ipairs(commandValues) do
+                if value == currentCommandType then
+                    currentIndex = i - 1 -- Convert to 0-based
+                    break
+                end
+            end
+
+            -- Display current command name (following ChatMode pattern)
+            local displayName = commandNames[currentCommandType] or currentCommandType
+
             ImGui.PushItemWidth(120)
+            if ImGui.BeginCombo("##LootCommandType", displayName) then
+                for i, option in ipairs(commandOptions) do
+                    local isSelected = (currentIndex == i - 1) -- 0-based comparison like ChatMode
+                    if ImGui.Selectable(option, isSelected) then
+                        -- Immediately update the config when selected (following ChatMode pattern)
+                        local selectedValue = commandValues[i]
+                        config.lootCommandType = selectedValue
 
-            local defaultActions = {"Keep", "Ignore", "Destroy"}
-            -- Initialize settings value if not present
-            if not settings.defaultUnknownItemAction then
-                settings.defaultUnknownItemAction = SmartLootEngine.config.defaultUnknownItemAction or "Ignore"
-            end
-            
-            -- Use settings.defaultUnknownItemAction directly in BeginCombo
-            if ImGui.BeginCombo("##DefaultAction", settings.defaultUnknownItemAction) then
-                for _, action in ipairs(defaultActions) do
-                    -- Check against settings.defaultUnknownItemAction for selection
-                    local isSelected = (settings.defaultUnknownItemAction == action)
-                    if ImGui.Selectable(action, isSelected) then
-                        -- Update both settings and engine config
-                        settings.defaultUnknownItemAction = action
-                        SmartLootEngine.config.defaultUnknownItemAction = action
-                        logging.log("Default unknown item action set to: " .. action)
-                        
-                        -- IMPORTANT: Save the configuration after changing a setting
+                        logging.log("Loot command type changed to: " .. option .. " (" .. selectedValue .. ")")
                         if config.save then
                             config.save()
                         end
+
+                        -- Update local variables for immediate UI feedback (following ChatMode pattern)
+                        currentCommandType = selectedValue
+                        currentIndex = i - 1
                     end
                     if isSelected then
                         ImGui.SetItemDefaultFocus()
@@ -1062,20 +1062,148 @@ function uiSettings.draw(lootUI, settings, config)
                 end
                 ImGui.EndCombo()
             end
-
             ImGui.PopItemWidth()
 
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Action to take for items without rules after timeout")
+            -- Add a quick fix button
+            ImGui.SameLine()
+            if ImGui.Button("Reset##ResetCommandType") then
+                config.lootCommandType = "dannet"
+                if config.save then
+                    config.save()
+                end
+                logging.log("Command type FORCE reset to dannet")
             end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Force reset command type to DanNet")
+            end
+
+            -- Debug button to see what's in memory
+            ImGui.SameLine()
+            if ImGui.Button("Debug##DebugCommandType") then
+                logging.log("=== COMMAND TYPE DEBUG ===")
+                logging.log("config.lootCommandType = '" .. tostring(config.lootCommandType) .. "'")
+                logging.log("Raw type: " .. type(config.lootCommandType))
+                if config.debugPrint then
+                    config.debugPrint()
+                end
+            end
+
+            ImGui.NextColumn()                                      -- 3rd Column
+            ImGui.AlignTextToFramePadding()
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
+            ImGui.Text("Pause Peer Triggering:")
+            ImGui.PopStyleColor()
+            ImGui.SameLine(150) -- Ensure spacing for alignment
+            local peerTriggerPaused, changedPausePeerTrigger = ImGui.Checkbox("##PausePeerTriggering",
+                settings.peerTriggerPaused)
+            if changedPausePeerTrigger then settings.peerTriggerPaused = peerTriggerPaused end
+            ImGui.Columns(1) -- End columns for coordination section
+            ImGui.Spacing()
+        else
+            ImGui.PopStyleColor() -- Pop the color even if header is closed
         end
+
+        -- Timing Settings Section
+        draw_timing_settings()
+
+        -- Speed Settings Section
+        draw_speed_settings()
+
+        -- Decision Settings Section
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.6, 1.0, 1.0) -- Light purple header
+        if ImGui.CollapsingHeader("Decision Settings", ImGuiTreeNodeFlags.DefaultOpen) then
+            ImGui.PopStyleColor()
+            ImGui.Spacing()
+
+            -- Add checkbox for auto-resolve unknown items
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
+            ImGui.Text("Auto Apply Rule:")
+            ImGui.PopStyleColor()
+            ImGui.SameLine(150)
+            local autoResolve, autoResolveChanged = ImGui.Checkbox("##Auto-resolve unknown items",
+                SmartLootEngine.config.autoResolveUnknownItems or false)
+            if autoResolveChanged then
+                SmartLootEngine.config.autoResolveUnknownItems = autoResolve
+                if autoResolve then
+                    logging.log("Auto-resolve unknown items enabled - will use default action after timeout")
+                else
+                    logging.log("Auto-resolve unknown items disabled - will ignore after timeout")
+                end
+            end
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip(
+                    "When enabled, items without rules will be handled according to the default action after the timeout.\nWhen disabled, items will be ignored after timeout.")
+            end
+
+            -- Only show timeout setting if auto-resolve is enabled
+            if SmartLootEngine.config.autoResolveUnknownItems then
+                ImGui.Text("Pending Decision Timeout (s):")
+                ImGui.SameLine()
+                ImGui.PushItemWidth(100)
+
+                local newTimeout, changedTimeout = ImGui.InputInt("##PendingDecisionTimeout",
+                    settings.pendingDecisionTimeout / 1000, 0, 0)
+                if changedTimeout then
+                    settings.pendingDecisionTimeout = math.max(5, newTimeout) * 1000 -- Min 5 seconds, convert to ms
+                    -- Update the engine's config
+                    SmartLootEngine.config.pendingDecisionTimeoutMs = settings.pendingDecisionTimeout
+                end
+
+                ImGui.PopItemWidth()
+
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Time before auto-resolving items with no rule (minimum 5 seconds)")
+                end
+
+                -- Default action selector
+                ImGui.Text("Default Action:")
+                ImGui.SameLine()
+                ImGui.PushItemWidth(120)
+
+                local defaultActions = { "Keep", "Ignore", "Destroy" }
+                -- Initialize settings value if not present
+                if not settings.defaultUnknownItemAction then
+                    settings.defaultUnknownItemAction = SmartLootEngine.config.defaultUnknownItemAction or "Ignore"
+                end
+
+                -- Use settings.defaultUnknownItemAction directly in BeginCombo
+                if ImGui.BeginCombo("##DefaultAction", settings.defaultUnknownItemAction) then
+                    for _, action in ipairs(defaultActions) do
+                        -- Check against settings.defaultUnknownItemAction for selection
+                        local isSelected = (settings.defaultUnknownItemAction == action)
+                        if ImGui.Selectable(action, isSelected) then
+                            -- Update both settings and engine config
+                            settings.defaultUnknownItemAction = action
+                            SmartLootEngine.config.defaultUnknownItemAction = action
+                            logging.log("Default unknown item action set to: " .. action)
+
+                            -- IMPORTANT: Save the configuration after changing a setting
+                            if config.save then
+                                config.save()
+                            end
+                        end
+                        if isSelected then
+                            ImGui.SetItemDefaultFocus()
+                        end
+                    end
+                    ImGui.EndCombo()
+                end
+
+                ImGui.PopItemWidth()
+
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Action to take for items without rules after timeout")
+                end
+            end
 
             ImGui.Spacing()
         else
-            ImGui.PopStyleColor()  -- Pop the color even if header is closed
+            ImGui.PopStyleColor() -- Pop the color even if header is closed
         end
-        
+
         draw_chat_settings(config)
+        draw_item_announce_settings(config)
         draw_chase_settings(config)
         ImGui.EndTabItem()
     end

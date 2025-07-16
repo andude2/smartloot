@@ -1,6 +1,7 @@
 -- ui/ui_live_stats.lua - SmartLoot Live Statistics Window (IMPROVED STATE DISPLAY)
 local ImGui = require("ImGui")
 local mq = require("mq")
+local configModule = require("modules.config")
 
 local liveStatsWindow = {
     show = true,
@@ -12,18 +13,18 @@ local liveStatsWindow = {
     lastUpdate = 0,
     updateInterval = 1000, -- Update every 1 second
     windowFlags = ImGuiWindowFlags.NoDecoration +
-                  ImGuiWindowFlags.AlwaysAutoResize +
-                  ImGuiWindowFlags.NoFocusOnAppearing +
-                  ImGuiWindowFlags.NoNav,
-    
+        ImGuiWindowFlags.AlwaysAutoResize +
+        ImGuiWindowFlags.NoFocusOnAppearing +
+        ImGuiWindowFlags.NoNav,
+
     -- State display improvements
     stateDisplay = {
         current = "Idle",
         lastState = "Idle",
         stateStartTime = 0,
-        minDisplayTime = 500, -- Minimum time to display a state (ms)
+        minDisplayTime = 500,      -- Minimum time to display a state (ms)
         lastUpdateTime = 0,
-        stateHistory = {}, -- Track recent states
+        stateHistory = {},         -- Track recent states
         maxHistory = 5,
         showDetailedState = false, -- Toggle for detailed vs simplified state
     }
@@ -96,7 +97,7 @@ end
 -- Helper function to get state color
 local function getStateColor(stateName)
     local simplified = getSimplifiedState(stateName)
-    
+
     if simplified == "Waiting" then
         return 0.7, 0.7, 0.7, 1 -- Gray
     elseif simplified == "Searching" then
@@ -124,7 +125,7 @@ end
 local function updateStateDisplay(currentStateName)
     local now = mq.gettime()
     local stateData = liveStatsWindow.stateDisplay
-    
+
     -- If state changed
     if currentStateName ~= stateData.lastState then
         -- Only update if enough time has passed since last update
@@ -134,12 +135,12 @@ local function updateStateDisplay(currentStateName)
                 state = stateData.current,
                 duration = now - stateData.stateStartTime
             })
-            
+
             -- Limit history size
             while #stateData.stateHistory > stateData.maxHistory do
                 table.remove(stateData.stateHistory)
             end
-            
+
             -- Update current state
             stateData.current = stateData.showDetailedState and currentStateName or getSimplifiedState(currentStateName)
             stateData.lastState = currentStateName
@@ -167,10 +168,10 @@ local function calculateRates(stats, sessionStart)
     if sessionDuration <= 0 then
         return 0, 0
     end
-    
+
     local corpseRate = stats.corpsesProcessed / sessionDuration
     local itemRate = (stats.itemsLooted + stats.itemsIgnored + stats.itemsDestroyed) / sessionDuration
-    
+
     return corpseRate, itemRate
 end
 
@@ -190,38 +191,38 @@ function liveStatsWindow.draw(SmartLootEngine, config)
     if not liveStatsWindow.show then
         return
     end
-    
+
     local now = mq.gettime()
-    
+
     -- Set window transparency
     ImGui.SetNextWindowBgAlpha(0.55)
-    
+
     -- Position window if not dragging
     if not liveStatsWindow.isDragging then
         ImGui.SetNextWindowPos(liveStatsWindow.position.x, liveStatsWindow.position.y, ImGuiCond.FirstUseEver)
     end
-    
+
     local open, shouldClose = ImGui.Begin("SmartLoot Live Stats", true, liveStatsWindow.windowFlags)
     if open then
         -- Handle dragging - FIXED VERSION
         if ImGui.IsWindowHovered() and ImGui.IsMouseDragging(ImGuiMouseButton.Left) then
             if not liveStatsWindow.isDragging then
                 liveStatsWindow.isDragging = true
-                
+
                 -- Get mouse and window positions safely
                 local mouseX, mouseY = getMousePositionValues()
                 local windowX, windowY = getPositionValues(ImGui.GetWindowPos())
-                
+
                 liveStatsWindow.dragOffset.x = mouseX - windowX
                 liveStatsWindow.dragOffset.y = mouseY - windowY
             end
         end
-        
+
         if liveStatsWindow.isDragging then
             if ImGui.IsMouseDragging(ImGuiMouseButton.Left) then
                 -- Get current mouse position safely
                 local mouseX, mouseY = getMousePositionValues()
-                
+
                 liveStatsWindow.position.x = mouseX - liveStatsWindow.dragOffset.x
                 liveStatsWindow.position.y = mouseY - liveStatsWindow.dragOffset.y
                 ImGui.SetWindowPos(liveStatsWindow.position.x, liveStatsWindow.position.y)
@@ -229,21 +230,21 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 liveStatsWindow.isDragging = false
             end
         end
-        
+
         -- Store current position when not dragging - FIXED VERSION
         if not liveStatsWindow.isDragging then
             local posX, posY = getPositionValues(ImGui.GetWindowPos())
             liveStatsWindow.position.x = posX
             liveStatsWindow.position.y = posY
         end
-        
+
         -- Get current engine state
         local state = SmartLootEngine.getState()
         local currentMode = SmartLootEngine.getLootMode()
-        
+
         -- Update state display
         updateStateDisplay(state.currentStateName)
-        
+
         local function titleCase(str)
             return str:gsub("(%a)([%w_']*)", function(first, rest)
                 return first:upper() .. rest:lower()
@@ -262,7 +263,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
             ImGui.Separator()
             ImGui.TextColored(0.8, 0.6, 0.2, 1, "AFK Farm Mode Active")
             ImGui.Text("Temp Rules: " .. tempRuleCount)
-            
+
             if ImGui.IsItemHovered() then
                 ImGui.BeginTooltip()
                 ImGui.Text("Temporary rules waiting for items:")
@@ -276,13 +277,13 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.EndTooltip()
             end
         end
-        
+
         if not liveStatsWindow.compactMode then
             ImGui.Separator()
-            
+
             -- Session Statistics in organized layout
             ImGui.Text("Session Stats:")
-            
+
             -- Create mini-table for better organization
             if ImGui.BeginTable("StatsTable", 2, ImGuiTableFlags.SizingStretchProp) then
                 ImGui.TableNextRow()
@@ -292,7 +293,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.8, 0.2, 1.0)
                 ImGui.Text(tostring(state.stats.corpsesProcessed))
                 ImGui.PopStyleColor()
-                
+
                 ImGui.TableNextRow()
                 ImGui.TableSetColumnIndex(0)
                 ImGui.Text("Looted:")
@@ -300,7 +301,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.PushStyleColor(ImGuiCol.Text, 0.2, 0.8, 0.2, 1.0)
                 ImGui.Text(tostring(state.stats.itemsLooted))
                 ImGui.PopStyleColor()
-                
+
                 ImGui.TableNextRow()
                 ImGui.TableSetColumnIndex(0)
                 ImGui.Text("Ignored:")
@@ -308,12 +309,12 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.6, 0.2, 1.0)
                 ImGui.Text(tostring(state.stats.itemsIgnored))
                 ImGui.PopStyleColor()
-                
+
                 -- Connected peers count
                 if config and config.getConnectedPeers then
                     local connectedPeers = config.getConnectedPeers()
                     local peerCount = connectedPeers and #connectedPeers or 0
-                    
+
                     ImGui.TableNextRow()
                     ImGui.TableSetColumnIndex(0)
                     ImGui.Text("Connected:")
@@ -322,10 +323,10 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                     ImGui.Text(tostring(peerCount))
                     ImGui.PopStyleColor()
                 end
-                
+
                 ImGui.EndTable()
             end
-            
+
             -- Session duration and rates
             ImGui.Separator()
             if ImGui.BeginTable("SessionTable", 2, ImGuiTableFlags.SizingStretchProp) then
@@ -338,7 +339,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                     ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.8, 1.0, 1.0)
                     ImGui.Text(duration)
                     ImGui.PopStyleColor()
-                    
+
                     -- Calculate and display rates
                     local corpseRate, itemRate = calculateRates(state.stats, state.stats.sessionStart)
                     if corpseRate > 0 then
@@ -349,7 +350,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                         ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.8, 0.2, 1.0)
                         ImGui.Text(string.format("%.1f", corpseRate))
                         ImGui.PopStyleColor()
-                        
+
                         ImGui.TableNextRow()
                         ImGui.TableSetColumnIndex(0)
                         ImGui.Text("I/min:")
@@ -359,7 +360,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                         ImGui.PopStyleColor()
                     end
                 end
-                
+
                 -- Database connection status
                 if config and config.isDatabaseConnected then
                     ImGui.TableNextRow()
@@ -376,44 +377,43 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                         ImGui.PopStyleColor()
                     end
                 end
-                
+
                 ImGui.EndTable()
             end
-            
         else
             -- Compact mode - single line display with simplified state
             ImGui.SameLine()
             ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.8, 0.8, 1.0)
             ImGui.Text("| ")
             ImGui.PopStyleColor()
-            
+
             -- Show simplified state in compact mode
             ImGui.SameLine()
             local sr, sg, sb, sa = getStateColor(liveStatsWindow.stateDisplay.current)
             ImGui.PushStyleColor(ImGuiCol.Text, sr, sg, sb, sa)
             ImGui.Text(liveStatsWindow.stateDisplay.current .. " |")
             ImGui.PopStyleColor()
-            
+
             ImGui.SameLine()
             ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.8, 0.2, 1.0)
             ImGui.Text("C:" .. tostring(state.stats.corpsesProcessed) .. " ")
             ImGui.PopStyleColor()
-            
+
             ImGui.SameLine()
             ImGui.PushStyleColor(ImGuiCol.Text, 0.2, 0.8, 0.2, 1.0)
             ImGui.Text("L:" .. tostring(state.stats.itemsLooted) .. " ")
             ImGui.PopStyleColor()
-            
+
             ImGui.SameLine()
             ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.6, 0.2, 1.0)
             ImGui.Text("I:" .. tostring(state.stats.itemsIgnored) .. " ")
             ImGui.PopStyleColor()
-            
+
             ImGui.SameLine()
             ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.2, 0.8, 1.0)
             ImGui.Text("D:" .. tostring(state.stats.itemsDestroyed))
             ImGui.PopStyleColor()
-            
+
             -- Add peer count in compact mode
             if config and config.getConnectedPeers then
                 local connectedPeers = config.getConnectedPeers()
@@ -424,19 +424,18 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.PopStyleColor()
             end
         end
-        
+
         -- Enhanced Farming Mode Button (only show in Main mode)
-        if currentMode == "main" and config and config.farmingMode then
+        if currentMode == "main" and config then
             ImGui.Separator()
-            
-            local currentToon = mq.TLO.Me.Name() or ""
-            local isFarmingActive = config.farmingMode.isActive and config.farmingMode.isActive(currentToon)
-            
+
+            local isFarmingActive = configModule.isFarmingModeActive and configModule.isFarmingModeActive() or false
+
             -- Create enhanced farming mode button
             local buttonText = isFarmingActive and "Farming Mode ON" or "Farming Mode OFF"
             local buttonWidth = 160
             local buttonHeight = 28
-            
+
             -- Custom button styling based on state
             if isFarmingActive then
                 -- Pulsing orange effect for active state
@@ -453,26 +452,29 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.10, 0.39, 0.10, 0.9)
                 ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 1.0, 1.0, 1.0)
             end
-            
+
             if ImGui.Button(buttonText, buttonWidth, buttonHeight) then
-                if config.farmingMode.toggle then
-                    config.farmingMode.toggle(currentToon)
-                    local newState = config.farmingMode.isActive(currentToon)
-                    mq.cmd('/echo \\aySmartLoot: Farming mode ' .. (newState and 'ENABLED' or 'DISABLED') .. ' for ' .. currentToon .. '\\ax')
+                if configModule.toggleFarmingMode then
+                    local newState = configModule.toggleFarmingMode()
+                    mq.cmd('/echo \\aySmartLoot: Farming mode ' ..
+                        (newState and 'ENABLED' or 'DISABLED') .. ' - bypasses corpse deduplication\\ax')
+                else
+                    mq.cmd('/echo \\arSmartLoot: Error - toggleFarmingMode function not found\\ax')
                 end
             end
-            
+
             ImGui.PopStyleColor(4)
-            
+
             -- Enhanced tooltip
             if ImGui.IsItemHovered() then
                 ImGui.BeginTooltip()
                 if isFarmingActive then
                     ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.6, 0.0, 1.0)
-                    ImGui.Text("Farming Mode Active for " .. currentToon)
+                    ImGui.Text("FARMING MODE ACTIVE")
                     ImGui.PopStyleColor()
                     ImGui.Separator()
-                    ImGui.Text("All corpses bypass 10-minute deduplication")
+                    ImGui.Text("Corpse deduplication bypassed")
+                    ImGui.Text("Will re-loot same corpses")
                     ImGui.Text("Click to disable farming mode")
                 else
                     ImGui.PushStyleColor(ImGuiCol.Text, 0.2, 0.8, 0.2, 1.0)
@@ -496,74 +498,74 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.EndTooltip()
             end
         end
-        
+
         -- Right-click context menu
         if ImGui.BeginPopupContextWindow("LiveStatsContext") then
             ImGui.Text("Live Stats Options")
             ImGui.Separator()
-            
+
             if ImGui.MenuItem("Toggle Compact Mode", nil, liveStatsWindow.compactMode) then
                 liveStatsWindow.compactMode = not liveStatsWindow.compactMode
             end
-            
+
             if ImGui.MenuItem("Show Detailed States", nil, liveStatsWindow.stateDisplay.showDetailedState) then
                 liveStatsWindow.stateDisplay.showDetailedState = not liveStatsWindow.stateDisplay.showDetailedState
                 -- Reset state display
                 liveStatsWindow.stateDisplay.lastUpdateTime = 0
             end
-            
+
             ImGui.Separator()
-            
+
             ImGui.Text("State Update Speed:")
             if ImGui.SliderInt("Min Display Time (ms)", liveStatsWindow.stateDisplay.minDisplayTime, 100, 2000) then
                 -- Value updated in real-time
             end
-            
+
             ImGui.Separator()
-            
+
             if ImGui.SliderFloat("Transparency", liveStatsWindow.alpha, 0.1, 1.0, "%.1f") then
                 -- Alpha updated in real-time
             end
-            
+
             ImGui.Separator()
-            
+
             if ImGui.MenuItem("Reset Position") then
                 liveStatsWindow.position.x = 200
                 liveStatsWindow.position.y = 200
                 ImGui.SetWindowPos(liveStatsWindow.position.x, liveStatsWindow.position.y)
             end
-            
+
             if ImGui.MenuItem("Reset Stats") then
                 if SmartLootEngine.resetStats then
                     SmartLootEngine.resetStats()
                 end
             end
-            
+
             ImGui.Separator()
-            
+
             if ImGui.MenuItem("Hide Window") then
                 liveStatsWindow.show = false
             end
-            
+
             ImGui.EndPopup()
         end
-        
+
         -- Enhanced tooltip on hover
         if ImGui.IsWindowHovered() then
             ImGui.BeginTooltip()
             ImGui.Text("SmartLoot Live Statistics")
             ImGui.Separator()
-            
+
             -- Show current actual state if simplified
             if not liveStatsWindow.stateDisplay.showDetailedState then
                 ImGui.Text("Actual State: " .. state.currentStateName)
             end
-            
+
             -- Show session duration
             if state.stats.sessionStart then
                 local duration = formatDuration(state.stats.sessionStart)
                 ImGui.Text("Session Duration: " .. duration)
-                
+
                 -- Show rates if we have data
                 local corpseRate, itemRate = calculateRates(state.stats, state.stats.sessionStart)
                 if corpseRate > 0 then
@@ -571,7 +573,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                     ImGui.Text(string.format("Items/min: %.1f", itemRate))
                 end
             end
-            
+
             -- Show state history
             if #liveStatsWindow.stateDisplay.stateHistory > 0 then
                 ImGui.Separator()
@@ -581,17 +583,17 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                     ImGui.BulletText(string.format("%s (%.1fs)", hist.state, hist.duration / 1000))
                 end
             end
-            
+
             ImGui.Separator()
             ImGui.Text("Right-click for options")
             ImGui.Text("Drag to move window")
             ImGui.Text("C=Corpses, L=Looted, I=Ignored, D=Destroyed, P=Connected")
-            
+
             ImGui.EndTooltip()
         end
     end
     ImGui.End()
-    
+
     if shouldClose == false then
         liveStatsWindow.show = false
     end
@@ -628,16 +630,16 @@ function liveStatsWindow.setConfig(config)
     if config.show ~= nil then liveStatsWindow.show = config.show end
     if config.compactMode ~= nil then liveStatsWindow.compactMode = config.compactMode end
     if config.alpha ~= nil then liveStatsWindow.alpha = config.alpha end
-    if config.position then 
+    if config.position then
         liveStatsWindow.position.x = config.position.x or liveStatsWindow.position.x
         liveStatsWindow.position.y = config.position.y or liveStatsWindow.position.y
     end
     if config.stateDisplay then
-        if config.stateDisplay.showDetailedState ~= nil then 
-            liveStatsWindow.stateDisplay.showDetailedState = config.stateDisplay.showDetailedState 
+        if config.stateDisplay.showDetailedState ~= nil then
+            liveStatsWindow.stateDisplay.showDetailedState = config.stateDisplay.showDetailedState
         end
-        if config.stateDisplay.minDisplayTime ~= nil then 
-            liveStatsWindow.stateDisplay.minDisplayTime = config.stateDisplay.minDisplayTime 
+        if config.stateDisplay.minDisplayTime ~= nil then
+            liveStatsWindow.stateDisplay.minDisplayTime = config.stateDisplay.minDisplayTime
         end
     end
 end

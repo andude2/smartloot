@@ -940,8 +940,15 @@ function SmartLootEngine.recordCorpseEncounter(corpseID, corpseName, zoneName)
     end
 
     -- Check if we've seen this corpse recently (within 15 minutes)
-    if wasCorpseSeenRecently(corpseID, zoneName, 15) then
+    -- BUT skip this check if farming mode is active
+    local isFarmingMode = (tempRules and tempRules.isAFKFarmingActive and tempRules.isAFKFarmingActive()) or 
+                         (config and config.isFarmingModeActive and config.isFarmingModeActive())
+    
+    if not isFarmingMode and wasCorpseSeenRecently(corpseID, zoneName, 15) then
+        logging.debug(string.format("[Engine] Skipping recently seen corpse %d (not in farming mode)", corpseID))
         return true -- Skip, but treat as success
+    elseif isFarmingMode then
+        logging.debug(string.format("[Engine] Farming mode active - processing corpse %d even if seen recently", corpseID))
     end
 
     local escapedZone = zoneName:gsub("'", "''")
@@ -1066,10 +1073,18 @@ function SmartLootEngine.recordLootAction(action, itemName, itemID, iconID, quan
     -- Record to history
     lootHistory.recordLoot(itemName, itemID, iconID, action, corpseName, corpseID, quantity)
 
-    -- Send chat message if configured
-    if config and config.sendChatMessage and (action == "Ignored" or action == "Left Behind" or action:find("Ignored")) then
+    -- Send chat message if configured based on item announce settings
+    if config and config.sendChatMessage and config.shouldAnnounceItem then
+        if config.shouldAnnounceItem(action) then
+            local itemLink = util.createItemLink(itemName, itemID)
+            local corpseText = corpseID and corpseID > 0 and string.format(" from corpse %d", corpseID) or ""
+            config.sendChatMessage(string.format("%s %s%s", action, itemLink, corpseText))
+        end
+    elseif config and config.sendChatMessage and (action == "Ignored" or action == "Left Behind" or action:find("Ignored")) then
+        -- Fallback to old behavior if shouldAnnounceItem function doesn't exist
         local itemLink = util.createItemLink(itemName, itemID)
-        config.sendChatMessage(string.format("%s %s from corpse %d", action, itemLink, corpseID))
+        local corpseText = corpseID and corpseID > 0 and string.format(" from corpse %d", corpseID) or ""
+        config.sendChatMessage(string.format("%s %s%s", action, itemLink, corpseText))
     end
 
     logging.debug(string.format("[Engine] Recorded %s action for %s", action, itemName))

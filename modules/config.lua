@@ -20,6 +20,12 @@ config.retryDelay = 5     -- Delay between retry attempts in seconds
 config.chatOutputMode = "group"  -- Default to group chat
 config.customChatCommand = "/say"  -- Default custom command if mode is "custom"
 
+-- NEW: Item announce configuration
+config.itemAnnounceMode = "all"  -- Options: "all", "ignored", "none"
+
+-- NEW: Farming mode configuration
+config.farmingMode = false  -- Whether farming mode is active (bypasses corpse deduplication)
+
 -- Default settings additions (add to existing defaults)
 config.useChaseCommands = false  -- Whether to use chase commands at all
 config.chasePauseCommand = "/luachase pause on"  -- Command to pause chase
@@ -122,6 +128,10 @@ local configData = {
         -- NEW: Chat configuration in global settings
         chatOutputMode = config.chatOutputMode,
         customChatCommand = config.customChatCommand,
+        -- NEW: Item announce configuration in global settings
+        itemAnnounceMode = config.itemAnnounceMode,
+        -- NEW: Farming mode configuration in global settings
+        farmingMode = config.farmingMode,
         -- NEW: Chase command configuration
         useChaseCommands = config.useChaseCommands,
         chasePauseCommand = config.chasePauseCommand,
@@ -158,6 +168,10 @@ function config.load()
             -- NEW: Apply chat settings
             config.chatOutputMode = configData.global.chatOutputMode or config.chatOutputMode
             config.customChatCommand = configData.global.customChatCommand or config.customChatCommand
+            -- NEW: Apply item announce settings
+            config.itemAnnounceMode = configData.global.itemAnnounceMode or config.itemAnnounceMode
+            -- NEW: Apply farming mode settings
+            config.farmingMode = configData.global.farmingMode or config.farmingMode
             config.useChaseCommands = configData.global.useChaseCommands or config.useChaseCommands
             config.chasePauseCommand = configData.global.chasePauseCommand or config.chasePauseCommand
             config.chaseResumeCommand = configData.global.chaseResumeCommand or config.chaseResumeCommand
@@ -204,6 +218,10 @@ function config.save()
     -- NEW: Update chat settings
     configData.global.chatOutputMode = config.chatOutputMode
     configData.global.customChatCommand = config.customChatCommand
+    -- NEW: Update item announce settings
+    configData.global.itemAnnounceMode = config.itemAnnounceMode
+    -- NEW: Update farming mode settings
+    configData.global.farmingMode = config.farmingMode
     configData.global.useChaseCommands = config.useChaseCommands
     configData.global.chasePauseCommand = config.chasePauseCommand
     configData.global.chaseResumeCommand = config.chaseResumeCommand
@@ -332,6 +350,84 @@ function config.debugChatConfig()
     if config.chatOutputMode == "custom" then
         print("Custom Command: " .. config.customChatCommand)
     end
+end
+
+-- NEW: Item announce helper functions
+function config.setItemAnnounceMode(mode)
+    if not mode then return false end
+    
+    mode = mode:lower()
+    local validModes = {"all", "ignored", "none"}
+    
+    -- Validate mode
+    local isValid = false
+    for _, validMode in ipairs(validModes) do
+        if mode == validMode then
+            isValid = true
+            break
+        end
+    end
+    
+    if not isValid then
+        return false, "Invalid item announce mode. Valid modes: " .. table.concat(validModes, ", ")
+    end
+    
+    config.itemAnnounceMode = mode
+    config.save()
+    return true
+end
+
+function config.getItemAnnounceMode()
+    return config.itemAnnounceMode
+end
+
+function config.getItemAnnounceModeDescription()
+    local mode = config.itemAnnounceMode:lower()
+    
+    if mode == "all" then
+        return "All Items"
+    elseif mode == "ignored" then
+        return "Ignored Items Only"
+    elseif mode == "none" then
+        return "No Item Announcements"
+    else
+        return "Unknown Mode"
+    end
+end
+
+function config.shouldAnnounceItem(action)
+    local mode = config.itemAnnounceMode:lower()
+    
+    if mode == "none" then
+        return false
+    elseif mode == "all" then
+        return true
+    elseif mode == "ignored" then
+        return action == "Ignore"
+    else
+        return false -- Default to no announcement if mode is unknown
+    end
+end
+
+-- NEW: Farming mode helper functions
+function config.setFarmingMode(enabled)
+    config.farmingMode = enabled or false
+    config.save()
+    return true
+end
+
+function config.getFarmingMode()
+    return config.farmingMode
+end
+
+function config.toggleFarmingMode()
+    config.farmingMode = not config.farmingMode
+    config.save()
+    return config.farmingMode
+end
+
+function config.isFarmingModeActive()
+    return config.farmingMode == true
 end
 
 function config.setChaseCommands(useChase, pauseCmd, resumeCmd)

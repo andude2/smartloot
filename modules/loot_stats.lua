@@ -102,6 +102,10 @@ local function buildStatsWhereClause(filters)
     if filters.zoneName and filters.zoneName ~= "All" then
       table.insert(clauses, "d.zone_name = ?")
       table.insert(params, filters.zoneName)
+      -- Debug logging for zone names with apostrophes
+      if string.find(filters.zoneName, "'") then
+        logging.log("[DEBUG] loot_stats: Zone filter contains apostrophe: '" .. tostring(filters.zoneName) .. "'")
+      end
     end
     
     -- Item Name Filter (using LIKE)
