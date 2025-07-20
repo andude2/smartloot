@@ -1281,6 +1281,359 @@ function database.getItemZoneBreakdown(itemName, itemID, timeFrame)
     return results
 end
 
+-- Helper function to extract the core character name from DanNet complex names
+local function extractCoreCharacterName(fullName)
+    if not fullName or fullName == "" then
+        return ""
+    end
+    
+    -- Pattern 1: "Ez (linux) x4 exp_linamas" -> "linamas"
+    local coreAfterUnderscore = string.match(fullName, ".*_([%w]+)$")
+    if coreAfterUnderscore then
+        return coreAfterUnderscore
+    end
+    
+    -- Pattern 2: Simple character names like "Linamas" or "linamas"
+    local simpleName = string.match(fullName, "^([%w]+)$")
+    if simpleName then
+        return simpleName
+    end
+    
+    -- Pattern 3: Names with spaces but no underscore - take the last word
+    local lastWord = string.match(fullName, ".*%s([%w]+)$")
+    if lastWord then
+        return lastWord
+    end
+    
+    -- Fallback: return the original name
+    return fullName
+end
+
+-- Detect duplicate peer names caused by case differences and DanNet naming patterns
+function database.detectDuplicatePeerNames()
+    if not db then
+        logging.error("[Database] Database not initialized")
+        return {}
+    end
+    
+    -- Get all toon names from both tables
+    local getAllNamesStmt = prepareStatement([[
+        SELECT DISTINCT toon FROM (
+            SELECT toon FROM lootrules_v2 
+            UNION 
+            SELECT toon FROM lootrules_name_fallback
+        ) AS all_toons
+        ORDER BY toon
+    ]])
+    
+    if not getAllNamesStmt then
+        logging.error("[Database] Failed to prepare name retrieval query")
+        return {}
+    end
+    
+    local allNames = {}
+    for row in getAllNamesStmt:nrows() do
+        table.insert(allNames, row.toon)
+    end
+    getAllNamesStmt:finalize()
+    
+    -- Group names by their core character name (case-insensitive)
+    local nameGroups = {}
+    for _, fullName in ipairs(allNames) do
+        local coreName = extractCoreCharacterName(fullName)
+        local lowerCoreName = coreName:lower()
+        
+        if not nameGroups[lowerCoreName] then
+            -- Use proper case for display name (first letter upper, rest lower)
+            local properCaseName = coreName:sub(1,1):upper() .. coreName:sub(2):lower()
+            nameGroups[lowerCoreName] = {
+                coreName = properCaseName,  -- This will be used for display
+                variants = {}
+            }
+        end
+        
+        table.insert(nameGroups[lowerCoreName].variants, fullName)
+    end
+    
+    -- Filter to only groups with multiple variants and get detailed information
+    local duplicates = {}
+    for lowerCoreName, group in pairs(nameGroups) do
+        if #group.variants > 1 then
+            local variantDetails = {}
+            
+            for _, fullName in ipairs(group.variants) do
+                -- Get all rules for this character name
+                local rules = {}
+                
+                -- Get rules from lootrules_v2
+                local v2Stmt = prepareStatement([[
+                    SELECT item_name, item_id, rule, icon_id, updated_at 
+                    FROM lootrules_v2 
+                    WHERE toon = ?
+                    ORDER BY item_name
+                ]])
+                if v2Stmt then
+                    v2Stmt:bind(1, fullName)
+                    for ruleRow in v2Stmt:nrows() do
+                        table.insert(rules, {
+                            itemName = ruleRow.item_name,
+                            itemId = ruleRow.item_id or 0,
+                            rule = ruleRow.rule,
+                            iconId = ruleRow.icon_id or 0,
+                            updatedAt = ruleRow.updated_at,
+                            tableSource = "lootrules_v2"
+                        })
+                    end
+                    v2Stmt:finalize()
+                end
+                
+                -- Get rules from lootrules_name_fallback
+                local fallbackStmt = prepareStatement([[
+                    SELECT item_name, rule, icon_id, updated_at 
+                    FROM lootrules_name_fallback 
+                    WHERE toon = ?
+                    ORDER BY item_name
+                ]])
+                if fallbackStmt then
+                    fallbackStmt:bind(1, fullName)
+                    for ruleRow in fallbackStmt:nrows() do
+                        table.insert(rules, {
+                            itemName = ruleRow.item_name,
+                            itemId = 0, -- fallback table doesn't have item_id
+                            rule = ruleRow.rule,
+                            iconId = ruleRow.icon_id or 0,
+                            updatedAt = ruleRow.updated_at,
+                            tableSource = "lootrules_name_fallback"
+                        })
+                    end
+                    fallbackStmt:finalize()
+                end
+                
+                table.insert(variantDetails, {
+                    fullName = fullName,
+                    coreName = extractCoreCharacterName(fullName),
+                    ruleCount = #rules,
+                    rules = rules
+                })
+            end
+            
+            -- Sort variants by rule count (fewest to most)
+            table.sort(variantDetails, function(a, b)
+                return a.ruleCount < b.ruleCount
+            end)
+            
+            table.insert(duplicates, {
+                baseName = lowerCoreName,
+                coreCharacterName = group.coreName,
+                variants = variantDetails
+            })
+        end
+    end
+    
+    return duplicates
+end
+
+-- Copy a specific rule from one character to another
+function database.copySpecificRule(fromName, toName, itemName, itemId, tableSource)
+    if not db then
+        logging.error("[Database] Database not initialized")
+        return false
+    end
+    
+    local success = false
+    
+    if tableSource == "lootrules_v2" then
+        -- Copy from v2 table
+        local copyStmt = prepareStatement([[
+            INSERT OR REPLACE INTO lootrules_v2 
+            (toon, item_id, item_name, rule, icon_id, updated_at)
+            SELECT ?, item_id, item_name, rule, icon_id, CURRENT_TIMESTAMP
+            FROM lootrules_v2 
+            WHERE toon = ? AND item_name = ? AND item_id = ?
+        ]])
+        
+        if copyStmt then
+            copyStmt:bind(1, toName)
+            copyStmt:bind(2, fromName)
+            copyStmt:bind(3, itemName)
+            copyStmt:bind(4, itemId or 0)
+            success = copyStmt:step() == sqlite3.DONE
+            copyStmt:finalize()
+        end
+        
+    elseif tableSource == "lootrules_name_fallback" then
+        -- Copy from fallback table
+        local copyStmt = prepareStatement([[
+            INSERT OR REPLACE INTO lootrules_name_fallback 
+            (toon, item_name, rule, icon_id, updated_at)
+            SELECT ?, item_name, rule, icon_id, CURRENT_TIMESTAMP
+            FROM lootrules_name_fallback 
+            WHERE toon = ? AND item_name = ?
+        ]])
+        
+        if copyStmt then
+            copyStmt:bind(1, toName)
+            copyStmt:bind(2, fromName)
+            copyStmt:bind(3, itemName)
+            success = copyStmt:step() == sqlite3.DONE
+            copyStmt:finalize()
+        end
+    end
+    
+    if success then
+        logging.debug(string.format("[Database] Copied rule for '%s' from '%s' to '%s'", itemName, fromName, toName))
+        
+        -- Clear cache for target to force reload
+        if lootRulesCache.loaded[toName] then
+            lootRulesCache.loaded[toName] = false
+        end
+    end
+    
+    return success
+end
+
+-- Delete a specific rule for a character
+function database.deleteSpecificRule(toonName, itemName, itemId, tableSource)
+    if not db then
+        logging.error("[Database] Database not initialized")
+        return false
+    end
+    
+    local success = false
+    
+    if tableSource == "lootrules_v2" then
+        local deleteStmt = prepareStatement("DELETE FROM lootrules_v2 WHERE toon = ? AND item_name = ? AND item_id = ?")
+        if deleteStmt then
+            deleteStmt:bind(1, toonName)
+            deleteStmt:bind(2, itemName)
+            deleteStmt:bind(3, itemId or 0)
+            success = deleteStmt:step() == sqlite3.DONE
+            deleteStmt:finalize()
+        end
+        
+        -- Clear from cache
+        if lootRulesCache.byItemID[toonName] then
+            lootRulesCache.byItemID[toonName][itemId or 0] = nil
+        end
+        
+    elseif tableSource == "lootrules_name_fallback" then
+        local deleteStmt = prepareStatement("DELETE FROM lootrules_name_fallback WHERE toon = ? AND item_name = ?")
+        if deleteStmt then
+            deleteStmt:bind(1, toonName)
+            deleteStmt:bind(2, itemName)
+            success = deleteStmt:step() == sqlite3.DONE
+            deleteStmt:finalize()
+        end
+        
+        -- Clear from cache
+        if lootRulesCache.byName[toonName] then
+            lootRulesCache.byName[toonName][itemName] = nil
+        end
+    end
+    
+    if success then
+        logging.debug(string.format("[Database] Deleted rule for '%s' from '%s'", itemName, toonName))
+    end
+    
+    return success
+end
+
+-- Delete all rules for a character (used after selective copying)
+function database.deleteAllRulesForCharacter(toonName)
+    if not db then
+        logging.error("[Database] Database not initialized")
+        return false
+    end
+    
+    local success = true
+    
+    -- Delete from v2 table
+    local deleteV2Stmt = prepareStatement("DELETE FROM lootrules_v2 WHERE toon = ?")
+    if deleteV2Stmt then
+        deleteV2Stmt:bind(1, toonName)
+        if deleteV2Stmt:step() ~= sqlite3.DONE then
+            success = false
+        end
+        deleteV2Stmt:finalize()
+    end
+    
+    -- Delete from fallback table
+    local deleteFallbackStmt = prepareStatement("DELETE FROM lootrules_name_fallback WHERE toon = ?")
+    if deleteFallbackStmt then
+        deleteFallbackStmt:bind(1, toonName)
+        if deleteFallbackStmt:step() ~= sqlite3.DONE then
+            success = false
+        end
+        deleteFallbackStmt:finalize()
+    end
+    
+    -- Clear cache
+    if lootRulesCache.byItemID[toonName] then
+        lootRulesCache.byItemID[toonName] = nil
+    end
+    if lootRulesCache.byName[toonName] then
+        lootRulesCache.byName[toonName] = nil
+    end
+    lootRulesCache.loaded[toonName] = nil
+    
+    if success then
+        logging.info(string.format("[Database] Deleted all rules for character '%s'", toonName))
+    end
+    
+    return success
+end
+
+-- Merge rules from one peer name to another and delete the source (legacy function)
+function database.mergePeerRules(fromName, toName)
+    if not db then
+        logging.error("[Database] Database not initialized")
+        return false
+    end
+    
+    logging.info(string.format("[Database] Merging rules from '%s' to '%s'", fromName, toName))
+    
+    local mergedCount = 0
+    
+    -- Merge lootrules_v2 table
+    local mergeV2Stmt = prepareStatement([[
+        INSERT OR REPLACE INTO lootrules_v2 
+        (toon, item_id, item_name, rule, icon_id, updated_at)
+        SELECT ?, item_id, item_name, rule, icon_id, updated_at
+        FROM lootrules_v2 
+        WHERE toon = ?
+    ]])
+    
+    if mergeV2Stmt then
+        mergeV2Stmt:bind(1, toName)
+        mergeV2Stmt:bind(2, fromName)
+        if mergeV2Stmt:step() == sqlite3.DONE then
+            mergedCount = mergedCount + 1
+        end
+        mergeV2Stmt:finalize()
+    end
+    
+    -- Merge lootrules_name_fallback table
+    local mergeFallbackStmt = prepareStatement([[
+        INSERT OR REPLACE INTO lootrules_name_fallback 
+        (toon, item_name, rule, icon_id, updated_at)
+        SELECT ?, item_name, rule, icon_id, updated_at
+        FROM lootrules_name_fallback 
+        WHERE toon = ?
+    ]])
+    
+    if mergeFallbackStmt then
+        mergeFallbackStmt:bind(1, toName)
+        mergeFallbackStmt:bind(2, fromName)
+        if mergeFallbackStmt:step() == sqlite3.DONE then
+            mergedCount = mergedCount + 1
+        end
+        mergeFallbackStmt:finalize()
+    end
+    
+    -- Delete the old entries
+    return database.deleteAllRulesForCharacter(fromName)
+end
+
 function database.cleanup()
     if db then
         db:close()

@@ -838,6 +838,7 @@ local function bindUtilityCommands()
             util.printSmartLoot("Maintenance:", "info")
             util.printSmartLoot("  /sl_clearcache - Clear corpse cache", "info")
             util.printSmartLoot("  /sl_rulescache - Refresh loot rules cache", "info")
+            util.printSmartLoot("  /sl_cleanup - Open duplicate peer cleanup tool", "info")
             util.printSmartLoot("  /sl_help - Show this help", "info")
             util.printSmartLoot("Chat & Chase Control:", "info")
             util.printSmartLoot("  /sl_chat <mode> - Set chat output (raid|group|guild|custom|silent)", "info")
@@ -861,6 +862,25 @@ local function bindUtilityCommands()
 
     mq.bind("/sl_save", function()
         config.save()
+    end)
+
+    mq.bind("/sl_cleanup", function()
+        if lootUI then
+            -- Initialize cleanup popup if it doesn't exist
+            if not lootUI.duplicateCleanupPopup then
+                lootUI.duplicateCleanupPopup = {
+                    isOpen = false,
+                    scanned = false,
+                    duplicates = {},
+                    selections = {}
+                }
+            end
+            
+            lootUI.duplicateCleanupPopup.isOpen = true
+            util.printSmartLoot("Opening duplicate cleanup tool...", "info")
+        else
+            util.printSmartLoot("Loot UI not available", "warning")
+        end
     end)
 end
 
@@ -914,7 +934,7 @@ function bindings.listBindings()
         "/sl_check_peers", "/sl_refresh_mode", "/sl_mode", "/sl_peer_monitor",
         "/sl_chat", "/sl_chase", "/sl_chase_on", "/sl_chase_off",
         "/sl_addtemp", "/sl_removetemp", "/sl_cleartemp", "/sl_afkfarm",
-        "/sl_clearcache", "/sl_rulescache", "/sl_help", "/sl_getstarted", "/sl_version"
+        "/sl_clearcache", "/sl_rulescache", "/sl_cleanup", "/sl_help", "/sl_getstarted", "/sl_version"
     }
 
     util.printSmartLoot("=== Registered SmartLoot Commands ===", "system")

@@ -457,10 +457,18 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                     ImGui.TableSetColumnIndex(0)
                     
                     if peer == currentCharacter then
-                        ImGui.TextColored(0.2, 0.8, 0.2, 1, peer .. " (You)")
+                        -- Get current character's class
+                        local myClass = mq.TLO.Me.Class.ShortName() or "Unknown"
+                        ImGui.TextColored(0.2, 0.8, 0.2, 1, peer .. " (You - " .. myClass .. ")")
                     else
                         if connectedPeerSet[peer] then
-                            ImGui.TextColored(0.2, 0.6, 0.8, 1, peer .. " (Online)")
+                            -- Try to get peer's class information
+                            local peerClass = mq.TLO.Spawn(peer).Class.ShortName()
+                            if peerClass and peerClass ~= "" then
+                                ImGui.TextColored(0.2, 0.6, 0.8, 1, peer .. " (" .. peerClass .. ")")
+                            else
+                                ImGui.TextColored(0.2, 0.6, 0.8, 1, peer .. " (Online)")
+                            end
                         else
                             ImGui.TextColored(0.7, 0.7, 0.7, 1, peer .. " (Offline)")
                         end
@@ -1482,6 +1490,305 @@ function uiPopups.drawIconUpdatePopup(lootUI, database, lootStats, lootHistory)
         else
             lootUI.iconUpdatePopup.isOpen = false
             lootUI.iconUpdatePopup.inited = false
+        end
+    end
+end
+
+-- Duplicate Peer Cleanup Popup with per-rule selection
+function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
+    if lootUI.duplicateCleanupPopup and lootUI.duplicateCleanupPopup.isOpen then
+        ImGui.SetNextWindowSize(900, 600, ImGuiCond.FirstUseEver)
+        local keepOpen = true
+        if ImGui.Begin("SmartLoot - Duplicate Peer Cleanup", keepOpen) then
+            local popup = lootUI.duplicateCleanupPopup
+            
+            -- Header
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.7, 0.2, 1.0) -- Orange
+            ImGui.Text("Duplicate Character Name Cleanup")
+            ImGui.PopStyleColor()
+            ImGui.Separator()
+            
+            local currentChar = mq.TLO.Me.Name() or "YourCharacter"
+            ImGui.TextWrapped("This tool helps fix duplicate character entries caused by switching between DanNet and E3 command types. " ..
+                "DanNet can create complex entries like 'Ez (linux) x4 exp_" .. currentChar:lower() .. "' while E3 creates simple entries like '" .. currentChar .. "'.")
+            
+            ImGui.Spacing()
+            
+            -- Scan button
+            if ImGui.Button("Scan for Duplicates", 150, 0) then
+                popup.duplicates = database.detectDuplicatePeerNames()
+                popup.scanned = true
+                popup.selectedGroup = nil
+                popup.ruleSelections = {}
+            end
+            
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Search the database for character names that map to the same core character")
+            end
+            
+            ImGui.SameLine()
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, string.format("Found %d duplicate groups", 
+                popup.duplicates and #popup.duplicates or 0))
+            
+            ImGui.Separator()
+            
+            -- Display duplicates if found
+            if popup.scanned and popup.duplicates then
+                if #popup.duplicates == 0 then
+                    ImGui.TextColored(0.2, 0.8, 0.2, 1, "No duplicates found! Your database is clean.")
+                else
+                    ImGui.Text(string.format("Found %d groups of duplicate character names:", #popup.duplicates))
+                    ImGui.Spacing()
+                    
+                    -- Group selection table
+                    if ImGui.BeginTable("GroupsTable", 3, 
+                        ImGuiTableFlags.BordersInnerV + 
+                        ImGuiTableFlags.RowBg + 
+                        ImGuiTableFlags.Resizable) then
+                        
+                        ImGui.TableSetupColumn("Character Base", ImGuiTableColumnFlags.WidthFixed, 120)
+                        ImGui.TableSetupColumn("Variants Found", ImGuiTableColumnFlags.WidthStretch)
+                        ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, 120)
+                        ImGui.TableHeadersRow()
+                        
+                        for groupIdx, duplicate in ipairs(popup.duplicates) do
+                            ImGui.TableNextRow()
+                            ImGui.TableSetColumnIndex(0)
+                            
+                            -- Highlight selected group
+                            if popup.selectedGroup == groupIdx then
+                                ImGui.PushStyleColor(ImGuiCol.Text, 0.2, 0.8, 0.2, 1)
+                                ImGui.Text(duplicate.coreCharacterName)
+                                ImGui.PopStyleColor()
+                            else
+                                ImGui.Text(duplicate.coreCharacterName)
+                            end
+                            
+                            ImGui.TableSetColumnIndex(1)
+                            local variantNames = {}
+                            for _, variant in ipairs(duplicate.variants) do
+                                table.insert(variantNames, string.format("%s (%d rules)", variant.fullName, variant.ruleCount))
+                            end
+                            ImGui.TextWrapped(table.concat(variantNames, ", "))
+                            
+                            ImGui.TableSetColumnIndex(2)
+                            if ImGui.Button("Manage Rules##" .. groupIdx, 110, 0) then
+                                popup.selectedGroup = groupIdx
+                                -- Initialize rule selections for this group
+                                if not popup.ruleSelections[groupIdx] then
+                                    popup.ruleSelections[groupIdx] = {}
+                                end
+                            end
+                        end
+                        
+                        ImGui.EndTable()
+                    end
+                    
+                    -- Show detailed rule management for selected group
+                    if popup.selectedGroup and popup.duplicates[popup.selectedGroup] then
+                        local selectedDupe = popup.duplicates[popup.selectedGroup]
+                        
+                        ImGui.Spacing()
+                        ImGui.Separator()
+                        ImGui.Text(string.format("Managing rules for: %s", selectedDupe.coreCharacterName))
+                        ImGui.Spacing()
+                        
+                        -- Target character selection
+                        if not popup.targetCharacter then
+                            popup.targetCharacter = selectedDupe.variants[1].fullName -- Default to first
+                        end
+                        
+                        ImGui.Text("Target character (where rules will be moved):")
+                        ImGui.SameLine()
+                        ImGui.SetNextItemWidth(200)
+                        if ImGui.BeginCombo("##targetChar", popup.targetCharacter) then
+                            for _, variant in ipairs(selectedDupe.variants) do
+                                local isSelected = (popup.targetCharacter == variant.fullName)
+                                local displayText = string.format("%s (%d rules)", variant.fullName, variant.ruleCount)
+                                
+                                -- Color code the options
+                                local isSimpleName = variant.fullName == variant.coreName
+                                if isSimpleName then
+                                    ImGui.PushStyleColor(ImGuiCol.Text, 0.2, 0.8, 0.2, 1) -- Green for simple names
+                                else
+                                    ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.6, 0.2, 1) -- Orange for complex names
+                                end
+                                
+                                if ImGui.Selectable(displayText, isSelected) then
+                                    popup.targetCharacter = variant.fullName
+                                end
+                                ImGui.PopStyleColor()
+                                
+                                if isSelected then
+                                    ImGui.SetItemDefaultFocus()
+                                end
+                            end
+                            ImGui.EndCombo()
+                        end
+                        
+                        ImGui.Spacing()
+                        
+                        -- Rules table
+                        if ImGui.BeginTable("RulesTable", 6, 
+                            ImGuiTableFlags.BordersInnerV + 
+                            ImGuiTableFlags.RowBg + 
+                            ImGuiTableFlags.Resizable + 
+                            ImGuiTableFlags.ScrollY, 0, 300) then
+                            
+                            ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthFixed, 80)
+                            ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch)
+                            ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 80)
+                            ImGui.TableSetupColumn("ItemID", ImGuiTableColumnFlags.WidthFixed, 60)
+                            ImGui.TableSetupColumn("Copy", ImGuiTableColumnFlags.WidthFixed, 50)
+                            ImGui.TableSetupColumn("Delete", ImGuiTableColumnFlags.WidthFixed, 50)
+                            ImGui.TableHeadersRow()
+                            
+                            for variantIdx, variant in ipairs(selectedDupe.variants) do
+                                -- Add separator between variants
+                                if variantIdx > 1 then
+                                    ImGui.TableNextRow()
+                                    for col = 0, 5 do
+                                        ImGui.TableSetColumnIndex(col)
+                                        ImGui.Text("---")
+                                    end
+                                end
+                                
+                                for ruleIdx, rule in ipairs(variant.rules) do
+                                    ImGui.TableNextRow()
+                                    
+                                    local ruleKey = string.format("%d_%d", variantIdx, ruleIdx)
+                                    
+                                    ImGui.TableSetColumnIndex(0)
+                                    -- Color code source names
+                                    local isSimpleName = variant.fullName == variant.coreName
+                                    if isSimpleName then
+                                        ImGui.TextColored(0.2, 0.8, 0.2, 1, variant.coreName)
+                                    else
+                                        ImGui.TextColored(0.8, 0.6, 0.2, 1, variant.fullName)
+                                    end
+                                    
+                                    ImGui.TableSetColumnIndex(1)
+                                    ImGui.Text(rule.itemName)
+                                    
+                                    ImGui.TableSetColumnIndex(2)
+                                    ImGui.Text(rule.rule)
+                                    
+                                    ImGui.TableSetColumnIndex(3)
+                                    if rule.itemId > 0 then
+                                        ImGui.Text(tostring(rule.itemId))
+                                    else
+                                        ImGui.TextColored(0.6, 0.6, 0.6, 1, "none")
+                                    end
+                                    
+                                    ImGui.TableSetColumnIndex(4)
+                                    -- Copy button (only if not already the target)
+                                    if variant.fullName ~= popup.targetCharacter then
+                                        if ImGui.Button("Copy##" .. ruleKey, 45, 0) then
+                                            database.copySpecificRule(variant.fullName, popup.targetCharacter, 
+                                                rule.itemName, rule.itemId, rule.tableSource)
+                                            -- Refresh the data
+                                            popup.duplicates = database.detectDuplicatePeerNames()
+                                        end
+                                        if ImGui.IsItemHovered() then
+                                            ImGui.SetTooltip(string.format("Copy '%s' rule to %s", rule.itemName, popup.targetCharacter))
+                                        end
+                                    else
+                                        ImGui.TextColored(0.6, 0.6, 0.6, 1, "Target")
+                                    end
+                                    
+                                    ImGui.TableSetColumnIndex(5)
+                                    -- Delete button
+                                    if ImGui.Button("Del##" .. ruleKey, 40, 0) then
+                                        database.deleteSpecificRule(variant.fullName, rule.itemName, rule.itemId, rule.tableSource)
+                                        -- Refresh the data
+                                        popup.duplicates = database.detectDuplicatePeerNames()
+                                    end
+                                    if ImGui.IsItemHovered() then
+                                        ImGui.SetTooltip(string.format("Delete '%s' rule from %s", rule.itemName, variant.fullName))
+                                    end
+                                end
+                            end
+                            
+                            ImGui.EndTable()
+                        end
+                        
+                        ImGui.Spacing()
+                        
+                        -- Bulk actions
+                        ImGui.Text("Bulk Actions:")
+                        if ImGui.Button("Copy All to Target", 150, 0) then
+                            for _, variant in ipairs(selectedDupe.variants) do
+                                if variant.fullName ~= popup.targetCharacter then
+                                    for _, rule in ipairs(variant.rules) do
+                                        database.copySpecificRule(variant.fullName, popup.targetCharacter, 
+                                            rule.itemName, rule.itemId, rule.tableSource)
+                                    end
+                                end
+                            end
+                            popup.duplicates = database.detectDuplicatePeerNames()
+                        end
+                        if ImGui.IsItemHovered() then
+                            ImGui.SetTooltip("Copy all rules from all variants to the target character")
+                        end
+                        
+                        ImGui.SameLine()
+                        if ImGui.Button("Delete Empty Variants", 150, 0) then
+                            for _, variant in ipairs(selectedDupe.variants) do
+                                if variant.fullName ~= popup.targetCharacter and #variant.rules == 0 then
+                                    database.deleteAllRulesForCharacter(variant.fullName)
+                                end
+                            end
+                            popup.duplicates = database.detectDuplicatePeerNames()
+                            popup.selectedGroup = nil -- Go back to group list
+                        end
+                        if ImGui.IsItemHovered() then
+                            ImGui.SetTooltip("Remove character entries that have no rules left")
+                        end
+                        
+                        ImGui.SameLine()
+                        if ImGui.Button("Back to Groups", 120, 0) then
+                            popup.selectedGroup = nil
+                            popup.targetCharacter = nil
+                        end
+                    end
+                end
+            elseif popup.scanned then
+                ImGui.TextColored(0.8, 0.6, 0.2, 1, "Click 'Scan for Duplicates' to check your database.")
+            end
+            
+            ImGui.Separator()
+            
+            -- Action buttons
+            if ImGui.Button("Close", 100, 0) then
+                keepOpen = false
+            end
+            
+            ImGui.SameLine()
+            if popup.scanned and popup.duplicates and #popup.duplicates > 0 then
+                if ImGui.Button("Refresh Scan", 120, 0) then
+                    popup.duplicates = database.detectDuplicatePeerNames()
+                    popup.selectedGroup = nil
+                    popup.ruleSelections = {}
+                    popup.targetCharacter = nil
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Re-scan for duplicates after making changes")
+                end
+            end
+            
+            ImGui.Spacing()
+            
+            -- Help text
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, "Tips:")
+            ImGui.BulletText("Green names are simple character names (usually correct)")
+            ImGui.BulletText("Orange names are complex DanNet names (usually duplicates)")
+            ImGui.BulletText("Copy rules to the target character, then delete empty variants")
+            ImGui.BulletText("Use 'Copy All to Target' for quick consolidation")
+        end
+        ImGui.End()
+        
+        if not keepOpen then
+            lootUI.duplicateCleanupPopup.isOpen = false
         end
     end
 end
