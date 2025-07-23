@@ -244,7 +244,7 @@ function util.createItemLink(itemName, itemID)
     end
     
     -- Try to create a proper item link using LinkDB if we have an itemID
-    if itemID and itemID > 0 then
+    if itemID and itemID > 0 and mq.TLO.LinkDB then
         local itemLink = mq.TLO.LinkDB(itemName)()
         if itemLink and itemLink ~= "" then
             return itemLink

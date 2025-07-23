@@ -3,6 +3,7 @@ local mq = require("mq")
 local ImGui = require("ImGui")
 local uiUtils = require("ui.ui_utils")
 local logging = require("modules.logging")
+local util = require("modules.util")
 
 local uiHotbar = {}
 local config = require("modules.config")
@@ -70,7 +71,9 @@ local buttonConfig = {
         visible = true,
         action = function()
             mq.cmd('/say #corpsefix')
-            mq.cmd('/sl_doloot_all')
+            if util and util.broadcastCommand then
+                util.broadcastCommand('/sl_doloot')
+            end
         end
     },
     autoKnown = {

@@ -305,7 +305,8 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
         
         ImGui.SetNextWindowSize(500, 400, ImGuiCond.FirstUseEver)
         local keepOpen = true
-        if ImGui.Begin(windowTitle, keepOpen) then
+        local open, p_open = ImGui.Begin(windowTitle, true)
+        if open then
             ImGui.Text("Configure rules for '" .. (lootUI.peerItemRulesPopup.itemName or "") .. "' across all peers.")
             ImGui.Separator()
 
@@ -679,9 +680,15 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                 ImGui.EndTable()
             end
 
+        else
+            -- Window was closed by X button
+            lootUI.peerItemRulesPopup.isOpen = false
+            lootUI.peerItemRulesPopup.itemName = ""
+            -- Don't clear peerStates - let them persist to remember dropdown selections
         end
+        
         ImGui.End()
-
+        
         if not keepOpen then
             lootUI.peerItemRulesPopup.isOpen = false
             lootUI.peerItemRulesPopup.itemName = ""

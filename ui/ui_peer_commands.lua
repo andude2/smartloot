@@ -8,6 +8,8 @@ local config = require("modules.config")
 local uiPeerCommands = {}
 
 function uiPeerCommands.draw(lootUI, loot, util)
+    if not lootUI then return end
+    
     -- Set consistent window properties
     ImGui.SetNextWindowBgAlpha(0.85)
     ImGui.SetNextWindowSize(320, 450, ImGuiCond.FirstUseEver)
@@ -228,12 +230,13 @@ function uiPeerCommands.draw(lootUI, loot, util)
             ImGui.Text("No connected peers found")
             ImGui.PopStyleColor()
         end
-        
-        ImGui.End()
     end
     
+    ImGui.End()
+    
+    -- Handle window close properly - only close if user clicked X
     if shouldClose == false then
-        lootUI.showPeerCommands = true
+        lootUI.showPeerCommands = false
     end
 end
 

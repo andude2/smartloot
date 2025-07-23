@@ -48,17 +48,11 @@ local function broadcastStartup()
     
     local broadcastCmd = "/lua run smartloot background"  -- Broadcast "background" mode to peers
     
-    if mq.TLO.Plugin("MQ2Mono").IsLoaded() then
-        mq.cmd("/e3bcaa " .. broadcastCmd)
-        logging.log("[SmartLoot] Broadcasting startup via MQ2Mono to connected clients")
-    elseif mq.TLO.Plugin("MQ2DanNet").IsLoaded() then
-        mq.cmd("/dgaexecute " .. broadcastCmd)
-        logging.log("[SmartLoot] Broadcasting startup via DanNet to connected clients")
-    elseif mq.TLO.Plugin("MQ2EQBC").IsLoaded() and mq.TLO.EQBC.Connected() then
-        mq.cmd("/bca //" .. broadcastCmd)
-        logging.log("[SmartLoot] Broadcasting startup via EQBC to connected clients")
+    -- Use the dynamic broadcast system based on config.lootCommandType
+    if util.broadcastCommand(broadcastCmd) then
+        logging.log("[SmartLoot] Broadcasting startup to connected clients using " .. (config.lootCommandType or "default") .. " system")
     else
-        logging.log("[SmartLoot] Warning: No broadcast plugin (MQ2Mono, DanNet, or EQBC) available")
+        logging.log("[SmartLoot] Warning: Failed to broadcast startup - check loot command type configuration")
     end
 end
 
