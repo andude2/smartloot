@@ -1329,13 +1329,13 @@ local function extractCoreCharacterName(fullName)
         return ""
     end
     
-    -- Pattern 1: "Ez (linux) x4 exp_linamas" -> "linamas"
+    -- Pattern 1: "Ez (linux) x4 exp_CharacterName" -> "CharacterName"
     local coreAfterUnderscore = string.match(fullName, ".*_([%w]+)$")
     if coreAfterUnderscore then
         return coreAfterUnderscore
     end
     
-    -- Pattern 2: Simple character names like "Linamas" or "linamas"
+    -- Pattern 2: Simple character names like "CharacterName" or "charactername"
     local simpleName = string.match(fullName, "^([%w]+)$")
     if simpleName then
         return simpleName
