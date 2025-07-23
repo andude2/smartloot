@@ -790,6 +790,139 @@ local function draw_lore_check_settings(config)
     ImGui.Spacing()
 end
 
+local function draw_inventory_settings(config)
+    -- Inventory Space Check Settings Section
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.8, 1.0) -- Light green-cyan header
+    if ImGui.CollapsingHeader("Inventory Space Settings") then
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+
+        -- Help button
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)                -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3) -- Slight highlight on hover
+        if ImGui.Button("(?)##InventoryHelp") then
+            ImGui.OpenPopup("InventorySettingsHelp")
+        end
+        ImGui.PopStyleColor(2)
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Click for inventory space check descriptions")
+        end
+
+        -- Enable/Disable inventory space check
+        local enableInventoryCheck = SmartLootEngine.config.enableInventorySpaceCheck or true
+        local newEnableInventoryCheck, changedEnableInventoryCheck = ImGui.Checkbox("Enable Inventory Space Check", enableInventoryCheck)
+        if changedEnableInventoryCheck then
+            SmartLootEngine.config.enableInventorySpaceCheck = newEnableInventoryCheck
+            if config.save then
+                config.save()
+            end
+            logging.log("Inventory space checking " .. (newEnableInventoryCheck and "enabled" or "disabled"))
+        end
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("When enabled, prevents looting when inventory space is low")
+        end
+
+        -- Minimum free inventory slots (only show if inventory checking is enabled)
+        if enableInventoryCheck then
+            ImGui.Spacing()
+            ImGui.Text("Minimum Free Slots:")
+            ImGui.SameLine()
+            ImGui.PushItemWidth(100)
+
+            local minSlots = SmartLootEngine.config.minFreeInventorySlots or 5
+            local newMinSlots, changedMinSlots = ImGui.InputInt("##MinFreeSlots", minSlots, 1, 5)
+            if changedMinSlots then
+                newMinSlots = math.max(1, math.min(30, newMinSlots)) -- Clamp between 1-30
+                SmartLootEngine.config.minFreeInventorySlots = newMinSlots
+                if config.save then
+                    config.save()
+                end
+                logging.log("Minimum free inventory slots set to: " .. newMinSlots)
+            end
+
+            ImGui.PopItemWidth()
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Number of free inventory slots required before looting stops\nRange: 1-30 slots")
+            end
+
+            -- Auto-inventory on loot setting
+            ImGui.Spacing()
+            local autoInventory = SmartLootEngine.config.autoInventoryOnLoot or true
+            local newAutoInventory, changedAutoInventory = ImGui.Checkbox("Auto-Inventory on Loot", autoInventory)
+            if changedAutoInventory then
+                SmartLootEngine.config.autoInventoryOnLoot = newAutoInventory
+                if config.save then
+                    config.save()
+                end
+                logging.log("Auto-inventory on loot " .. (newAutoInventory and "enabled" or "disabled"))
+            end
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Automatically move looted items to main inventory")
+            end
+        end
+
+        -- Status display
+        ImGui.Spacing()
+        ImGui.Text("Status:")
+        if enableInventoryCheck then
+            ImGui.SameLine()
+            ImGui.TextColored(0.2, 0.8, 0.2, 1.0, "Active")
+            local currentFreeSlots = mq.TLO.Me.FreeInventory() or 0
+            local minRequired = SmartLootEngine.config.minFreeInventorySlots or 5
+            
+            ImGui.Text(string.format("Current free slots: %d / %d required", currentFreeSlots, minRequired))
+            
+            if currentFreeSlots < minRequired then
+                ImGui.TextColored(0.8, 0.2, 0.2, 1.0, "WARNING: Insufficient inventory space!")
+            else
+                ImGui.TextColored(0.2, 0.8, 0.2, 1.0, "Inventory space OK")
+            end
+        else
+            ImGui.SameLine()
+            ImGui.TextColored(0.8, 0.6, 0.2, 1.0, "Disabled")
+            ImGui.Text("Inventory space will not be checked before looting")
+        end
+
+        -- Help Popup
+        if ImGui.BeginPopup("InventorySettingsHelp") then
+            ImGui.Text("Inventory Space Settings Help")
+            ImGui.Separator()
+
+            ImGui.Text("What does Inventory Space Check do?")
+            ImGui.BulletText("Prevents looting when you have insufficient inventory space")
+            ImGui.BulletText("Uses MQ's FreeInventory() function to check available slots")
+            ImGui.BulletText("Skips corpse looting when space is below minimum threshold")
+
+            ImGui.Separator()
+            ImGui.Text("Settings:")
+            ImGui.BulletText("Enable Inventory Space Check: Turn the feature on/off")
+            ImGui.BulletText("Minimum Free Slots: Required free slots before stopping loot")
+            ImGui.BulletText("Auto-Inventory on Loot: Move items to inventory automatically")
+
+            ImGui.Separator()
+            ImGui.Text("How it works:")
+            ImGui.BulletText("Before looting each corpse, checks current free inventory")
+            ImGui.BulletText("If free slots < minimum required, skips the corpse")
+            ImGui.BulletText("Prevents getting stuck on corpses due to full inventory")
+            ImGui.BulletText("Resumes looting when inventory space becomes available")
+
+            ImGui.Separator()
+            ImGui.Text("Recommended Settings:")
+            ImGui.BulletText("Minimum Free Slots: 5-10 (allows for multiple items per corpse)")
+            ImGui.BulletText("Enable Auto-Inventory: Helps manage cursor/inventory items")
+
+            ImGui.EndPopup()
+        end
+    else
+        ImGui.PopStyleColor()
+    end
+    ImGui.Spacing()
+end
+
 local function draw_chase_settings(config)
     -- Chase Integration Settings Section
     ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.8, 0.6, 1.0) -- Light orange header
@@ -1310,6 +1443,7 @@ function uiSettings.draw(lootUI, settings, config)
         draw_chat_settings(config)
         draw_item_announce_settings(config)
         draw_lore_check_settings(config)
+        draw_inventory_settings(config)
         draw_chase_settings(config)
         
         -- Database Tools Section

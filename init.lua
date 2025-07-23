@@ -35,28 +35,6 @@ local waterfallTracker = require("modules.waterfall_chain_tracker")
 local bindings = require("modules.bindings")  -- NEW: Load bindings module
 
 -- ============================================================================
--- BROADCAST STARTUP (NEW: Auto-start on connected peers like EZInventory)
--- ============================================================================
-
-local function broadcastStartup()
-    local isForeground = mq.TLO.EverQuest.Foreground()
-    
-    if not isForeground then
-        logging.log("[SmartLoot] Not foreground - skipping broadcast")
-        return
-    end
-    
-    local broadcastCmd = "/lua run smartloot background"  -- Broadcast "background" mode to peers
-    
-    -- Use the dynamic broadcast system based on config.lootCommandType
-    if util.broadcastCommand(broadcastCmd) then
-        logging.log("[SmartLoot] Broadcasting startup to connected clients using " .. (config.lootCommandType or "default") .. " system")
-    else
-        logging.log("[SmartLoot] Warning: Failed to broadcast startup - check loot command type configuration")
-    end
-end
-
--- ============================================================================
 -- INITIALIZATION
 -- ============================================================================
 
@@ -162,7 +140,6 @@ end
 
 local args = {...}
 
-broadcastStartup()  -- NEW: Broadcast to peers before full init
 mq.delay(150)
 
 initializeDatabase()

@@ -96,6 +96,15 @@ local function initializeDatabase()
     db:exec("PRAGMA foreign_keys = ON")
     db:exec("PRAGMA case_sensitive_like = OFF")
     
+    -- Enable WAL mode for better concurrency and reduced locking
+    db:exec("PRAGMA journal_mode = WAL")
+    db:exec("PRAGMA synchronous = NORMAL") -- Better performance with WAL
+    db:exec("PRAGMA wal_autocheckpoint = 1000") -- Checkpoint every 1000 pages
+    db:exec("PRAGMA temp_store = MEMORY") -- Use memory for temp tables
+    db:exec("PRAGMA busy_timeout = 5000") -- Handle SQLITE_BUSY errors (5 seconds)
+    db:exec("PRAGMA journal_size_limit = 67108864") -- Limit WAL file size (64MB)
+    db:exec("PRAGMA mmap_size = 268435456") -- Enable memory-mapped I/O (256MB)
+    
     -- Create database tables
     if not createDatabaseTables(db) then
         logging.error("[Database] Failed to create database tables")

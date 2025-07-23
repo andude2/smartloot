@@ -96,6 +96,7 @@ SmartLootEngine.LootState = {
     CombatDetected = 11,
     EmergencyStop = 12,
     WaitingForWaterfallCompletion = 13,
+    WaitingForInventorySpace = 14,
 }
 
 -- Engine Modes (compatible with existing system)
@@ -1592,9 +1593,23 @@ function SmartLootEngine.processProcessingItemsState()
     SmartLootEngine.state.emptySlotStreak = 0
 
     if not SmartLootEngine.hasInventorySpace() then
-        logging.debug("[Engine] Skipping corpse due to insufficient inventory space")
-        setState(SmartLootEngine.LootState.CleaningUpCorpse, "Inventory full")
-        scheduleNextTick(50)
+        logging.debug("[Engine] Insufficient inventory space - attempting to trigger next peer")
+        
+        -- Try to trigger the next peer in loot order for this corpse
+        local corpseTriggered = false
+        if itemInfo and itemInfo.name then
+            corpseTriggered = SmartLootEngine.triggerPeerForItem(itemInfo.name, itemInfo.itemID)
+        end
+        
+        if corpseTriggered then
+            logging.debug("[Engine] Triggered next peer due to inventory space - waiting for peer completion")
+            setState(SmartLootEngine.LootState.WaitingForWaterfallCompletion, "Inventory full - peer triggered")
+        else
+            logging.debug("[Engine] No peer available - waiting for inventory space to become available")
+            setState(SmartLootEngine.LootState.WaitingForInventorySpace, "Inventory full - waiting for space")
+        end
+        
+        scheduleNextTick(1000) -- Check inventory space every second
         return
     end
 
@@ -2003,6 +2018,24 @@ function SmartLootEngine.processWaitingForWaterfallCompletionState()
     end
 end
 
+-- Process WaitingForInventorySpace state
+function SmartLootEngine.processWaitingForInventorySpaceState()
+    -- Check if inventory space has become available
+    if SmartLootEngine.hasInventorySpace() then
+        logging.debug("[Engine] Inventory space available - resuming item processing")
+        setState(SmartLootEngine.LootState.ProcessingItems, "Inventory space available")
+        scheduleNextTick(50)
+    else
+        -- Still no space - continue waiting
+        local freeSlots = mq.TLO.Me.FreeInventory() or 0
+        local minRequired = SmartLootEngine.config.minFreeInventorySlots or 5
+        logging.debug(string.format("[Engine] Still waiting for inventory space: %d free / %d required", freeSlots, minRequired))
+        
+        -- Check every 5 seconds to avoid spam
+        scheduleNextTick(5000)
+    end
+end
+
 -- ============================================================================
 -- MAIN TICK PROCESSOR
 -- ============================================================================
@@ -2076,6 +2109,8 @@ function SmartLootEngine.processTick()
         SmartLootEngine.processProcessingPeersState()
     elseif currentState == SmartLootEngine.LootState.WaitingForWaterfallCompletion then
         SmartLootEngine.processWaitingForWaterfallCompletionState()
+    elseif currentState == SmartLootEngine.LootState.WaitingForInventorySpace then
+        SmartLootEngine.processWaitingForInventorySpaceState()
     elseif currentState == SmartLootEngine.LootState.OnceModeCompletion then
         SmartLootEngine.processOnceModeCompletionState()
     elseif currentState == SmartLootEngine.LootState.CombatDetected then

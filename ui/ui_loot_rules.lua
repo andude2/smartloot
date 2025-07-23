@@ -658,7 +658,7 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
         ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
         ImGui.TableSetupColumn("Item ID", ImGuiTableColumnFlags.WidthFixed, 80)
         ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 200)
-        ImGui.TableSetupColumn("Peers", ImGuiTableColumnFlags.WidthFixed, 60)
+        ImGui.TableSetupColumn("Peers", ImGuiTableColumnFlags.WidthFixed, 100)
         ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, 100)
         ImGui.TableHeadersRow()
         
