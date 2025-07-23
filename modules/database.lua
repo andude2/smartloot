@@ -408,7 +408,49 @@ function database.getLootRule(itemName, returnFull, itemID)
             
             logging.debug(string.format("[Database] Found rule by name (database): %s -> %s", itemName, rule))
             
-            -- Update cache
+            -- Auto-upgrade: If we have an ItemID, upgrade the rule to the main table
+            if itemID and itemID > 0 then
+                local findItem = mq.TLO.FindItem(itemName)
+                local iconID = 0
+                if findItem and findItem.Icon() then
+                    iconID = findItem.Icon()
+                end
+                
+                -- Save to main table with ItemID
+                local success = database.saveLootRuleFor(toonName, itemName, itemID, rule, iconID)
+                if success then
+                    logging.info(string.format("[Database] Auto-upgraded rule: %s (ID:%d) -> %s for %s", 
+                        itemName, itemID, rule, toonName))
+                    
+                    -- Remove from fallback table
+                    local deleteStmt = prepareStatement([[
+                        DELETE FROM lootrules_name_fallback 
+                        WHERE toon = ? AND item_name = ?
+                    ]])
+                    if deleteStmt then
+                        deleteStmt:bind(1, toonName)
+                        deleteStmt:bind(2, itemName)
+                        deleteStmt:step()
+                        deleteStmt:finalize()
+                        logging.debug(string.format("[Database] Removed %s from fallback table after upgrade", itemName))
+                    end
+                    
+                    -- Update cache to reflect the upgrade
+                    if lootRulesCache.byName[toonName] then
+                        lootRulesCache.byName[toonName][itemName] = nil
+                    end
+                    
+                    if returnFull then
+                        return rule, itemID, iconID
+                    else
+                        return rule
+                    end
+                else
+                    logging.warn(string.format("[Database] Failed to auto-upgrade rule for %s", itemName))
+                end
+            end
+            
+            -- Update cache (fallback case or failed upgrade)
             if not lootRulesCache.byName[toonName] then
                 lootRulesCache.byName[toonName] = {}
             end
@@ -1632,6 +1674,395 @@ function database.mergePeerRules(fromName, toName)
     
     -- Delete the old entries
     return database.deleteAllRulesForCharacter(fromName)
+end
+
+-- ============================================================================
+-- LEGACY IMPORT FUNCTIONS
+-- ============================================================================
+
+-- Parse legacy INI file format (E3 Loot Files)
+function database.parseLegacyLootFile(filePath)
+    local file = io.open(filePath, "r")
+    if not file then
+        logging.error("[Database] Could not open legacy file: " .. filePath)
+        return nil
+    end
+    
+    local items = {
+        alwaysLoot = {},
+        alwaysLootContains = {}
+    }
+    
+    local currentSection = nil
+    local lineCount = 0
+    
+    for line in file:lines() do
+        lineCount = lineCount + 1
+        line = line:gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
+        
+        -- Skip empty lines and comments
+        if line ~= "" and not line:match("^;") then
+            -- Check for section headers
+            if line:match("^%[(.+)%]$") then
+                local sectionName = line:match("^%[(.+)%]$")
+                if sectionName == "AlwaysLoot" then
+                    currentSection = "alwaysLoot"
+                elseif sectionName == "AlwaysLootContains" then
+                    currentSection = "alwaysLootContains"
+                else
+                    currentSection = nil -- Unknown section, skip
+                end
+            -- Parse Entry= lines
+            elseif line:match("^Entry%s*=%s*(.+)$") and currentSection then
+                local itemName = line:match("^Entry%s*=%s*(.+)$")
+                if itemName and itemName ~= "" then
+                    table.insert(items[currentSection], itemName)
+                end
+            end
+        end
+    end
+    
+    file:close()
+    
+    logging.info(string.format("[Database] Parsed legacy file: %d AlwaysLoot, %d AlwaysLootContains items", 
+        #items.alwaysLoot, #items.alwaysLootContains))
+    
+    return items
+end
+
+-- Import legacy loot rules into the database (smart import logic)
+function database.importLegacyLootRules(parsedItems, targetCharacter, defaultRule, fileSource)
+    if not parsedItems or not targetCharacter or not defaultRule then
+        logging.error("[Database] importLegacyLootRules: missing required parameters")
+        return false, 0
+    end
+    
+    local importCount = 0
+    local skippedCount = 0
+    local errors = {}
+    
+    -- Get existing rules for this character
+    local existingRules = database.getLootRulesForPeer(targetCharacter)
+    
+    -- Helper function to check if item should be imported
+    local function shouldImportItem(itemName)
+        local lowerName = itemName:lower()
+        local existingRule = existingRules[lowerName] or existingRules[itemName]
+        
+        -- Also check by searching through all rules for name matches
+        if not existingRule then
+            for key, ruleData in pairs(existingRules) do
+                if ruleData.item_name then
+                    local ruleItemLower = string.lower(ruleData.item_name)
+                    if ruleItemLower == lowerName or ruleData.item_name == itemName then
+                        existingRule = ruleData
+                        break
+                    end
+                end
+            end
+        end
+        
+        -- Skip if we already have an ItemID-based rule for this item
+        if existingRule and existingRule.item_id and existingRule.item_id > 0 then
+            logging.debug(string.format("[Database] Skipping '%s' - already has ItemID-based rule", itemName))
+            return false
+        end
+        
+        return true
+    end
+    
+    -- Helper function to import a single item
+    local function importSingleItem(itemName, section)
+        if not shouldImportItem(itemName) then
+            skippedCount = skippedCount + 1
+            return true -- Not an error, just skipped
+        end
+        
+        -- Use custom rule if provided, otherwise use default
+        local rule = defaultRule
+        if parsedItems.customRules and parsedItems.customRules[itemName] then
+            rule = parsedItems.customRules[itemName]
+        end
+        
+        -- Check if we have ItemID from inventory scan
+        local itemID = 0
+        local iconID = 0
+        if parsedItems.inventoryData and parsedItems.inventoryData[itemName] then
+            itemID = parsedItems.inventoryData[itemName].itemID
+            iconID = parsedItems.inventoryData[itemName].iconID
+        end
+        
+        -- Save to appropriate table based on whether we have ItemID
+        if itemID > 0 then
+            -- Save directly to main table with ItemID
+            local success = database.saveLootRuleFor(targetCharacter, itemName, itemID, rule, iconID)
+            if success then
+                importCount = importCount + 1
+                logging.info(string.format("[Database] Imported legacy rule with ItemID (%s): %s (ID:%d) -> %s for %s", 
+                    section, itemName, itemID, rule, targetCharacter))
+                return true
+            else
+                table.insert(errors, string.format("Failed to save ItemID rule for %s", itemName))
+                return false
+            end
+        else
+            -- Save to name-based fallback table
+            local stmt = prepareStatement([[
+                INSERT OR REPLACE INTO lootrules_name_fallback
+                (toon, item_name, rule, created_at, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ]])
+            
+            if stmt then
+                stmt:bind(1, targetCharacter)
+                stmt:bind(2, itemName)
+                stmt:bind(3, rule)
+                local result = stmt:step()
+                stmt:finalize()
+                
+                if result == sqlite3.DONE then
+                    importCount = importCount + 1
+                    logging.debug(string.format("[Database] Imported legacy rule to fallback (%s): %s -> %s for %s", 
+                        section, itemName, rule, targetCharacter))
+                    return true
+                else
+                    table.insert(errors, string.format("Failed to import '%s' from %s", itemName, section))
+                    return false
+                end
+            else
+                table.insert(errors, string.format("Database error for '%s' from %s", itemName, section))
+                return false
+            end
+        end
+    end
+    
+    -- Process AlwaysLoot items
+    for _, itemName in ipairs(parsedItems.alwaysLoot) do
+        importSingleItem(itemName, "AlwaysLoot")
+    end
+    
+    -- Process AlwaysLootContains items
+    for _, itemName in ipairs(parsedItems.alwaysLootContains) do
+        importSingleItem(itemName, "AlwaysLootContains")
+    end
+    
+    -- Clear cache for target character
+    if lootRulesCache.loaded[targetCharacter] then
+        lootRulesCache.loaded[targetCharacter] = false
+    end
+    if lootRulesCache.byName[targetCharacter] then
+        lootRulesCache.byName[targetCharacter] = {}
+    end
+    
+    local totalProcessed = importCount + skippedCount
+    if totalProcessed > 0 then
+        if skippedCount > 0 then
+            logging.info(string.format("[Database] Import summary for %s from %s: %d imported, %d skipped (already have ItemID rules)", 
+                targetCharacter, fileSource or "unknown file", importCount, skippedCount))
+        else
+            logging.info(string.format("[Database] Successfully imported %d legacy loot rules for %s from %s", 
+                importCount, targetCharacter, fileSource or "unknown file"))
+        end
+    end
+    
+    if #errors > 0 then
+        logging.error(string.format("[Database] Import completed with %d errors: %s", 
+            #errors, table.concat(errors, ", ")))
+    end
+    
+    return importCount > 0 or skippedCount > 0, importCount
+end
+
+-- Scan inventory for ItemID and IconID of specific items
+function database.scanInventoryForItems(itemList)
+    local foundItems = {}
+    
+    for _, itemName in ipairs(itemList) do
+        local findItem = mq.TLO.FindItem(itemName)
+        if findItem and findItem.ID() and findItem.ID() > 0 then
+            foundItems[itemName] = {
+                itemID = findItem.ID(),
+                iconID = findItem.Icon() or 0
+            }
+            logging.debug(string.format("[Database] Found in inventory: %s (ID:%d, Icon:%d)", 
+                itemName, findItem.ID(), findItem.Icon() or 0))
+        end
+    end
+    
+    return foundItems
+end
+
+-- Check for conflicts with existing database rules
+function database.checkLegacyImportConflicts(parsedItems, targetCharacter, defaultRule)
+    if not parsedItems or not targetCharacter then
+        return { conflicts = {}, skipped = {} }
+    end
+    
+    local conflicts = {}  -- Items that will overwrite existing rules
+    local skipped = {}    -- Items that will be skipped (already have ItemID rules)
+    local existingRules = database.getLootRulesForPeer(targetCharacter)
+    
+    -- Helper function to find existing rule for an item
+    local function findExistingRule(itemName)
+        local lowerName = itemName:lower()
+        local existingRule = existingRules[lowerName] or existingRules[itemName]
+        
+        -- Also check by searching through all rules for name matches
+        if not existingRule then
+            for key, ruleData in pairs(existingRules) do
+                if ruleData.item_name then
+                    local ruleItemLower = string.lower(ruleData.item_name)
+                    if ruleItemLower == lowerName or ruleData.item_name == itemName then
+                        logging.debug(string.format("[Database] Found existing rule for '%s': %s (ItemID: %s)", 
+                            itemName, ruleData.rule, tostring(ruleData.item_id or "none")))
+                        existingRule = ruleData
+                        break
+                    end
+                end
+            end
+        end
+        
+        if not existingRule then
+            logging.debug(string.format("[Database] No existing rule found for '%s'", itemName))
+        end
+        
+        return existingRule
+    end
+    
+    -- Helper function to check item conflicts
+    local function checkItemConflicts(items, section)
+        for _, itemName in ipairs(items) do
+            local existingRule = findExistingRule(itemName)
+            
+            if existingRule then
+                if existingRule.item_id and existingRule.item_id > 0 then
+                    -- Skip items that already have ItemID-based rules
+                    table.insert(skipped, {
+                        itemName = itemName,
+                        section = section,
+                        existingRule = existingRule.rule,
+                        reason = "Already has ItemID-based rule"
+                    })
+                else
+                    -- Will overwrite name-only rules
+                    table.insert(conflicts, {
+                        itemName = itemName,
+                        section = section,
+                        existingRule = existingRule.rule,
+                        newRule = defaultRule or "Keep",
+                        hasItemID = false,
+                        willOverwrite = true
+                    })
+                end
+            end
+        end
+    end
+    
+    -- Check AlwaysLoot items for conflicts
+    checkItemConflicts(parsedItems.alwaysLoot, "AlwaysLoot")
+    
+    -- Check AlwaysLootContains items for conflicts
+    checkItemConflicts(parsedItems.alwaysLootContains, "AlwaysLootContains")
+    
+    return {
+        conflicts = conflicts,
+        skipped = skipped
+    }
+end
+
+-- Get preview of what would be imported from a legacy file
+function database.previewLegacyImport(filePath, targetCharacter, defaultRule)
+    local parsedItems = database.parseLegacyLootFile(filePath)
+    if not parsedItems then
+        return nil
+    end
+    
+    local preview = {
+        fileName = filePath:match("([^/\\]+)$") or filePath, -- Extract filename
+        totalItems = #parsedItems.alwaysLoot + #parsedItems.alwaysLootContains,
+        alwaysLootCount = #parsedItems.alwaysLoot,
+        alwaysLootContainsCount = #parsedItems.alwaysLootContains,
+        sampleItems = {},
+        parsedData = parsedItems, -- Keep for actual import
+        conflicts = {} -- Will be populated if targetCharacter provided
+    }
+    
+    -- Check for conflicts if target character is specified
+    if targetCharacter then
+        local conflictData = database.checkLegacyImportConflicts(parsedItems, targetCharacter, defaultRule)
+        preview.conflicts = conflictData.conflicts
+        preview.skipped = conflictData.skipped
+        preview.conflictCount = #conflictData.conflicts
+        preview.skippedCount = #conflictData.skipped
+        preview.willImportCount = preview.totalItems - preview.skippedCount
+    end
+    
+    -- Add sample items for preview (first 10 from each section)
+    for i = 1, math.min(10, #parsedItems.alwaysLoot) do
+        local itemName = parsedItems.alwaysLoot[i]
+        local hasConflict = false
+        local willBeSkipped = false
+        
+        -- Check if this item has a conflict or will be skipped
+        if preview.conflicts then
+            for _, conflict in ipairs(preview.conflicts) do
+                if conflict.itemName == itemName then
+                    hasConflict = true
+                    break
+                end
+            end
+        end
+        
+        if preview.skipped then
+            for _, skipped in ipairs(preview.skipped) do
+                if skipped.itemName == itemName then
+                    willBeSkipped = true
+                    break
+                end
+            end
+        end
+        
+        table.insert(preview.sampleItems, {
+            name = itemName,
+            section = "AlwaysLoot",
+            hasConflict = hasConflict,
+            willBeSkipped = willBeSkipped
+        })
+    end
+    
+    for i = 1, math.min(10, #parsedItems.alwaysLootContains) do
+        local itemName = parsedItems.alwaysLootContains[i]
+        local hasConflict = false
+        local willBeSkipped = false
+        
+        -- Check if this item has a conflict or will be skipped
+        if preview.conflicts then
+            for _, conflict in ipairs(preview.conflicts) do
+                if conflict.itemName == itemName then
+                    hasConflict = true
+                    break
+                end
+            end
+        end
+        
+        if preview.skipped then
+            for _, skipped in ipairs(preview.skipped) do
+                if skipped.itemName == itemName then
+                    willBeSkipped = true
+                    break
+                end
+            end
+        end
+        
+        table.insert(preview.sampleItems, {
+            name = itemName,
+            section = "AlwaysLootContains",
+            hasConflict = hasConflict,
+            willBeSkipped = willBeSkipped
+        })
+    end
+    
+    return preview
 end
 
 function database.cleanup()

@@ -48,7 +48,6 @@ function util.getConnectedPeers()
                 -- Trim whitespace and add to list
                 peer = peer:match("^%s*(.-)%s*$")
                 if peer and peer ~= "" then
-                    -- Normalize to proper case (Linamas instead of linamas)
                     peer = normalizePeerName(peer)
                     table.insert(peers, peer)
                 end

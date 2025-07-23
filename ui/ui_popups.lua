@@ -1793,6 +1793,735 @@ function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
     end
 end
 
+-- Legacy Loot Import Popup
+function uiPopups.drawLegacyImportPopup(lootUI, database, util)
+    
+    if lootUI.legacyImportPopup and lootUI.legacyImportPopup.isOpen then
+        ImGui.SetNextWindowSize(800, 600, ImGuiCond.FirstUseEver)
+        local keepOpen = true
+        if ImGui.Begin("SmartLoot - Legacy Loot Import", keepOpen) then
+            local popup = lootUI.legacyImportPopup
+            
+            -- Header
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0)
+            ImGui.Text("Legacy Loot Rule Import")
+            ImGui.PopStyleColor()
+            ImGui.Separator()
+            
+            ImGui.TextWrapped("Import loot rules from legacy E3 Macro loot files (INI format). " ..
+                "This will parse AlwaysLoot and AlwaysLootContains sections and import them as name-based rules.")
+            
+            ImGui.Spacing()
+            
+            -- File path input
+            ImGui.Text("Legacy File Path:")
+            ImGui.SetNextItemWidth(600)
+            local newFilePath, changedPath = ImGui.InputText("##filePath", popup.filePath or "")
+            if changedPath then
+                popup.filePath = newFilePath
+                popup.preview = nil -- Clear preview when path changes
+            end
+            
+            -- Quick path helper section
+            ImGui.Spacing()
+            ImGui.Text("Common Paths (click to use):")
+            
+            -- E3 Macro Inis folder
+            if ImGui.Button("E3 Macro Inis Folder") then
+                popup.filePath = "/mnt/c/MQ-ROF2/Config/e3 Macro Inis/"
+                popup.preview = nil
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Set path to E3 Macro Inis folder - you'll need to add the filename")
+            end
+            
+            ImGui.SameLine()
+            
+            -- Config folder
+            if ImGui.Button("Config Folder") then
+                popup.filePath = "/mnt/c/MQ-ROF2/Config/"
+                popup.preview = nil
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Set path to main Config folder")
+            end
+            
+            -- Auto-generated path from MQ TLO (Option 3 format)
+            local currentChar = mq.TLO.Me.Name() or "YourChar"
+            local currentServer = mq.TLO.EverQuest.Server() or "YourServer"
+            local configPath = mq.TLO.MacroQuest.Path('config')() or "/mnt/c/MQ-ROF2/Config"
+            
+            -- Generate the correct path format: Loot_Stackable_[Char]_EZ_(Linux)_x4_Exp.ini
+            local correctPath = string.format("%s/e3 Macro Inis/Loot_Stackable_%s_EZ_(Linux)_x4_Exp.ini", configPath, currentChar)
+            
+            ImGui.Spacing()
+            ImGui.Text("Auto-generated path for your character:")
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, string.format("Character: %s, Server: %s", currentChar, currentServer))
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, string.format("Config Path: %s", configPath))
+            
+            ImGui.Spacing()
+            ImGui.Text("Recommended file:")
+            ImGui.TextColored(0.8, 1.0, 0.8, 1, correctPath:match("([^/]+)$") or "unknown")
+            
+            ImGui.Spacing()
+            if ImGui.Button("Use Auto-Generated Path", 200, 0) then
+                popup.filePath = correctPath
+                popup.preview = nil
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Use the auto-generated path for your character")
+            end
+            
+            -- Common filename patterns
+            ImGui.Spacing()
+            ImGui.Text("Common filename patterns:")
+            ImGui.BulletText("Loot_Stackable_[CharName]_[ServerName].ini")
+            ImGui.BulletText("Loot_Stackable_[CharName]_[ServerName]_x4_Exp.ini")
+            ImGui.BulletText("Check the 'e3 Macro Inis' folder for your specific file")
+            
+            ImGui.Spacing()
+            
+            -- Preview section
+            if popup.filePath and popup.filePath ~= "" then
+                if ImGui.Button("Preview Import", 120, 0) then
+                    -- Pass target character to check for conflicts
+                    local targetChar = popup.targetCharacter or (mq.TLO.Me.Name() or "Local")
+                    popup.preview = database.previewLegacyImport(popup.filePath, targetChar, popup.defaultRule)
+                    if not popup.preview then
+                        popup.error = "Could not read or parse the specified file"
+                    else
+                        popup.error = nil
+                    end
+                end
+                
+                ImGui.SameLine()
+                ImGui.TextColored(0.7, 0.7, 0.7, 1, "Click to analyze the file contents and check for conflicts")
+            end
+            
+            -- Show error if any
+            if popup.error then
+                ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.4, 0.4, 1.0)
+                ImGui.TextWrapped("Error: " .. popup.error)
+                ImGui.PopStyleColor()
+            end
+            
+            -- Show preview if available
+            if popup.preview then
+                ImGui.Spacing()
+                ImGui.Separator()
+                ImGui.Text("Import Preview")
+                ImGui.Spacing()
+                
+                -- File info with conflict detection
+                ImGui.PushStyleColor(ImGuiCol.ChildBg, 0.1, 0.1, 0.2, 0.8)
+                ImGui.BeginChild("FileInfo", 0, 100, true)
+                ImGui.Text("File: " .. popup.preview.fileName)
+                ImGui.Text(string.format("Total Items: %d", popup.preview.totalItems))
+                ImGui.Text(string.format("AlwaysLoot: %d items, AlwaysLootContains: %d items", 
+                    popup.preview.alwaysLootCount, popup.preview.alwaysLootContainsCount))
+                
+                -- Show conflict info
+                if popup.preview.conflictCount and popup.preview.conflictCount > 0 then
+                    ImGui.TextColored(1.0, 0.8, 0.2, 1, string.format("⚠ Conflicts: %d items already have rules", popup.preview.conflictCount))
+                else
+                    ImGui.TextColored(0.2, 0.8, 0.2, 1, "✓ No conflicts detected")
+                end
+                ImGui.EndChild()
+                ImGui.PopStyleColor()
+                
+                -- Import settings
+                ImGui.Spacing()
+                ImGui.Text("Import Settings:")
+                
+                -- Target character selection
+                ImGui.Text("Target Character:")
+                ImGui.SameLine()
+                ImGui.SetNextItemWidth(200)
+                
+                local currentChar = mq.TLO.Me.Name() or "Local"
+                popup.targetCharacter = popup.targetCharacter or currentChar
+                
+                if ImGui.BeginCombo("##targetChar", popup.targetCharacter) then
+                    -- Current character first
+                    local isSelected = (popup.targetCharacter == currentChar)
+                    if ImGui.Selectable(currentChar, isSelected) then
+                        popup.targetCharacter = currentChar
+                        -- Refresh preview to check conflicts for new target
+                        if popup.filePath and popup.filePath ~= "" then
+                            popup.preview = database.previewLegacyImport(popup.filePath, popup.targetCharacter, popup.defaultRule)
+                        end
+                    end
+                    if isSelected then
+                        ImGui.SetItemDefaultFocus()
+                    end
+                    
+                    -- Other characters
+                    local allCharacters = database.getAllCharactersWithRules()
+                    for _, charName in ipairs(allCharacters) do
+                        if charName ~= currentChar then
+                            local isSelected = (popup.targetCharacter == charName)
+                            if ImGui.Selectable(charName, isSelected) then
+                                popup.targetCharacter = charName
+                                -- Refresh preview to check conflicts for new target
+                                if popup.filePath and popup.filePath ~= "" then
+                                    popup.preview = database.previewLegacyImport(popup.filePath, popup.targetCharacter, popup.defaultRule)
+                                end
+                            end
+                            if isSelected then
+                                ImGui.SetItemDefaultFocus()
+                            end
+                        end
+                    end
+                    ImGui.EndCombo()
+                end
+                
+                -- Default rule selection
+                ImGui.Text("Default Rule:")
+                ImGui.SameLine()
+                ImGui.SetNextItemWidth(120)
+                popup.defaultRule = popup.defaultRule or "Keep"
+                
+                if ImGui.BeginCombo("##defaultRule", popup.defaultRule) then
+                    for _, rule in ipairs({"Keep", "Ignore", "Destroy"}) do
+                        local isSelected = (popup.defaultRule == rule)
+                        if ImGui.Selectable(rule, isSelected) then
+                            popup.defaultRule = rule
+                        end
+                        if isSelected then
+                            ImGui.SetItemDefaultFocus()
+                        end
+                    end
+                    ImGui.EndCombo()
+                end
+                
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("All imported items will use this rule")
+                end
+                
+                -- Import summary
+                ImGui.Spacing()
+                local importCount = popup.preview.totalItems - (popup.preview.skipped and #popup.preview.skipped or 0)
+                local conflictCount = popup.preview.conflicts and #popup.preview.conflicts or 0
+                local skippedCount = popup.preview.skipped and #popup.preview.skipped or 0
+                
+                ImGui.TextColored(0.2, 0.8, 0.2, 1, string.format("✓ %d items will be imported", importCount))
+                if skippedCount > 0 then
+                    ImGui.TextColored(0.7, 0.7, 0.7, 1, string.format("⊘ %d items will be skipped (already have ItemID rules)", skippedCount))
+                end
+                if conflictCount > 0 then
+                    ImGui.TextColored(1.0, 0.8, 0.2, 1, string.format("⚠ %d items will overwrite existing rules", conflictCount))
+                end
+                
+                -- Sample items preview
+                if #popup.preview.sampleItems > 0 then
+                    ImGui.Spacing()
+                    ImGui.Text("Sample Items (showing first 20):")
+                    
+                    if ImGui.BeginTable("SampleItemsTable", 4, 
+                        ImGuiTableFlags.BordersInnerV + 
+                        ImGuiTableFlags.RowBg + 
+                        ImGuiTableFlags.ScrollY, 0, 200) then
+                        
+                        ImGui.TableSetupColumn("Section", ImGuiTableColumnFlags.WidthFixed, 120)
+                        ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+                        ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 100)
+                        ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 80)
+                        ImGui.TableHeadersRow()
+                        
+                        for _, item in ipairs(popup.preview.sampleItems) do
+                            ImGui.TableNextRow()
+                            
+                            ImGui.TableSetColumnIndex(0)
+                            if item.section == "AlwaysLoot" then
+                                ImGui.TextColored(0.2, 0.8, 0.2, 1, "AlwaysLoot")
+                            else
+                                ImGui.TextColored(0.2, 0.6, 0.8, 1, "AlwaysLootContains")
+                            end
+                            
+                            ImGui.TableSetColumnIndex(1)
+                            ImGui.Text(item.name)
+                            
+                            ImGui.TableSetColumnIndex(2)
+                            if item.willBeSkipped then
+                                ImGui.TextColored(0.7, 0.7, 0.7, 1, "Skip")
+                                if ImGui.IsItemHovered() then
+                                    ImGui.SetTooltip("Already has ItemID rule - won't import")
+                                end
+                            elseif item.hasConflict then
+                                ImGui.TextColored(1.0, 0.8, 0.2, 1, "Overwrite")
+                                if ImGui.IsItemHovered() then
+                                    ImGui.SetTooltip("Will overwrite existing name-only rule")
+                                end
+                            else
+                                ImGui.TextColored(0.2, 0.8, 0.2, 1, "Import")
+                                if ImGui.IsItemHovered() then
+                                    ImGui.SetTooltip("New item - will be imported")
+                                end
+                            end
+                            
+                            ImGui.TableSetColumnIndex(3)
+                            if not item.willBeSkipped then
+                                ImGui.TextColored(0.8, 0.6, 0.2, 1, popup.defaultRule or "Keep")
+                            else
+                                ImGui.TextColored(0.5, 0.5, 0.5, 1, "-")
+                            end
+                        end
+                        
+                        ImGui.EndTable()
+                    end
+                    
+                    if popup.preview.totalItems > #popup.preview.sampleItems then
+                        ImGui.TextColored(0.7, 0.7, 0.7, 1, 
+                            string.format("... and %d more items", 
+                            popup.preview.totalItems - #popup.preview.sampleItems))
+                    end
+                end
+                
+                -- Show skipped items if there are any
+                if popup.preview.skipped and #popup.preview.skipped > 0 then
+                    ImGui.Spacing()
+                    if ImGui.CollapsingHeader(string.format("Skipped Items (%d) - Already have ItemID rules", #popup.preview.skipped)) then
+                        if ImGui.BeginTable("SkippedItemsTable", 3, 
+                            ImGuiTableFlags.BordersInnerV + 
+                            ImGuiTableFlags.RowBg + 
+                            ImGuiTableFlags.ScrollY, 0, 120) then
+                            
+                            ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+                            ImGui.TableSetupColumn("Current Rule", ImGuiTableColumnFlags.WidthFixed, 80)
+                            ImGui.TableSetupColumn("ItemID", ImGuiTableColumnFlags.WidthFixed, 60)
+                            ImGui.TableHeadersRow()
+                            
+                            for _, skipped in ipairs(popup.preview.skipped) do
+                                ImGui.TableNextRow()
+                                
+                                ImGui.TableSetColumnIndex(0)
+                                ImGui.TextColored(0.7, 0.7, 0.7, 1, skipped.itemName)
+                                
+                                ImGui.TableSetColumnIndex(1)
+                                ImGui.TextColored(0.6, 0.8, 1.0, 1, skipped.existingRule)
+                                
+                                ImGui.TableSetColumnIndex(2)
+                                ImGui.TextColored(0.8, 0.6, 0.2, 1, tostring(skipped.itemID or "N/A"))
+                            end
+                            
+                            ImGui.EndTable()
+                        end
+                    end
+                end
+                
+                -- Show conflicts section if there are any
+                if popup.preview.conflicts and #popup.preview.conflicts > 0 then
+                    ImGui.Spacing()
+                    if ImGui.CollapsingHeader(string.format("Conflicting Items (%d) - Will be overwritten", #popup.preview.conflicts)) then
+                        if ImGui.BeginTable("ConflictsTable", 4, 
+                            ImGuiTableFlags.BordersInnerV + 
+                            ImGuiTableFlags.RowBg + 
+                            ImGuiTableFlags.ScrollY, 0, 150) then
+                            
+                            ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+                            ImGui.TableSetupColumn("Current Rule", ImGuiTableColumnFlags.WidthFixed, 80)
+                            ImGui.TableSetupColumn("New Rule", ImGuiTableColumnFlags.WidthFixed, 80)
+                            ImGui.TableSetupColumn("Has ItemID", ImGuiTableColumnFlags.WidthFixed, 80)
+                            ImGui.TableHeadersRow()
+                            
+                            for _, conflict in ipairs(popup.preview.conflicts) do
+                                ImGui.TableNextRow()
+                                
+                                ImGui.TableSetColumnIndex(0)
+                                ImGui.TextColored(1.0, 0.8, 0.2, 1, conflict.itemName)
+                                
+                                ImGui.TableSetColumnIndex(1)
+                                ImGui.TextColored(0.8, 0.4, 0.4, 1, conflict.existingRule)
+                                
+                                ImGui.TableSetColumnIndex(2)
+                                ImGui.TextColored(0.4, 0.8, 0.4, 1, popup.defaultRule or "Keep")
+                                
+                                ImGui.TableSetColumnIndex(3)
+                                if conflict.hasItemID then
+                                    ImGui.TextColored(0.6, 0.8, 1.0, 1, "Yes")
+                                    if ImGui.IsItemHovered() then
+                                        ImGui.SetTooltip("This rule has an ItemID and is more specific")
+                                    end
+                                else
+                                    ImGui.TextColored(0.7, 0.7, 0.7, 1, "No")
+                                end
+                            end
+                            
+                            ImGui.EndTable()
+                        end
+                        
+                        ImGui.Spacing()
+                        ImGui.TextColored(1.0, 0.8, 0.2, 1, "⚠ Warning: Import will overwrite the existing rules shown above")
+                    end
+                end
+                
+                ImGui.Spacing()
+                ImGui.Separator()
+                
+                -- Import button
+                local actualImportCount = popup.preview.totalItems - (popup.preview.skipped and #popup.preview.skipped or 0)
+                local canImport = popup.targetCharacter and popup.defaultRule and actualImportCount > 0
+                
+                if not canImport then
+                    ImGui.PushStyleColor(ImGuiCol.Button, 0.3, 0.3, 0.3, 1)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.3, 0.3, 1)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.3, 0.3, 0.3, 1)
+                else
+                    ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.8, 0.2, 0.8)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.9, 0.3, 0.8)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.7, 0.1, 0.8)
+                end
+                
+                local buttonText = actualImportCount > 0 and string.format("Review & Import %d Items", actualImportCount) or "Nothing to Import"
+                if ImGui.Button(buttonText, 180, 30) and canImport and not popup.showConfirmation then
+                    
+                    -- Open confirmation popup instead of direct import
+                    popup.showConfirmation = true
+                    popup.confirmationItems = {}
+                    
+                    -- Collect all items that will actually be imported (not skipped)
+                    if popup.preview and popup.preview.parsedData and popup.preview.parsedData.alwaysLoot then
+                        for _, itemName in ipairs(popup.preview.parsedData.alwaysLoot) do
+                            local willSkip = false
+                            if popup.preview.skipped then
+                                for _, skipped in ipairs(popup.preview.skipped) do
+                                    if skipped.itemName == itemName then
+                                        willSkip = true
+                                        break
+                                    end
+                                end
+                            end
+                            
+                            if not willSkip then
+                                table.insert(popup.confirmationItems, {
+                                    name = itemName,
+                                    section = "AlwaysLoot",
+                                    rule = "Keep",
+                                    threshold = "",
+                                    willImport = true
+                                })
+                            end
+                        end
+                    end
+                    
+                    if popup.preview and popup.preview.parsedData and popup.preview.parsedData.alwaysLootContains then
+                        for _, itemName in ipairs(popup.preview.parsedData.alwaysLootContains) do
+                            local willSkip = false
+                            if popup.preview.skipped then
+                                for _, skipped in ipairs(popup.preview.skipped) do
+                                    if skipped.itemName == itemName then
+                                        willSkip = true
+                                        break
+                                    end
+                                end
+                            end
+                            
+                            if not willSkip then
+                                table.insert(popup.confirmationItems, {
+                                    name = itemName,
+                                    section = "AlwaysLootContains", 
+                                    rule = "Keep",
+                                    threshold = "",
+                                    willImport = true
+                                })
+                            end
+                        end
+                    end
+                    
+                end
+                ImGui.PopStyleColor(3)
+                
+                if not canImport and ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Please select target character and default rule")
+                end
+                
+                -- Show import result
+                if popup.importResult then
+                    ImGui.SameLine()
+                    if popup.importResult.success then
+                        ImGui.TextColored(0.2, 0.8, 0.2, 1, 
+                            string.format("✓ Imported %d items to %s", 
+                            popup.importResult.count, popup.importResult.character))
+                    else
+                        ImGui.TextColored(1.0, 0.4, 0.4, 1, "✗ " .. (popup.importResult.error or "Import failed"))
+                    end
+                end
+            end
+            
+            ImGui.Separator()
+            
+            -- Action buttons
+            if ImGui.Button("Close", 100, 0) then
+                keepOpen = false
+            end
+            
+            ImGui.SameLine()
+            if popup.preview then
+                if ImGui.Button("Clear Preview", 120, 0) then
+                    popup.preview = nil
+                    popup.importResult = nil
+                    popup.error = nil
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Clear current preview to select a different file")
+                end
+            end
+            
+            ImGui.Spacing()
+            
+            -- Help text
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, "Tips:")
+            ImGui.BulletText("Only INI files with [AlwaysLoot] and [AlwaysLootContains] sections are supported")
+            ImGui.BulletText("Items are imported as name-based rules (no ItemIDs)")
+            ImGui.BulletText("Name-based rules will auto-upgrade to ItemID rules when items are encountered in-game")
+            ImGui.BulletText("Example path: /mnt/c/MQ-ROF2/Config/e3 Macro Inis/Loot_Stackable_YourChar_Server.ini")
+        end
+        ImGui.End()
+        
+        if not keepOpen then
+            lootUI.legacyImportPopup.isOpen = false
+            -- Clear state when closing
+            lootUI.legacyImportPopup.filePath = ""
+            lootUI.legacyImportPopup.preview = nil
+            lootUI.legacyImportPopup.importResult = nil
+            lootUI.legacyImportPopup.error = nil
+            lootUI.legacyImportPopup.targetCharacter = nil
+            lootUI.legacyImportPopup.defaultRule = nil
+        end
+    end
+    
+end
+
+-- Legacy Import Confirmation Popup
+function uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
+    local popup = lootUI.legacyImportPopup
+    if not popup or not popup.showConfirmation or not popup.confirmationItems then
+        return
+    end
+    
+    ImGui.SetNextWindowSize(900, 600, ImGuiCond.FirstUseEver)
+    -- Center the window (simplified positioning)
+    ImGui.SetNextWindowPos(400, 300, ImGuiCond.FirstUseEver)
+    
+    local confirmKeepOpen = true
+    if ImGui.Begin("Confirm Legacy Import", confirmKeepOpen, ImGuiWindowFlags.NoCollapse) then
+        ImGui.TextColored(0.4, 0.8, 1.0, 1, string.format("Confirm Import to: %s", popup.targetCharacter))
+        ImGui.Separator()
+        
+        ImGui.Text(string.format("Review %d items that will be imported:", #popup.confirmationItems))
+        ImGui.Text("You can uncheck items you don't want to import.")
+        ImGui.Spacing()
+        
+        -- Buttons for select all/none
+        if ImGui.Button("Select All", 100, 0) then
+            for _, item in ipairs(popup.confirmationItems) do
+                item.willImport = true
+            end
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Select None", 100, 0) then
+            for _, item in ipairs(popup.confirmationItems) do
+                item.willImport = false
+            end
+        end
+        
+        ImGui.Spacing()
+        
+        -- Table with checkboxes for each item
+        if ImGui.BeginTable("ConfirmImportTable", 5, 
+            ImGuiTableFlags.BordersInnerV + 
+            ImGuiTableFlags.RowBg + 
+            ImGuiTableFlags.ScrollY, 0, 400) then
+            
+            ImGui.TableSetupColumn("Import", ImGuiTableColumnFlags.WidthFixed, 60)
+            ImGui.TableSetupColumn("Section", ImGuiTableColumnFlags.WidthFixed, 120)
+            ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+            ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 120)
+            ImGui.TableSetupColumn("Threshold", ImGuiTableColumnFlags.WidthFixed, 80)
+            ImGui.TableHeadersRow()
+            
+            for i, item in ipairs(popup.confirmationItems) do
+                ImGui.TableNextRow()
+                
+                ImGui.TableSetColumnIndex(0)
+                -- Use item name hash for stable ID
+                local checkboxId = "##import_" .. tostring(item.name):gsub("[^%w]", "_") .. "_" .. i
+                local newValue, pressed = ImGui.Checkbox(checkboxId, item.willImport or false)
+                if pressed then
+                    item.willImport = newValue
+                end
+                
+                ImGui.TableSetColumnIndex(1)
+                if item.section == "AlwaysLoot" then
+                    ImGui.TextColored(0.2, 0.8, 0.2, 1, item.section)
+                else
+                    ImGui.TextColored(0.2, 0.6, 0.8, 1, item.section)
+                end
+                
+                ImGui.TableSetColumnIndex(2)
+                if item.willImport then
+                    ImGui.Text(item.name)
+                else
+                    ImGui.TextColored(0.6, 0.6, 0.6, 1, item.name)
+                end
+                
+                ImGui.TableSetColumnIndex(3)
+                if item.willImport then
+                    ImGui.SetNextItemWidth(110)
+                    local comboId = "##rule_" .. tostring(item.name):gsub("[^%w]", "_") .. "_" .. i
+                    if ImGui.BeginCombo(comboId, item.rule) then
+                        for _, rule in ipairs({"Keep", "KeepIfFewerThan", "Ignore"}) do
+                            local isSelected = (item.rule == rule)
+                            if ImGui.Selectable(rule, isSelected) then
+                                item.rule = rule
+                                if rule == "Keep" or rule == "Ignore" then
+                                    item.threshold = ""
+                                end
+                            end
+                            if isSelected then
+                                ImGui.SetItemDefaultFocus()
+                            end
+                        end
+                        ImGui.EndCombo()
+                    end
+                else
+                    ImGui.TextColored(0.5, 0.5, 0.5, 1, item.rule)
+                end
+                
+                ImGui.TableSetColumnIndex(4)
+                if item.willImport and item.rule == "KeepIfFewerThan" then
+                    ImGui.SetNextItemWidth(70)
+                    local thresholdId = "##threshold_" .. tostring(item.name):gsub("[^%w]", "_") .. "_" .. i
+                    local changed, newThreshold = ImGui.InputText(thresholdId, item.threshold or "")
+                    if changed then
+                        item.threshold = newThreshold
+                    end
+                elseif item.willImport then
+                    ImGui.TextColored(0.5, 0.5, 0.5, 1, "-")
+                else
+                    ImGui.TextColored(0.5, 0.5, 0.5, 1, "-")
+                end
+            end
+            
+            ImGui.EndTable()
+        end
+        
+        ImGui.Spacing()
+        ImGui.Separator()
+        
+        -- Count selected items
+        local selectedCount = 0
+        for _, item in ipairs(popup.confirmationItems) do
+            if item.willImport then
+                selectedCount = selectedCount + 1
+            end
+        end
+        
+        ImGui.Text(string.format("Selected: %d of %d items", selectedCount, #popup.confirmationItems))
+        
+        ImGui.Spacing()
+        
+        -- Action buttons
+        if selectedCount > 0 then
+            ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.8, 0.2, 0.8)
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.9, 0.3, 0.8)
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.7, 0.1, 0.8)
+        else
+            ImGui.PushStyleColor(ImGuiCol.Button, 0.3, 0.3, 0.3, 1)
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.3, 0.3, 1)
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.3, 0.3, 0.3, 1)
+        end
+        
+        if ImGui.Button(string.format("Import %d Items", selectedCount), 150, 30) and selectedCount > 0 then
+            -- Create filtered list of items to import with custom rules
+            local itemsToImport = {
+                alwaysLoot = {},
+                alwaysLootContains = {},
+                customRules = {}  -- Store individual item rules
+            }
+            
+            local allItemNames = {}  -- Collect all items for inventory scan
+            
+            for _, item in ipairs(popup.confirmationItems) do
+                if item.willImport then
+                    local finalRule = item.rule
+                    if item.rule == "KeepIfFewerThan" and item.threshold and item.threshold ~= "" then
+                        finalRule = "KeepIfFewerThan|" .. item.threshold
+                    end
+                    
+                    itemsToImport.customRules[item.name] = finalRule
+                    table.insert(allItemNames, item.name)
+                    
+                    if item.section == "AlwaysLoot" then
+                        table.insert(itemsToImport.alwaysLoot, item.name)
+                    else
+                        table.insert(itemsToImport.alwaysLootContains, item.name)
+                    end
+                end
+            end
+            
+            -- Scan inventory for ItemIDs and IconIDs
+            itemsToImport.inventoryData = database.scanInventoryForItems(allItemNames)
+            
+            -- Perform the actual import
+            local success, importCount = database.importLegacyLootRules(
+                itemsToImport, 
+                popup.targetCharacter, 
+                "Keep", -- Default rule (not used when customRules provided)
+                popup.preview.fileName
+            )
+            
+            if success then
+                popup.importResult = {
+                    success = true,
+                    count = importCount,
+                    character = popup.targetCharacter
+                }
+                
+                -- Refresh cache for target character
+                local currentChar = mq.TLO.Me.Name()
+                if popup.targetCharacter == currentChar then
+                    database.refreshLootRuleCache()
+                else
+                    database.refreshLootRuleCacheForPeer(popup.targetCharacter)
+                end
+                
+                -- Send reload command to connected peer if needed
+                local connectedPeers = util.getConnectedPeers()
+                for _, peer in ipairs(connectedPeers) do
+                    if peer == popup.targetCharacter then
+                        util.sendPeerCommand(peer, "/sl_rulescache")
+                        break
+                    end
+                end
+            else
+                popup.importResult = {
+                    success = false,
+                    error = "Import failed. Check logs for details."
+                }
+            end
+            
+            -- Close confirmation popup
+            popup.showConfirmation = false
+            popup.confirmationItems = nil
+        end
+        ImGui.PopStyleColor(3)
+        
+        ImGui.SameLine()
+        if ImGui.Button("Cancel", 100, 30) then
+            popup.showConfirmation = false
+            popup.confirmationItems = nil
+        end
+        
+    end
+    ImGui.End()
+    
+    if not confirmKeepOpen then
+        popup.showConfirmation = false
+        popup.confirmationItems = nil
+    end
+end
+
 function uiPopups.drawGettingStartedPopup(lootUI)
     if lootUI.showGettingStartedPopup then
         ImGui.SetNextWindowSize(700, 600, ImGuiCond.FirstUseEver)

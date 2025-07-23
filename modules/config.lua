@@ -26,6 +26,10 @@ config.itemAnnounceMode = "all"  -- Options: "all", "ignored", "none"
 -- NEW: Farming mode configuration
 config.farmingMode = false  -- Whether farming mode is active (bypasses corpse deduplication)
 
+-- NEW: Lore item checking configuration
+config.enableLoreCheck = true  -- Whether to check for Lore conflicts before looting
+config.loreCheckAnnounce = true  -- Whether to announce when Lore conflicts are detected
+
 -- Default settings additions (add to existing defaults)
 config.useChaseCommands = false  -- Whether to use chase commands at all
 config.chasePauseCommand = "/luachase pause on"  -- Command to pause chase

@@ -685,6 +685,111 @@ local function draw_item_announce_settings(config)
     ImGui.Spacing()
 end
 
+local function draw_lore_check_settings(config)
+    -- Lore Item Check Settings Section
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow header
+    if ImGui.CollapsingHeader("Lore Item Check Settings") then
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+
+        -- Help button
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)                -- Transparent background
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3) -- Slight highlight on hover
+        if ImGui.Button("(?)##LoreCheckHelp") then
+            ImGui.OpenPopup("LoreCheckSettingsHelp")
+        end
+        ImGui.PopStyleColor(2)
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Click for Lore item check descriptions")
+        end
+
+        -- Enable/Disable Lore Check
+        local enableLoreCheck = config.enableLoreCheck or true
+        local newEnableLoreCheck, changedEnableLoreCheck = ImGui.Checkbox("Enable Lore Item Checking", enableLoreCheck)
+        if changedEnableLoreCheck then
+            config.enableLoreCheck = newEnableLoreCheck
+            if config.save then
+                config.save()
+            end
+            logging.log("Lore item checking " .. (newEnableLoreCheck and "enabled" or "disabled"))
+        end
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("When enabled, prevents looting Lore items you already have")
+        end
+
+        -- Lore Check Announcements (only show if Lore checking is enabled)
+        if enableLoreCheck then
+            ImGui.Spacing()
+            local loreCheckAnnounce = config.loreCheckAnnounce or true
+            local newLoreCheckAnnounce, changedLoreCheckAnnounce = ImGui.Checkbox("Announce Lore Conflicts", loreCheckAnnounce)
+            if changedLoreCheckAnnounce then
+                config.loreCheckAnnounce = newLoreCheckAnnounce
+                if config.save then
+                    config.save()
+                end
+                logging.log("Lore conflict announcements " .. (newLoreCheckAnnounce and "enabled" or "disabled"))
+            end
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("When enabled, announces when Lore items are skipped due to conflicts")
+            end
+        end
+
+        -- Status display
+        ImGui.Spacing()
+        ImGui.Text("Status:")
+        if enableLoreCheck then
+            ImGui.SameLine()
+            ImGui.TextColored(0.2, 0.8, 0.2, 1.0, "Active")
+            ImGui.Text("SmartLoot will check for Lore conflicts before looting items")
+            if config.loreCheckAnnounce then
+                ImGui.Text("Conflicts will be announced in chat")
+            else
+                ImGui.Text("Conflicts will be logged silently")
+            end
+        else
+            ImGui.SameLine()
+            ImGui.TextColored(0.8, 0.6, 0.2, 1.0, "Disabled")
+            ImGui.Text("Lore items may be looted even if you already have them")
+        end
+
+        -- Help Popup
+        if ImGui.BeginPopup("LoreCheckSettingsHelp") then
+            ImGui.Text("Lore Item Check Settings Help")
+            ImGui.Separator()
+
+            ImGui.Text("What are Lore Items?")
+            ImGui.BulletText("Lore items are unique items you can only have one of")
+            ImGui.BulletText("Attempting to loot a Lore item you already have will fail")
+            ImGui.BulletText("This can cause SmartLoot to get stuck on a corpse")
+
+            ImGui.Separator()
+            ImGui.Text("How Lore Checking Works:")
+            ImGui.BulletText("Before looting any item with a 'Keep' rule, checks if it's Lore")
+            ImGui.BulletText("If Lore and you already have one, changes action to 'Ignore'")
+            ImGui.BulletText("Prevents the loot attempt that would cause an error")
+            ImGui.BulletText("Allows SmartLoot to continue processing other items")
+
+            ImGui.Separator()
+            ImGui.Text("Settings:")
+            ImGui.BulletText("Enable Lore Item Checking: Turn the feature on/off")
+            ImGui.BulletText("Announce Lore Conflicts: Chat notifications when items are skipped")
+
+            ImGui.Separator()
+            ImGui.Text("Examples:")
+            ImGui.BulletText("'Skipping Lore item Ancient Blade (already have 1)'")
+            ImGui.BulletText("Works with all Keep rules including KeepIfFewerThan")
+
+            ImGui.EndPopup()
+        end
+    else
+        ImGui.PopStyleColor()
+    end
+    ImGui.Spacing()
+end
+
 local function draw_chase_settings(config)
     -- Chase Integration Settings Section
     ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.8, 0.6, 1.0) -- Light orange header
@@ -1204,7 +1309,30 @@ function uiSettings.draw(lootUI, settings, config)
 
         draw_chat_settings(config)
         draw_item_announce_settings(config)
+        draw_lore_check_settings(config)
         draw_chase_settings(config)
+        
+        -- Database Tools Section
+        ImGui.Spacing()
+        ImGui.Separator()
+        ImGui.Spacing()
+        
+        if ImGui.CollapsingHeader("Database Tools") then
+            ImGui.Text("Import/Export Tools:")
+            ImGui.Spacing()
+            
+            if ImGui.Button("Legacy Import", 120, 0) then
+                lootUI.legacyImportPopup = lootUI.legacyImportPopup or {}
+                lootUI.legacyImportPopup.isOpen = true
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Import loot rules from E3 Macro INI files")
+            end
+            
+            ImGui.Spacing()
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, "Import legacy E3 loot rules from INI format files")
+        end
+        
         ImGui.EndTabItem()
     end
 end

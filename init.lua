@@ -1079,6 +1079,8 @@ mq.imgui.init("SmartLoot", function()
         uiPopups.drawThresholdPopup(lootUI, database)
         uiPopups.drawGettingStartedPopup(lootUI)
         uiPopups.drawDuplicateCleanupPopup(lootUI, database)
+        uiPopups.drawLegacyImportPopup(lootUI, database, util)
+        uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
     end
     
     if lootUI.showPeerCommands and uiPeerCommands then
