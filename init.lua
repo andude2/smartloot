@@ -868,7 +868,7 @@ local uiSettings = safeRequire("ui.ui_settings", "Settings")
 local uiDebugWindow = safeRequire("ui.ui_debug_window", "DebugWindow")
 local uiLiveStats = safeRequire("ui.ui_live_stats", "LiveStats")
 local uiHelp = safeRequire("ui.ui_help", "Help")
-local uiTempRules = safeRequire("ui.ui_temp_rules", "TempRules")
+-- local uiTempRules = safeRequire("ui.ui_temp_rules", "TempRules") -- Removed - replaced with name-based rules
 
 -- Configure engine UI integration
 if dbInitialized then
@@ -908,9 +908,7 @@ mq.imgui.init("SmartLoot", function()
                 if uiLootRules then
                     uiLootRules.draw(lootUI, database, settings, util, uiPopups)
                 end
-                if uiTempRules then
-                    uiTempRules.draw(lootUI, database, settings, util)
-                end
+                -- AFK Temp Rules removed - replaced with name-based rule creation in Loot Rules tab
                 if uiSettings then
                     uiSettings.draw(lootUI, settings, config)
                 end

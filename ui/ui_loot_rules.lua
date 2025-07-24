@@ -413,7 +413,7 @@ local function drawUniversalRuleSection(lootUI, database, util, allRules)
     
     -- Universal input row with character select
     ImGui.AlignTextToFramePadding()
-    ImGui.Text("Search:")
+    ImGui.Text("Search (Add Rule):")
     ImGui.SameLine()
     
     -- Universal text input (serves as both search and add item field)
@@ -528,6 +528,17 @@ local function drawUniversalRuleSection(lootUI, database, util, allRules)
             end
         end
         
+        -- Name-based rule option
+        lootUI.createNameBasedRule = lootUI.createNameBasedRule or false
+        local nameBasedRule, nameBasedChanged = ImGui.Checkbox("Create Name-Based Rule", lootUI.createNameBasedRule)
+        if nameBasedChanged then
+            lootUI.createNameBasedRule = nameBasedRule
+        end
+        
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Creates a rule by item name only (for items not yet encountered)\nWill be converted to ID-based rule when item is found")
+        end
+        
         ImGui.SameLine()
         
         -- Add Rule button
@@ -542,45 +553,84 @@ local function drawUniversalRuleSection(lootUI, database, util, allRules)
                     finalRule = "KeepIfFewerThan:" .. (lootUI.newRuleThreshold or 1)
                 end
                 
-                local itemID = ensureItemID(itemName, 0)
-                local iconID = 0
+                local success = false
                 
-                local findItem = mq.TLO.FindItem(itemName)
-                if findItem and findItem.Icon() then
-                    iconID = findItem.Icon()
-                end
-                
-                if targetChar == mq.TLO.Me.Name() then
-                    local success = database.saveLootRule(itemName, itemID, finalRule, iconID)
-                    if success then
-                        logging.debug("Added new rule for item: " .. itemName)
-                        database.refreshLootRuleCache()
+                if lootUI.createNameBasedRule then
+                    -- Create name-based rule (goes to fallback table)
+                    if targetChar == mq.TLO.Me.Name() then
+                        success = database.saveNameBasedRule(itemName, finalRule)
+                        if success then
+                            logging.debug("Added name-based rule for item: " .. itemName)
+                        else
+                            logging.debug("Failed to add name-based rule for item: " .. itemName)
+                        end
                     else
-                        logging.debug("Failed to add rule for item: " .. itemName)
+                        if database.saveNameBasedRuleFor then
+                            success = database.saveNameBasedRuleFor(targetChar, itemName, finalRule)
+                            if success then
+                                logging.debug("Added name-based rule for " .. itemName .. " on " .. targetChar)
+                                local connectedPeers = util.getConnectedPeers()
+                                for _, peer in ipairs(connectedPeers) do
+                                    if peer == targetChar then
+                                        sendReloadMessageToPeer(targetChar)
+                                        break
+                                    end
+                                end
+                            else
+                                logging.debug("Failed to add name-based rule for " .. itemName .. " on " .. targetChar)
+                            end
+                        end
                     end
                 else
-                    if database.saveLootRuleFor then
-                        local success = database.saveLootRuleFor(targetChar, itemName, itemID, finalRule, iconID)
+                    -- Create standard ID-based rule
+                    local itemID = ensureItemID(itemName, 0)
+                    local iconID = 0
+                    
+                    local findItem = mq.TLO.FindItem(itemName)
+                    if findItem and findItem.Icon() then
+                        iconID = findItem.Icon()
+                    end
+                    
+                    if targetChar == mq.TLO.Me.Name() then
+                        success = database.saveLootRule(itemName, itemID, finalRule, iconID)
                         if success then
-                            logging.debug("Added new rule for " .. itemName .. " on " .. targetChar)
-                            local connectedPeers = util.getConnectedPeers()
-                            for _, peer in ipairs(connectedPeers) do
-                                if peer == targetChar then
-                                    sendReloadMessageToPeer(targetChar)
-                                    break
-                                end
-                            end
+                            logging.debug("Added new rule for item: " .. itemName)
+                            database.refreshLootRuleCache()
                         else
-                            logging.debug("Failed to add rule for " .. itemName .. " on " .. targetChar)
+                            logging.debug("Failed to add rule for item: " .. itemName)
+                        end
+                    else
+                        if database.saveLootRuleFor then
+                            success = database.saveLootRuleFor(targetChar, itemName, itemID, finalRule, iconID)
+                            if success then
+                                logging.debug("Added new rule for " .. itemName .. " on " .. targetChar)
+                                local connectedPeers = util.getConnectedPeers()
+                                for _, peer in ipairs(connectedPeers) do
+                                    if peer == targetChar then
+                                        sendReloadMessageToPeer(targetChar)
+                                        break
+                                    end
+                                end
+                            else
+                                logging.debug("Failed to add rule for " .. itemName .. " on " .. targetChar)
+                            end
                         end
                     end
                 end
                 
+                -- Refresh cache for name-based rules
+                if success and lootUI.createNameBasedRule then
+                    database.refreshLootRuleCache()
+                end
+                
                 -- Clear the input after successful add
-                lootUI.universalInput = ""
-                lootUI.searchFilter = ""
-                lootUI.newRule = "Keep"
-                lootUI.newRuleThreshold = 1
+                if success then
+                    lootUI.universalInput = ""
+                    lootUI.searchFilter = ""
+                    lootUI.newRule = "Keep"
+                    lootUI.newRuleThreshold = 1
+                    lootUI.createNameBasedRule = false
+                end
             end
         end
         ImGui.PopStyleColor()

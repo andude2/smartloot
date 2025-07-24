@@ -595,6 +595,57 @@ function database.saveLootRule(itemName, itemID, rule, iconID)
     return database.saveLootRuleFor(mq.TLO.Me.Name(), itemName, itemID, rule, iconID)
 end
 
+-- Save name-based rule to fallback table (for items without known IDs)
+function database.saveNameBasedRuleFor(toonName, itemName, rule)
+    if not toonName or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    
+    if not itemName or not rule then
+        logging.error("[Database] saveNameBasedRuleFor: missing itemName or rule")
+        return false
+    end
+    
+    local stmt = prepareStatement([[
+        INSERT OR REPLACE INTO lootrules_name_fallback
+        (toon, item_name, rule, created_at, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ]])
+    
+    if stmt then
+        stmt:bind(1, toonName)
+        stmt:bind(2, itemName)
+        stmt:bind(3, rule)
+        
+        local result = stmt:step()
+        stmt:finalize()
+        
+        if result == sqlite3.DONE then
+            logging.debug(string.format("[Database] Saved name-based rule: %s -> %s for %s", itemName, rule, toonName))
+            
+            -- Update cache
+            if not lootRulesCache.byName[toonName] then
+                lootRulesCache.byName[toonName] = {}
+            end
+            lootRulesCache.byName[toonName][itemName] = {
+                rule = rule,
+                itemID = 0,
+                iconID = 0
+            }
+            
+            return true
+        end
+    end
+    
+    logging.error(string.format("[Database] Failed to save name-based rule for %s", itemName))
+    return false
+end
+
+-- Convenience function for current character (name-based)
+function database.saveNameBasedRule(itemName, rule)
+    return database.saveNameBasedRuleFor(mq.TLO.Me.Name(), itemName, rule)
+end
+
 -- ============================================================================
 -- MAINTENANCE FUNCTIONS
 -- ============================================================================

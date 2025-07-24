@@ -648,6 +648,57 @@ function SmartLootEngine.hasInventorySpace()
     return true
 end
 
+-- Check if a specific item can be stacked with existing inventory items
+function SmartLootEngine.canStackItem(itemName, itemID)
+    if not itemName then
+        return false
+    end
+    
+    -- Try to find the item in inventory by name first, then by ID
+    local existingItem = mq.TLO.FindItem(itemName)
+    if not existingItem or not existingItem.ID() or existingItem.ID() <= 0 then
+        -- Try by item ID if we have one
+        if itemID and itemID > 0 then
+            existingItem = mq.TLO.FindItem(itemID)
+        end
+    end
+    
+    -- If item not found in inventory, it can't be stacked
+    if not existingItem or not existingItem.ID() or existingItem.ID() <= 0 then
+        return false
+    end
+    
+    -- Check if the item is stackable
+    if not existingItem.Stackable() then
+        return false
+    end
+    
+    -- Check if there's available stack space
+    local freeStackSpace = existingItem.FreeStack() or 0
+    if freeStackSpace > 0 then
+        logging.debug(string.format("[Engine] Item %s can be stacked (%d space available)", itemName, freeStackSpace))
+        return true
+    end
+    
+    return false
+end
+
+-- Enhanced inventory space check that allows stackable items
+function SmartLootEngine.canLootItem(itemName, itemID)
+    -- Always allow if inventory checking is disabled
+    if not SmartLootEngine.config.enableInventorySpaceCheck then
+        return true
+    end
+    
+    -- Check if we have regular inventory space
+    if SmartLootEngine.hasInventorySpace() then
+        return true
+    end
+    
+    -- If no free slots, check if item can be stacked
+    return SmartLootEngine.canStackItem(itemName, itemID)
+end
+
 -- ============================================================================
 -- CORPSE MANAGEMENT
 -- ============================================================================
@@ -1592,8 +1643,14 @@ function SmartLootEngine.processProcessingItemsState()
     -- Reset empty slot streak since we found an item
     SmartLootEngine.state.emptySlotStreak = 0
 
-    if not SmartLootEngine.hasInventorySpace() then
-        logging.debug("[Engine] Insufficient inventory space - attempting to trigger next peer")
+    if not SmartLootEngine.canLootItem(itemInfo.name, itemInfo.itemID) then
+        logging.debug("[Engine] Cannot loot item (insufficient space or no stackable space) - closing loot window and attempting to trigger next peer")
+        
+        -- Close loot window before triggering peer
+        if SmartLootEngine.isLootWindowOpen() then
+            mq.cmd("/notify LootWnd DoneButton leftmouseup")
+            logging.debug("[Engine] Closed loot window due to inability to loot item")
+        end
         
         -- Try to trigger the next peer in loot order for this corpse
         local corpseTriggered = false
@@ -1602,11 +1659,11 @@ function SmartLootEngine.processProcessingItemsState()
         end
         
         if corpseTriggered then
-            logging.debug("[Engine] Triggered next peer due to inventory space - waiting for peer completion")
-            setState(SmartLootEngine.LootState.WaitingForWaterfallCompletion, "Inventory full - peer triggered")
+            logging.debug("[Engine] Triggered next peer due to inability to loot item - waiting for peer completion")
+            setState(SmartLootEngine.LootState.WaitingForWaterfallCompletion, "Cannot loot item - peer triggered")
         else
             logging.debug("[Engine] No peer available - waiting for inventory space to become available")
-            setState(SmartLootEngine.LootState.WaitingForInventorySpace, "Inventory full - waiting for space")
+            setState(SmartLootEngine.LootState.WaitingForInventorySpace, "Cannot loot item - waiting for space")
         end
         
         scheduleNextTick(1000) -- Check inventory space every second
