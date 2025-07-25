@@ -572,7 +572,7 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
             local shouldClose = false
             local popupFlags = ImGuiWindowFlags.AlwaysAutoResize + ImGuiWindowFlags.NoCollapse
             
-            if ImGui.BeginPopupModal("Zone Breakdown##zoneBreakdown", true, popupFlags) then
+            if ImGui.BeginPopup("Zone Breakdown##zoneBreakdown", popupFlags) then
                 local popup = lootUI.zoneBreakdownPopup
 
                 -- Validate popup structure before proceeding

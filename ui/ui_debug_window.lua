@@ -239,25 +239,25 @@ function debugWindow.draw(SmartLootEngine, lootUI)
         if ImGui.CollapsingHeader("Session Statistics") then
             ImGui.Indent()
             
-            local sessionTime = (now - state.stats.sessionStart) / 1000 / 60 -- minutes
+            local sessionTime = state.stats.sessionStart and (now - state.stats.sessionStart) / 1000 / 60 or 0 -- minutes
             
             ImGui.Text("Session Duration: " .. string.format("%.1f minutes", sessionTime))
-            ImGui.Text("Corpses Processed: " .. state.stats.corpsesProcessed)
-            ImGui.Text("Items Looted: " .. state.stats.itemsLooted)
-            ImGui.Text("Items Ignored: " .. state.stats.itemsIgnored)
-            ImGui.Text("Items Destroyed: " .. state.stats.itemsDestroyed)
+            ImGui.Text("Corpses Processed: " .. (state.stats.corpsesProcessed or 0))
+            ImGui.Text("Items Looted: " .. (state.stats.itemsLooted or 0))
+            ImGui.Text("Items Ignored: " .. (state.stats.itemsIgnored or 0))
+            ImGui.Text("Items Destroyed: " .. (state.stats.itemsDestroyed or 0))
             ImGui.Text("Items Left Behind: " .. (state.stats.itemsLeftBehind or 0))
-            ImGui.Text("Peers Triggered: " .. state.stats.peersTriggered)
-            ImGui.Text("Decisions Required: " .. state.stats.decisionsRequired)
-            ImGui.Text("Navigation Timeouts: " .. state.stats.navigationTimeouts)
-            ImGui.Text("Loot Window Failures: " .. state.stats.lootWindowFailures)
-            ImGui.Text("Emergency Stops: " .. state.stats.emergencyStops)
+            ImGui.Text("Peers Triggered: " .. (state.stats.peersTriggered or 0))
+            ImGui.Text("Decisions Required: " .. (state.stats.decisionsRequired or 0))
+            ImGui.Text("Navigation Timeouts: " .. (state.stats.navigationTimeouts or 0))
+            ImGui.Text("Loot Window Failures: " .. (state.stats.lootWindowFailures or 0))
+            ImGui.Text("Emergency Stops: " .. (state.stats.emergencyStops or 0))
             
             if sessionTime > 0 then
                 ImGui.Separator()
                 ImGui.Text("Rates:")
-                ImGui.Text("  Corpses/Min: " .. string.format("%.1f", state.stats.corpsesProcessed / sessionTime))
-                ImGui.Text("  Items/Min: " .. string.format("%.1f", (state.stats.itemsLooted + state.stats.itemsIgnored) / sessionTime))
+                ImGui.Text("  Corpses/Min: " .. string.format("%.1f", (state.stats.corpsesProcessed or 0) / sessionTime))
+                ImGui.Text("  Items/Min: " .. string.format("%.1f", ((state.stats.itemsLooted or 0) + (state.stats.itemsIgnored or 0)) / sessionTime))
             end
             
             -- Database Statistics

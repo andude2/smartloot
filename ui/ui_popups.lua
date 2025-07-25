@@ -1194,7 +1194,7 @@ function uiPopups.drawThresholdPopup(lootUI, database)
         ImGui.SetNextWindowSize(300, 150)
         ImGui.OpenPopup("KeepIfFewerThanThreshold")
 
-        if ImGui.BeginPopupModal("KeepIfFewerThanThreshold", nil, ImGuiWindowFlags.AlwaysAutoResize) then
+        if ImGui.BeginPopup("KeepIfFewerThanThreshold") then
             ImGui.Text("Set threshold for:")
             ImGui.TextColored(1, 1, 0, 1, lootUI.editingThresholdForPeer.itemName)
             ImGui.Text("Peer: " .. lootUI.editingThresholdForPeer.peer)
@@ -1430,7 +1430,7 @@ function uiPopups.drawIconUpdatePopup(lootUI, database, lootStats, lootHistory)
             lootUI.iconUpdatePopup.inited = true
         end
 
-        if ImGui.BeginPopupModal("UpdateIconIDPopup", nil, ImGuiWindowFlags.AlwaysAutoResize) then
+        if ImGui.BeginPopup("UpdateIconIDPopup") then
             ImGui.Text("Update Icon ID and Item ID for:")
             ImGui.TextColored(1, 1, 0, 1, lootUI.iconUpdatePopup.itemName)
             ImGui.Separator()

@@ -266,7 +266,7 @@ local function drawDropZoneRulePopup(lootUI, database, util)
     
     ImGui.OpenPopup("Add Rule for Item##DropZone")
     
-    if ImGui.BeginPopupModal("Add Rule for Item##DropZone", nil, ImGuiWindowFlags.AlwaysAutoResize) then
+    if ImGui.BeginPopup("Add Rule for Item##DropZone") then
         local item = dropZoneState.droppedItem
         
         -- Item info header

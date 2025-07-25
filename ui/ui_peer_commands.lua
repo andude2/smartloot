@@ -182,8 +182,8 @@ function uiPeerCommands.draw(lootUI, loot, util)
                 end
                 ImGui.PopStyleColor(3)
                 
-                -- Confirmation modal
-                if ImGui.BeginPopupModal("Confirm Emergency Stop", nil, ImGuiWindowFlags.AlwaysAutoResize) then
+                -- Confirmation popup
+                if ImGui.BeginPopup("Confirm Emergency Stop") then
                     ImGui.Text("Are you sure you want to emergency stop ALL peers?")
                     ImGui.Text("This will halt all SmartLoot activity immediately.")
                     ImGui.Spacing()
