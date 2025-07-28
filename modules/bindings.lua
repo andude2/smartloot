@@ -299,7 +299,9 @@ local function bindEngineCommands()
         end
 
         logging.log("Manual loot command - setting once mode")
-        mq.cmd('/luachase pause on')
+        if config.chasePauseCommand then
+            mq.cmd(config.chasePauseCommand)
+        end
         SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Once, "Manual /sl_doloot command")
         util.printSmartLoot("Loot once mode activated", "success")
     end)

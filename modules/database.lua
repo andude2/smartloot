@@ -256,7 +256,8 @@ function database.refreshLootRuleCache()
                 rule = row.rule,
                 item_name = row.item_name,
                 item_id = row.item_id,
-                icon_id = row.icon_id
+                icon_id = row.icon_id,
+                tableSource = "lootrules_v2"
             }
             lootRulesCache.byItemID[toonName][row.item_id] = data
             
@@ -287,7 +288,8 @@ function database.refreshLootRuleCache()
                 rule = row.rule,
                 item_name = row.item_name,
                 item_id = 0,
-                icon_id = 0
+                icon_id = 0,
+                tableSource = "lootrules_name_fallback"
             }
             count = count + 1
         end
@@ -590,6 +592,54 @@ function database.saveLootRuleFor(toonName, itemName, itemID, rule, iconID)
     return false
 end
 
+-- Save name-based rule for peer (no itemID required)
+function database.saveLootRuleForNameBased(toonName, itemName, rule)
+    if not toonName or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    
+    if not itemName or not rule then
+        logging.error("[Database] saveLootRuleForNameBased: missing itemName or rule")
+        return false
+    end
+    
+    logging.debug(string.format("[Database] Saving name-based rule: %s -> %s for %s", 
+                  itemName, rule, toonName))
+    
+    -- Save to name-based fallback table
+    local stmt = prepareStatement([[
+        INSERT OR REPLACE INTO lootrules_name_fallback 
+        (character_name, item_name, loot_rule, last_updated)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ]])
+    
+    if stmt then
+        stmt:bind(1, toonName)
+        stmt:bind(2, itemName)
+        stmt:bind(3, rule)
+        
+        local result = stmt:step()
+        stmt:finalize()
+        
+        if result == sqlite3.DONE then
+            -- Update cache
+            if not lootRulesCache.byName[toonName] then
+                lootRulesCache.byName[toonName] = {}
+            end
+            lootRulesCache.byName[toonName][itemName] = {
+                rule = rule,
+                tableSource = "lootrules_name_fallback"
+            }
+            
+            logging.info(string.format("[Database] Saved name-based rule: %s -> %s for %s", itemName, rule, toonName))
+            return true
+        end
+    end
+    
+    logging.error(string.format("[Database] Failed to save name-based rule for %s", itemName))
+    return false
+end
+
 -- Convenience function for current character
 function database.saveLootRule(itemName, itemID, rule, iconID)
     return database.saveLootRuleFor(mq.TLO.Me.Name(), itemName, itemID, rule, iconID)
@@ -779,7 +829,8 @@ function database.refreshLootRuleCacheForPeer(peerName)
                 rule = row.rule,
                 item_name = row.item_name,
                 item_id = row.item_id,
-                icon_id = row.icon_id
+                icon_id = row.icon_id,
+                tableSource = "lootrules_v2"
             }
             count = count + 1
         end
@@ -803,7 +854,8 @@ function database.refreshLootRuleCacheForPeer(peerName)
                 rule = row.rule,
                 item_name = row.item_name,
                 item_id = 0,
-                icon_id = 0
+                icon_id = 0,
+                tableSource = "lootrules_name_fallback"
             }
             count = count + 1
         end

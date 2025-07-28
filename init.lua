@@ -9,7 +9,7 @@ local json = require("dkjson")
 local config = require("modules.config")
 local util = require("modules.util")
 local lfs = require("lfs")
-local Icons = require("mq.icons")
+local Icons = require("mq.Icons")
 local actors = require("actors")
 local modeHandler = require("modules.mode_handler")
 local SmartLootEngine = require("modules.SmartLootEngine")
@@ -27,7 +27,7 @@ local json = require("dkjson")
 local config = require("modules.config")
 local util = require("modules.util")
 local lfs = require("lfs")
-local Icons = require("mq.icons")
+local Icons = require("mq.Icons")
 local actors = require("actors")
 local modeHandler = require("modules.mode_handler")
 local SmartLootEngine = require("modules.SmartLootEngine")
@@ -219,6 +219,7 @@ local lootUI = {
     showHotbar = true,
     showUI = false,
     showDebugWindow = false,  -- Add debug window flag
+    windowLocked = false,     -- Lock window feature
     selectedItemForPopup = nil,
 
     peerItemRulesPopup = {
@@ -901,9 +902,179 @@ mq.imgui.init("SmartLoot", function()
         ImGui.SetNextWindowSize(800, 600, ImGuiCond.FirstUseEver)
         
         local windowFlags = bit32.bor(ImGuiWindowFlags.None)
+        if lootUI.windowLocked then
+            windowFlags = bit32.bor(windowFlags, ImGuiWindowFlags.NoMove, ImGuiWindowFlags.NoResize)
+        end
         
         local open, shouldClose = ImGui.Begin("SmartLoot - Loot Smarter, Not Harder", true, windowFlags)
         if open then
+            -- Header with dynamic status and buttons
+            local currentTime = mq.gettime()
+            
+            -- Status indicator with animated pulse
+            local pulseSpeed = 2.0 -- seconds for full pulse cycle
+            local pulsePhase = (currentTime / 1000) % pulseSpeed / pulseSpeed * 2 * math.pi
+            local pulseAlpha = 0.5 + 0.3 * math.sin(pulsePhase)
+            
+            if lootUI.paused then
+                ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.4, 0.2, 1.0) -- Orange
+                ImGui.Text(Icons.FA_PAUSE .. " Paused")
+            else
+                ImGui.PushStyleColor(ImGuiCol.Text, 0.2, 0.8, 0.2, pulseAlpha) -- Animated green
+                ImGui.Text(Icons.FA_COG .. " Active")
+            end
+            ImGui.PopStyleColor()
+            
+            ImGui.SameLine()
+            
+            -- Add some status info based on recent activity
+            local statusText = ""
+            if lootUI.lastProcessedItem and (currentTime - (lootUI.lastProcessedTime or 0)) < 5000 then
+                statusText = string.format("Last: %s", lootUI.lastProcessedItem)
+            elseif lootUI.currentCorpse then
+                statusText = "Processing corpse..."
+            else
+                statusText = "Ready"
+            end
+            
+            ImGui.TextColored(0.7, 0.7, 0.7, 1.0, " | " .. statusText)
+            ImGui.SameLine()
+            
+            -- Animated stick figure
+            if not lootUI.paused then
+                -- Calculate available space for animation
+                local currentPos = ImGui.GetCursorPosX()
+                local buttonWidth = 30
+                local buttonSpacing = 5
+                local totalButtonWidth = (buttonWidth * 2) + buttonSpacing + 20 -- extra margin
+                local windowWidth = ImGui.GetWindowWidth()
+                local availableSpace = windowWidth - currentPos - totalButtonWidth
+                
+                if availableSpace > 120 then -- Minimum space needed for animation + buffer
+                    -- Animation cycle: 8 seconds to cross the space (much slower)
+                    local animSpeed = 8000 -- milliseconds for full cycle
+                    local animPhase = (currentTime % animSpeed) / animSpeed
+                    -- Stop before hitting buttons - leave 40px buffer
+                    local maxTravel = availableSpace - 40
+                    local stickX = currentPos + (maxTravel * animPhase)
+                    
+                    -- Sword-waving animation frames (much slower)
+                    local frameSpeed = 600 -- Change frame every 600ms (much slower)
+                    local frameIndex = math.floor((currentTime / frameSpeed) % 4)
+                    
+                    -- 3-line ASCII stick figure warrior with FA weapon effects
+                    local swordFrames = {
+                        -- Frame 1: sword raised high
+                        {
+                            " o " .. Icons.FA_MAGIC,      -- head + magic sparkles
+                            "/|\\",                       -- arms up + body
+                            "/ \\" .. Icons.FA_BOLT       -- legs + lightning
+                        },
+                        -- Frame 2: sword swing  
+                        {
+                            " o ",                        -- head
+                            "-|\\" .. Icons.FA_FIRE,      -- swing + body + fire
+                            "| |"                         -- legs standing
+                        },
+                        -- Frame 3: sword down
+                        {
+                            " o ",                        -- head
+                            " |/",                        -- body + arm down
+                            "/ \\" .. Icons.FA_MAGIC      -- legs + magic effect
+                        },
+                        -- Frame 4: ready position
+                        {
+                            " o " .. Icons.FA_BOLT,       -- head + energy
+                            "\\|/",                       -- arms spread + body
+                            "| |"                         -- legs ready
+                        }
+                    }
+                    
+                    local currentFrame = swordFrames[frameIndex + 1]
+                    
+                    -- Store button Y position before drawing stick figure
+                    local buttonY = ImGui.GetCursorPosY()
+                    
+                    -- Position and draw the 3-line stick figure
+                    local startY = buttonY
+                    
+                    -- Draw each line of the stick figure
+                    for i, line in ipairs(currentFrame) do
+                        ImGui.SetCursorPosX(stickX)
+                        ImGui.SetCursorPosY(startY + (i - 1) * 12) -- 12px line spacing
+                        ImGui.TextColored(0.8, 0.6, 0.2, 1.0, line)
+                    end
+                    
+                    -- Reset cursor position to align buttons with top of stick figure
+                    ImGui.SetCursorPosY(buttonY)
+                    ImGui.SetCursorPosX(currentPos + maxTravel + 50) -- Position after stick figure's travel area
+                end
+            else
+                -- When paused, show a sleeping figure
+                ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "(˘▾˘)~♪ Zzz...")
+                ImGui.SameLine()
+            end
+            
+            -- Push buttons to the right side
+            local buttonWidth = 30
+            local buttonSpacing = 5
+            local totalButtonWidth = (buttonWidth * 2) + buttonSpacing
+            local availableWidth = ImGui.GetContentRegionAvail()
+            local offsetX = availableWidth - totalButtonWidth
+            
+            if offsetX > 0 then
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX)
+            end
+            
+            -- Pause/Resume button
+            local pauseIcon = lootUI.paused and Icons.FA_PLAY or Icons.FA_PAUSE
+            local pauseColor = lootUI.paused and {0.2, 0.8, 0.2, 1.0} or {0.8, 0.2, 0.2, 1.0}
+            local pauseHoverColor = lootUI.paused and {0.3, 0.9, 0.3, 1.0} or {0.9, 0.3, 0.3, 1.0}
+            local pauseActiveColor = lootUI.paused and {0.1, 0.6, 0.1, 1.0} or {0.6, 0.1, 0.1, 1.0}
+            
+            ImGui.PushStyleColor(ImGuiCol.Button, pauseColor[1], pauseColor[2], pauseColor[3], pauseColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, pauseHoverColor[1], pauseHoverColor[2], pauseHoverColor[3], pauseHoverColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, pauseActiveColor[1], pauseActiveColor[2], pauseActiveColor[3], pauseActiveColor[4])
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 6.0)
+            
+            if ImGui.Button(pauseIcon, buttonWidth, buttonWidth) then
+                lootUI.paused = not lootUI.paused
+                mq.cmd("/sl_pause " .. (lootUI.paused and "on" or "off"))
+            end
+            
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip(lootUI.paused and "Resume loot processing" or "Pause loot processing")
+            end
+            
+            ImGui.PopStyleVar()
+            ImGui.PopStyleColor(3)
+            
+            -- Lock button next to pause button
+            ImGui.SameLine()
+            
+            local lockIcon = lootUI.windowLocked and Icons.FA_LOCK or Icons.FA_UNLOCK
+            local lockColor = lootUI.windowLocked and {0.8, 0.6, 0.2, 1.0} or {0.6, 0.6, 0.6, 1.0}
+            local lockHoverColor = lootUI.windowLocked and {1.0, 0.8, 0.4, 1.0} or {0.8, 0.8, 0.8, 1.0}
+            local lockActiveColor = lootUI.windowLocked and {0.6, 0.4, 0.1, 1.0} or {0.4, 0.4, 0.4, 1.0}
+            
+            ImGui.PushStyleColor(ImGuiCol.Button, lockColor[1], lockColor[2], lockColor[3], lockColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, lockHoverColor[1], lockHoverColor[2], lockHoverColor[3], lockHoverColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, lockActiveColor[1], lockActiveColor[2], lockActiveColor[3], lockActiveColor[4])
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 6.0)
+            
+            if ImGui.Button(lockIcon, buttonWidth, buttonWidth) then
+                lootUI.windowLocked = not lootUI.windowLocked
+            end
+            
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip(lootUI.windowLocked and "Unlock window" or "Lock window")
+            end
+            
+            ImGui.PopStyleVar()
+            ImGui.PopStyleColor(3)
+            ImGui.Spacing(5)
+            ImGui.Separator()
+            
             if ImGui.BeginTabBar("MainTabBar") then
                 if uiLootRules then
                     uiLootRules.draw(lootUI, database, settings, util, uiPopups)

@@ -704,55 +704,35 @@ local function draw_lore_check_settings(config)
             ImGui.SetTooltip("Click for Lore item check descriptions")
         end
 
-        -- Enable/Disable Lore Check
-        local enableLoreCheck = config.enableLoreCheck or true
-        local newEnableLoreCheck, changedEnableLoreCheck = ImGui.Checkbox("Enable Lore Item Checking", enableLoreCheck)
-        if changedEnableLoreCheck then
-            config.enableLoreCheck = newEnableLoreCheck
+        -- Lore Check Announcements
+        ImGui.Text("Lore Item Checking is always enabled to prevent getting stuck on corpses.")
+        ImGui.Spacing()
+        
+        local loreCheckAnnounce = config.loreCheckAnnounce
+        if loreCheckAnnounce == nil then loreCheckAnnounce = true end
+        local newLoreCheckAnnounce, changedLoreCheckAnnounce = ImGui.Checkbox("Announce Lore Conflicts", loreCheckAnnounce)
+        if changedLoreCheckAnnounce then
+            config.loreCheckAnnounce = newLoreCheckAnnounce
             if config.save then
                 config.save()
             end
-            logging.log("Lore item checking " .. (newEnableLoreCheck and "enabled" or "disabled"))
+            logging.log("Lore conflict announcements " .. (newLoreCheckAnnounce and "enabled" or "disabled"))
         end
 
         if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("When enabled, prevents looting Lore items you already have")
-        end
-
-        -- Lore Check Announcements (only show if Lore checking is enabled)
-        if enableLoreCheck then
-            ImGui.Spacing()
-            local loreCheckAnnounce = config.loreCheckAnnounce or true
-            local newLoreCheckAnnounce, changedLoreCheckAnnounce = ImGui.Checkbox("Announce Lore Conflicts", loreCheckAnnounce)
-            if changedLoreCheckAnnounce then
-                config.loreCheckAnnounce = newLoreCheckAnnounce
-                if config.save then
-                    config.save()
-                end
-                logging.log("Lore conflict announcements " .. (newLoreCheckAnnounce and "enabled" or "disabled"))
-            end
-
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("When enabled, announces when Lore items are skipped due to conflicts")
-            end
+            ImGui.SetTooltip("When enabled, announces when Lore items are skipped due to conflicts")
         end
 
         -- Status display
         ImGui.Spacing()
         ImGui.Text("Status:")
-        if enableLoreCheck then
-            ImGui.SameLine()
-            ImGui.TextColored(0.2, 0.8, 0.2, 1.0, "Active")
-            ImGui.Text("SmartLoot will check for Lore conflicts before looting items")
-            if config.loreCheckAnnounce then
-                ImGui.Text("Conflicts will be announced in chat")
-            else
-                ImGui.Text("Conflicts will be logged silently")
-            end
+        ImGui.SameLine()
+        ImGui.TextColored(0.2, 0.8, 0.2, 1.0, "Active")
+        ImGui.Text("SmartLoot will check for Lore conflicts before looting items")
+        if config.loreCheckAnnounce then
+            ImGui.Text("Conflicts will be announced in chat")
         else
-            ImGui.SameLine()
-            ImGui.TextColored(0.8, 0.6, 0.2, 1.0, "Disabled")
-            ImGui.Text("Lore items may be looted even if you already have them")
+            ImGui.Text("Conflicts will be logged silently")
         end
 
         -- Help Popup
@@ -774,7 +754,7 @@ local function draw_lore_check_settings(config)
 
             ImGui.Separator()
             ImGui.Text("Settings:")
-            ImGui.BulletText("Enable Lore Item Checking: Turn the feature on/off")
+            ImGui.BulletText("Lore Item Checking: Always enabled to prevent getting stuck")
             ImGui.BulletText("Announce Lore Conflicts: Chat notifications when items are skipped")
 
             ImGui.Separator()
@@ -782,6 +762,246 @@ local function draw_lore_check_settings(config)
             ImGui.BulletText("'Skipping Lore item Ancient Blade (already have 1)'")
             ImGui.BulletText("Works with all Keep rules including KeepIfFewerThan")
 
+            ImGui.EndPopup()
+        end
+    else
+        ImGui.PopStyleColor()
+    end
+    ImGui.Spacing()
+end
+
+local function draw_communication_settings(config)
+    -- Combined Communication Settings Section with 3 columns
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.9, 1.0, 1.0) -- Light blue header
+    if ImGui.CollapsingHeader("Communication Settings") then
+        ImGui.PopStyleColor()
+        
+        -- Create table with 3 columns
+        if ImGui.BeginTable("CommunicationSettings", 3, ImGuiTableFlags.BordersInnerV + ImGuiTableFlags.Resizable) then
+            -- Setup columns
+            ImGui.TableSetupColumn("Chat Output", ImGuiTableColumnFlags.WidthStretch)
+            ImGui.TableSetupColumn("Item Announce", ImGuiTableColumnFlags.WidthStretch)
+            ImGui.TableSetupColumn("Lore Check", ImGuiTableColumnFlags.WidthStretch)
+            ImGui.TableHeadersRow()
+            
+            ImGui.TableNextRow()
+            
+            -- Column 1: Chat Output Settings
+            ImGui.TableSetColumnIndex(0)
+            ImGui.Text("Chat Output Mode:")
+            ImGui.PushItemWidth(-1)
+            
+            local chatModes = { "rsay", "group", "guild", "custom", "silent" }
+            local chatModeNames = {
+                ["rsay"] = "Raid Say",
+                ["group"] = "Group",
+                ["guild"] = "Guild",
+                ["custom"] = "Custom",
+                ["silent"] = "Silent"
+            }
+            
+            local currentMode = config.chatOutputMode or "group"
+            local isValidMode = false
+            for _, mode in ipairs(chatModes) do
+                if mode == currentMode then
+                    isValidMode = true
+                    break
+                end
+            end
+            
+            if not isValidMode then
+                currentMode = "group"
+                config.chatOutputMode = currentMode
+                if config.save then
+                    config.save()
+                end
+            end
+            
+            local displayName = chatModeNames[currentMode] or currentMode
+            if ImGui.BeginCombo("##ChatMode", displayName) then
+                for i, mode in ipairs(chatModes) do
+                    local isSelected = (mode == currentMode)
+                    if ImGui.Selectable(chatModeNames[mode], isSelected) then
+                        config.chatOutputMode = mode
+                        if config.save then
+                            config.save()
+                        end
+                        logging.log("Chat output mode changed to: " .. chatModeNames[mode])
+                    end
+                    if isSelected then
+                        ImGui.SetItemDefaultFocus()
+                    end
+                end
+                ImGui.EndCombo()
+            end
+            ImGui.PopItemWidth()
+            
+            -- Custom channel input for custom mode
+            if currentMode == "custom" then
+                ImGui.Spacing()
+                ImGui.Text("Custom Channel:")
+                ImGui.PushItemWidth(-1)
+                local customChannel = config.customChannel or ""
+                local newCustomChannel, changedCustomChannel = ImGui.InputText("##CustomChannel", customChannel)
+                if changedCustomChannel then
+                    config.customChannel = newCustomChannel
+                    if config.save then
+                        config.save()
+                    end
+                end
+                ImGui.PopItemWidth()
+            end
+            
+            -- Help button for Chat
+            ImGui.Spacing()
+            ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)
+            if ImGui.Button("Help##ChatHelp") then
+                ImGui.OpenPopup("ChatSettingsHelp")
+            end
+            ImGui.PopStyleColor(2)
+            
+            -- Column 2: Item Announce Settings
+            ImGui.TableSetColumnIndex(1)
+            ImGui.Text("Item Announce Mode:")
+            ImGui.PushItemWidth(-1)
+            
+            local announceModes = { "all", "ignored", "none" }
+            local announceModeNames = {
+                ["all"] = "All Items",
+                ["ignored"] = "Ignored Items Only",
+                ["none"] = "No Announcements"
+            }
+            
+            local currentAnnounceMode = config.getItemAnnounceMode and config.getItemAnnounceMode() or "all"
+            local announceDisplayName = announceModeNames[currentAnnounceMode] or currentAnnounceMode
+            
+            if ImGui.BeginCombo("##ItemAnnounceMode", announceDisplayName) then
+                for i, mode in ipairs(announceModes) do
+                    local isSelected = (mode == currentAnnounceMode)
+                    if ImGui.Selectable(announceModeNames[mode], isSelected) then
+                        if config.setItemAnnounceMode then
+                            config.setItemAnnounceMode(mode)
+                        end
+                        logging.log("Item announce mode changed to: " .. announceModeNames[mode])
+                    end
+                    if isSelected then
+                        ImGui.SetItemDefaultFocus()
+                    end
+                end
+                ImGui.EndCombo()
+            end
+            ImGui.PopItemWidth()
+            
+            -- Help button for Item Announce
+            ImGui.Spacing()
+            ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)
+            if ImGui.Button("Help##ItemAnnounceHelp") then
+                ImGui.OpenPopup("ItemAnnounceSettingsHelp")
+            end
+            ImGui.PopStyleColor(2)
+            
+            -- Column 3: Lore Check Settings
+            ImGui.TableSetColumnIndex(2)
+            ImGui.Text("Lore Item Checking:")
+            ImGui.TextColored(0.7, 0.7, 0.7, 1.0, "Always enabled")
+            ImGui.Spacing()
+            
+            local loreCheckAnnounce = config.loreCheckAnnounce
+            if loreCheckAnnounce == nil then loreCheckAnnounce = true end
+            local newLoreCheckAnnounce, changedLoreCheckAnnounce = ImGui.Checkbox("Announce Conflicts", loreCheckAnnounce)
+            if changedLoreCheckAnnounce then
+                config.loreCheckAnnounce = newLoreCheckAnnounce
+                if config.save then
+                    config.save()
+                end
+                logging.log("Lore conflict announcements " .. (newLoreCheckAnnounce and "enabled" or "disabled"))
+            end
+            
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Announces when Lore items are skipped due to conflicts")
+            end
+            
+            -- Help button for Lore Check
+            ImGui.Spacing()
+            ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)
+            if ImGui.Button("Help##LoreCheckHelp") then
+                ImGui.OpenPopup("LoreCheckSettingsHelp")
+            end
+            ImGui.PopStyleColor(2)
+            
+            ImGui.EndTable()
+        end
+        
+        -- Keep all the existing popup help dialogs here
+        -- Chat Settings Help Popup
+        if ImGui.BeginPopup("ChatSettingsHelp") then
+            ImGui.Text("Chat Output Settings Help")
+            ImGui.Separator()
+            ImGui.Text("Available chat modes:")
+            ImGui.BulletText("Raid Say - Sends messages to /rsay (raid)")
+            ImGui.BulletText("Group - Sends messages to /g (group)")
+            ImGui.BulletText("Guild - Sends messages to /gu (guild)")
+            ImGui.BulletText("Custom - Specify your own channel")
+            ImGui.BulletText("Silent - No chat output")
+            ImGui.Separator()
+            ImGui.Text("Test your settings:")
+            ImGui.SameLine()
+            if ImGui.Button("Send Test Message") then
+                local testMessage = "SmartLoot test message - chat mode working!"
+                local outputMode = config.chatOutputMode or "group"
+                
+                if outputMode == "rsay" then
+                    mq.cmd("/rsay " .. testMessage)
+                elseif outputMode == "group" then
+                    mq.cmd("/g " .. testMessage)
+                elseif outputMode == "guild" then
+                    mq.cmd("/gu " .. testMessage)
+                elseif outputMode == "custom" then
+                    local customChannel = config.customChannel or "say"
+                    mq.cmd("/" .. customChannel .. " " .. testMessage)
+                elseif outputMode == "silent" then
+                    logging.log("Test message (silent mode): " .. testMessage)
+                end
+            end
+            ImGui.EndPopup()
+        end
+        
+        -- Item Announce Settings Help Popup
+        if ImGui.BeginPopup("ItemAnnounceSettingsHelp") then
+            ImGui.Text("Item Announce Settings Help")
+            ImGui.Separator()
+            ImGui.Text("Item announce modes:")
+            ImGui.BulletText("All Items - Announces every item looted and its rule")
+            ImGui.BulletText("Ignored Items Only - Only announces items that are ignored")
+            ImGui.BulletText("No Announcements - Silent item processing")
+            ImGui.Separator()
+            ImGui.Text("Examples:")
+            ImGui.BulletText("All: 'Looted Ancient Blade (Keep)'")
+            ImGui.BulletText("Ignored: 'Looted Rusty Sword (Ignore)'")
+            ImGui.BulletText("None: No item messages in chat")
+            ImGui.EndPopup()
+        end
+        
+        -- Lore Check Settings Help Popup
+        if ImGui.BeginPopup("LoreCheckSettingsHelp") then
+            ImGui.Text("Lore Item Check Settings Help")
+            ImGui.Separator()
+            ImGui.Text("What it does:")
+            ImGui.BulletText("Before looting any item with a 'Keep' rule, checks if it's Lore")
+            ImGui.BulletText("If Lore and you already have one, changes action to 'Ignore'")
+            ImGui.BulletText("Prevents the loot attempt that would cause an error")
+            ImGui.BulletText("Allows SmartLoot to continue processing other items")
+            ImGui.Separator()
+            ImGui.Text("Settings:")
+            ImGui.BulletText("Lore Item Checking: Always enabled to prevent getting stuck")
+            ImGui.BulletText("Announce Lore Conflicts: Chat notifications when items are skipped")
+            ImGui.Separator()
+            ImGui.Text("Examples:")
+            ImGui.BulletText("'Skipping Lore item Ancient Blade (already have 1)'")
+            ImGui.BulletText("Works with all Keep rules including KeepIfFewerThan")
             ImGui.EndPopup()
         end
     else
@@ -1093,19 +1313,6 @@ end
 
 function uiSettings.draw(lootUI, settings, config)
     if ImGui.BeginTabItem("Settings") then
-        -- Header section with pause/resume button
-        ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.4, 0.8, 1.0) -- Blue button
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.5, 0.9, 1.0)
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.3, 0.7, 1.0)
-
-        if ImGui.Button(lootUI.paused and "Resume" or "Pause") then
-            mq.cmd("/smartloot_pause " .. (lootUI.paused and "off" or "on"))
-        end
-        ImGui.PopStyleColor(3)
-
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip(lootUI.paused and "Resume loot processing" or "Pause loot processing")
-        end
 
         -- Database info on same line
         ImGui.SameLine()
@@ -1440,9 +1647,7 @@ function uiSettings.draw(lootUI, settings, config)
             ImGui.PopStyleColor() -- Pop the color even if header is closed
         end
 
-        draw_chat_settings(config)
-        draw_item_announce_settings(config)
-        draw_lore_check_settings(config)
+        draw_communication_settings(config)
         draw_inventory_settings(config)
         draw_chase_settings(config)
         

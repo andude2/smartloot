@@ -26,8 +26,7 @@ config.itemAnnounceMode = "all"  -- Options: "all", "ignored", "none"
 -- NEW: Farming mode configuration
 config.farmingMode = false  -- Whether farming mode is active (bypasses corpse deduplication)
 
--- NEW: Lore item checking configuration
-config.enableLoreCheck = true  -- Whether to check for Lore conflicts before looting
+-- NEW: Lore item checking configuration (always enabled to prevent getting stuck)
 config.loreCheckAnnounce = true  -- Whether to announce when Lore conflicts are detected
 
 -- Default settings additions (add to existing defaults)

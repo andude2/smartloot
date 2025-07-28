@@ -371,21 +371,29 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                 
                 local updateCount = 0
                 for _, peer in ipairs(peerList) do
-                    if peer == currentCharacter then
-                        local success = database.saveLootRule(itemName, itemID, "Keep", iconID)
-                        if success then
-                            updateCount = updateCount + 1
-                            logging.debug(string.format("[SetAllKeep] Updated local character: %s", peer))
-                        end
+                    local success = false
+                    -- Check if this item is from the fallback table
+                    local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback")
+                    
+                    if isFromFallback then
+                        -- Use name-based rule saving for fallback table items
+                        success = database.saveNameBasedRuleFor(peer, itemName, "Keep")
                     else
-                        local success = database.saveLootRuleFor(peer, itemName, itemID, "Keep", iconID)
-                        if success then
-                            updateCount = updateCount + 1
-                            logging.debug(string.format("[SetAllKeep] Updated peer: %s", peer))
+                        -- Use itemID-based saving for regular items
+                        if peer == currentCharacter then
+                            success = database.saveLootRule(itemName, itemID, "Keep", iconID)
+                        else
+                            success = database.saveLootRuleFor(peer, itemName, itemID, "Keep", iconID)
                         end
-                        if connectedPeerSet[peer] then
-                            util.sendPeerCommand(peer, "/sl_rulescache")
-                        end
+                    end
+                    
+                    if success then
+                        updateCount = updateCount + 1
+                        logging.debug(string.format("[SetAllKeep] Updated peer: %s", peer))
+                    end
+                    
+                    if connectedPeerSet[peer] then
+                        util.sendPeerCommand(peer, "/sl_rulescache")
                     end
                 end
                 logging.log(string.format("Set all %d peers to 'Keep' for %s", updateCount, itemName))
@@ -406,21 +414,29 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                 
                 local updateCount = 0
                 for _, peer in ipairs(peerList) do
-                    if peer == currentCharacter then
-                        local success = database.saveLootRule(itemName, itemID, "Ignore", iconID)
-                        if success then
-                            updateCount = updateCount + 1
-                            logging.debug(string.format("[SetAllIgnore] Updated local character: %s", peer))
-                        end
+                    local success = false
+                    -- Check if this item is from the fallback table
+                    local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback")
+                    
+                    if isFromFallback then
+                        -- Use name-based rule saving for fallback table items
+                        success = database.saveNameBasedRuleFor(peer, itemName, "Ignore")
                     else
-                        local success = database.saveLootRuleFor(peer, itemName, itemID, "Ignore", iconID)
-                        if success then
-                            updateCount = updateCount + 1
-                            logging.debug(string.format("[SetAllIgnore] Updated peer: %s", peer))
+                        -- Use itemID-based saving for regular items
+                        if peer == currentCharacter then
+                            success = database.saveLootRule(itemName, itemID, "Ignore", iconID)
+                        else
+                            success = database.saveLootRuleFor(peer, itemName, itemID, "Ignore", iconID)
                         end
-                        if connectedPeerSet[peer] then
-                            util.sendPeerCommand(peer, "/sl_rulescache")
-                        end
+                    end
+                    
+                    if success then
+                        updateCount = updateCount + 1
+                        logging.debug(string.format("[SetAllIgnore] Updated peer: %s", peer))
+                    end
+                    
+                    if connectedPeerSet[peer] then
+                        util.sendPeerCommand(peer, "/sl_rulescache")
                     end
                 end
                 logging.log(string.format("Set all %d peers to 'Ignore' for %s", updateCount, itemName))
@@ -490,14 +506,20 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                         ruleData = peerRules[compositeKey]
                     end
                     
-                    -- Fallback to name-based lookup
+                    -- Fallback to name-based lookup (exact match first, then case variations)
                     if not ruleData then
-                        ruleData = peerRules[lowerItemName] or peerRules[itemName]
+                        ruleData = peerRules[itemName] or peerRules[lowerItemName]
                     end
                     
-                    -- Default if no rule found
+                    -- Default if no rule found - assume fallback table for new rules without itemID
                     if not ruleData then
-                        ruleData = { rule = "", item_id = itemID, icon_id = lootUI.peerItemRulesPopup.iconID or 0 }
+                        local defaultTableSource = (itemID > 0) and "lootrules_v2" or "lootrules_name_fallback"
+                        ruleData = { 
+                            rule = "", 
+                            item_id = itemID, 
+                            icon_id = lootUI.peerItemRulesPopup.iconID or 0,
+                            tableSource = defaultTableSource
+                        }
                     end
                     
                     local currentRuleStr = ruleData.rule or ""
@@ -550,10 +572,19 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                     local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                                     
                                     local success = false
-                                    if peer == currentCharacter then
-                                        success = database.saveLootRule(itemName, itemID, newRuleValue, iconID)
+                                    -- Check if this item is from the fallback table (prefer original table source from popup)
+                                    local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") or 
+                                                          (ruleData and ruleData.tableSource == "lootrules_name_fallback")
+                                    if isFromFallback then
+                                        -- Use name-based rule saving for fallback table items
+                                        success = database.saveNameBasedRuleFor(peer, itemName, newRuleValue)
                                     else
-                                        success = database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
+                                        -- Use itemID-based saving for regular items
+                                        if peer == currentCharacter then
+                                            success = database.saveLootRule(itemName, itemID, newRuleValue, iconID)
+                                        else
+                                            success = database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
+                                        end
                                     end
                                     
                                     if success then
@@ -610,10 +641,19 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                 local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                                 
                                 local success = false
-                                if peer == currentCharacter then
-                                    success = database.saveLootRule(itemName, itemID, updatedRule, iconID)
+                                -- Check if this item is from the fallback table (prefer original table source from popup)
+                                local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") or 
+                                                      (ruleData and ruleData.tableSource == "lootrules_name_fallback")
+                                if isFromFallback then
+                                    -- Use name-based rule saving for fallback table items
+                                    success = database.saveNameBasedRuleFor(peer, itemName, updatedRule)
                                 else
-                                    success = database.saveLootRuleFor(peer, itemName, itemID, updatedRule, iconID)
+                                    -- Use itemID-based saving for regular items
+                                    if peer == currentCharacter then
+                                        success = database.saveLootRule(itemName, itemID, updatedRule, iconID)
+                                    else
+                                        success = database.saveLootRuleFor(peer, itemName, itemID, updatedRule, iconID)
+                                    end
                                 end
                                 
                                 if success then
@@ -648,10 +688,19 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                             local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                             
                             local success = false
-                            if peer == currentCharacter then
-                                success = database.saveLootRule(itemName, itemID, "", iconID)
+                            -- Check if this item is from the fallback table (prefer original table source from popup)
+                            local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") or 
+                                                  (ruleData and ruleData.tableSource == "lootrules_name_fallback")
+                            if isFromFallback then
+                                -- Use name-based rule saving for fallback table items
+                                success = database.saveNameBasedRuleFor(peer, itemName, "")
                             else
-                                success = database.saveLootRuleFor(peer, itemName, itemID, "", iconID)
+                                -- Use itemID-based saving for regular items
+                                if peer == currentCharacter then
+                                    success = database.saveLootRule(itemName, itemID, "", iconID)
+                                else
+                                    success = database.saveLootRuleFor(peer, itemName, itemID, "", iconID)
+                                end
                             end
                             
                             if success then
@@ -679,7 +728,6 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                 end
                 ImGui.EndTable()
             end
-
         else
             -- Window was closed by X button
             lootUI.peerItemRulesPopup.isOpen = false
@@ -1115,9 +1163,10 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
                     end
 
                     ImGui.TableSetColumnIndex(1)
-                    local ruleData = database.getLootRulesForPeer(peer)[string.lower(lootUI.selectedItemForPopup)] or 
-                                   database.getLootRulesForPeer(peer)[lootUI.selectedItemForPopup] or 
-                                   { rule = "Unset" }
+                    local peerRules = database.getLootRulesForPeer(peer)
+                    local ruleData = peerRules[lootUI.selectedItemForPopup] or 
+                                   peerRules[string.lower(lootUI.selectedItemForPopup)] or 
+                                   { rule = "Unset", tableSource = "lootrules_name_fallback" }
                     local currentRule = ruleData.rule
                     local displayRule = currentRule or "Unset"
                     local threshold = 1
@@ -1136,13 +1185,22 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
                                 if option == "KeepIfFewerThan" then
                                     newRule = "KeepIfFewerThan:" .. threshold
                                 end
-                                if peer == (mq.TLO.Me.Name() or "Local") then
-                                    local itemID = ruleData.item_id or 0
-                                    local iconID = ruleData.icon_id or 0
-                                    database.saveLootRule(lootUI.selectedItemForPopup, itemID, newRule, iconID)
+                                -- Check if this item is from the fallback table (prefer original table source from popup)
+                                local isFromFallback = (lootUI.peerItemRulesPopup and lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") or 
+                                                      (ruleData and ruleData.tableSource == "lootrules_name_fallback")
+                                if isFromFallback then
+                                    -- Use name-based rule saving for fallback table items
+                                    database.saveNameBasedRuleFor(peer, lootUI.selectedItemForPopup, newRule)
                                 else
-                                    database.saveLootRuleFor(peer, lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
-                                    util.sendPeerCommand(peer, "/sl_rulescache")
+                                    -- Use itemID-based saving for regular items
+                                    if peer == (mq.TLO.Me.Name() or "Local") then
+                                        local itemID = ruleData.item_id or 0
+                                        local iconID = ruleData.icon_id or 0
+                                        database.saveLootRule(lootUI.selectedItemForPopup, itemID, newRule, iconID)
+                                    else
+                                        database.saveLootRuleFor(peer, lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
+                                        util.sendPeerCommand(peer, "/sl_rulescache")
+                                    end
                                 end
                                 currentRule = newRule
                                 displayRule = (option == "KeepIfFewerThan") and "KeepIfFewerThan" or newRule
@@ -1160,11 +1218,20 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
                         if changedThreshold then
                             newThreshold = math.max(1, newThreshold)
                             local newRule = "KeepIfFewerThan:" .. newThreshold
-                            if peer == (mq.TLO.Me.Name() or "Local") then
-                                database.saveLootRule(lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
+                            -- Check if this item is from the fallback table (prefer original table source from popup)
+                            local isFromFallback = (lootUI.peerItemRulesPopup and lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") or 
+                                                  (ruleData and ruleData.tableSource == "lootrules_name_fallback")
+                            if isFromFallback then
+                                -- Use name-based rule saving for fallback table items
+                                database.saveNameBasedRuleFor(peer, lootUI.selectedItemForPopup, newRule)
                             else
-                                database.saveLootRuleFor(peer, lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
-                                util.sendPeerCommand(peer, "/sl_rulescache")
+                                -- Use itemID-based saving for regular items
+                                if peer == (mq.TLO.Me.Name() or "Local") then
+                                    database.saveLootRule(lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
+                                else
+                                    database.saveLootRuleFor(peer, lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
+                                    util.sendPeerCommand(peer, "/sl_rulescache")
+                                end
                             end
                             currentRule = newRule
                             displayRule = "KeepIfFewerThan"
@@ -1211,19 +1278,35 @@ function uiPopups.drawThresholdPopup(lootUI, database)
 
             if ImGui.Button("Apply", 120, 0) then
                 local newRule = "KeepIfFewerThan:" .. lootUI.editingThresholdForPeer.threshold
-                local rule, itemID, iconID
-                if lootUI.editingThresholdForPeer.peer == "Local" then
-                    rule, itemID, iconID = database.getLootRule(lootUI.editingThresholdForPeer.itemName, true)
-                    database.saveLootRule(lootUI.editingThresholdForPeer.itemName, itemID, newRule, iconID)
+                
+                -- Determine if this item is from the fallback table
+                local isFromFallback = false
+                local peerName = lootUI.editingThresholdForPeer.peer == "Local" and mq.TLO.Me.Name() or lootUI.editingThresholdForPeer.peer
+                local allRules = (peerName == mq.TLO.Me.Name()) and database.getAllLootRules() or database.getLootRulesForPeer(peerName)
+                local ruleData = allRules[lootUI.editingThresholdForPeer.itemName]
+                if ruleData and ruleData.tableSource == "lootrules_name_fallback" then
+                    isFromFallback = true
+                end
+                
+                if isFromFallback then
+                    -- Use name-based rule saving for fallback table items
+                    database.saveNameBasedRuleFor(peerName, lootUI.editingThresholdForPeer.itemName, newRule)
                 else
-                    rule, itemID, iconID = database.getLootRule(lootUI.editingThresholdForPeer.itemName, true)
-                    database.saveLootRuleFor(
-                        lootUI.editingThresholdForPeer.peer,
-                        lootUI.editingThresholdForPeer.itemName,
-                        itemID,
-                        newRule,
-                        iconID
-                    )
+                    -- Use itemID-based saving for regular items
+                    local rule, itemID, iconID
+                    if lootUI.editingThresholdForPeer.peer == "Local" then
+                        rule, itemID, iconID = database.getLootRule(lootUI.editingThresholdForPeer.itemName, true)
+                        database.saveLootRule(lootUI.editingThresholdForPeer.itemName, itemID, newRule, iconID)
+                    else
+                        rule, itemID, iconID = database.getLootRule(lootUI.editingThresholdForPeer.itemName, true)
+                        database.saveLootRuleFor(
+                            lootUI.editingThresholdForPeer.peer,
+                            lootUI.editingThresholdForPeer.itemName,
+                            itemID,
+                            newRule,
+                            iconID
+                        )
+                    end
                 end
                 logging.log("Set " .. newRule .. " rule for " .. lootUI.editingThresholdForPeer.itemName ..
                             " on " .. lootUI.editingThresholdForPeer.peer)

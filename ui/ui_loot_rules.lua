@@ -343,25 +343,78 @@ local function drawDropZoneRulePopup(lootUI, database, util)
             ImGui.EndCombo()
         end
         
-        -- Apply and Cancel buttons
+        -- Apply buttons
         ImGui.Separator()
-        ImGui.PushStyleColor(ImGuiCol.Button, COLORS.SUCCESS_COLOR[1], COLORS.SUCCESS_COLOR[2], COLORS.SUCCESS_COLOR[3], 0.8)
-        if ImGui.Button("Apply Rule") then
+        
+        local buttonWidth = 150
+        local buttonHeight = 30
+        
+        -- Apply To All button (prominent, recommended)
+        ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.7, 0.2, 0.9)
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.8, 0.3, 1.0)
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.6, 0.1, 1.0)
+        
+        if ImGui.Button("Apply To All Peers", buttonWidth, buttonHeight) then
             -- Build final rule string
             local finalRule = dropZoneState.selectedRule
             if dropZoneState.selectedRule == "KeepIfFewerThan" then
                 finalRule = "KeepIfFewerThan:" .. dropZoneState.threshold
             end
             
-            -- Get target character
-            local targetChar = lootUI.selectedCharacterForRules or mq.TLO.Me.Name()
+            -- Apply to current character
+            local currentChar = mq.TLO.Me.Name()
+            local successCount = 0
+            local totalCount = 1
+            local success = updateItemRule(item.itemName, finalRule, currentChar, database, util, true, item.itemID, item.iconID)
+            if success then successCount = successCount + 1 end
             
-            -- Save the rule using existing function, passing item ID and icon ID
+            -- Apply to all connected peers  
+            local connectedPeers = util.getConnectedPeers()
+            for _, peer in ipairs(connectedPeers) do
+                if peer ~= currentChar then
+                    totalCount = totalCount + 1
+                    local success = updateItemRule(item.itemName, finalRule, peer, database, util, true, item.itemID, item.iconID)
+                    if success then successCount = successCount + 1 end
+                end
+            end
+            
+            logging.log(string.format("Applied rule '%s' for '%s' to %d/%d characters via drop zone", 
+                                      finalRule, item.itemName, successCount, totalCount))
+            
+            -- Close popup and reset state
+            dropZoneState.showRulePopup = false
+            dropZoneState.selectedRule = "Keep"
+            dropZoneState.threshold = 1
+        end
+        ImGui.PopStyleColor(3)
+        
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Apply this rule to yourself AND all connected peers")
+        end
+        
+        ImGui.SameLine()
+        ImGui.Spacing()
+        ImGui.SameLine()
+        
+        -- Apply To Selected Character button
+        ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.5, 0.8, 0.9)
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.6, 0.9, 1.0)
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.4, 0.7, 1.0)
+        
+        local targetChar = lootUI.selectedCharacterForRules or mq.TLO.Me.Name()
+        if ImGui.Button("Apply To " .. targetChar, buttonWidth, buttonHeight) then
+            -- Build final rule string
+            local finalRule = dropZoneState.selectedRule
+            if dropZoneState.selectedRule == "KeepIfFewerThan" then
+                finalRule = "KeepIfFewerThan:" .. dropZoneState.threshold
+            end
+            
+            -- Apply to selected character only
             local success = updateItemRule(item.itemName, finalRule, targetChar, database, util, true, item.itemID, item.iconID)
             
             if success then
-                logging.debug(string.format("Successfully added rule '%s' for '%s' via drop zone (ItemID: %d, IconID: %d)", 
-                                          finalRule, item.itemName, item.itemID, item.iconID))
+                logging.log(string.format("Applied rule '%s' for '%s' to %s via drop zone", 
+                                          finalRule, item.itemName, targetChar))
             else
                 logging.debug(string.format("Failed to add rule for '%s' via drop zone", item.itemName))
             end
@@ -371,14 +424,24 @@ local function drawDropZoneRulePopup(lootUI, database, util)
             dropZoneState.selectedRule = "Keep"
             dropZoneState.threshold = 1
         end
-        ImGui.PopStyleColor()
+        ImGui.PopStyleColor(3)
         
-        ImGui.SameLine()
-        if ImGui.Button("Cancel") then
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Apply this rule to " .. targetChar .. " only")
+        end
+        
+        -- Cancel button (smaller, below)
+        ImGui.NewLine()
+        ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.3, 0.3, 0.8)
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.4, 0.4, 1.0)
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.2, 0.2, 1.0)
+        
+        if ImGui.Button("Cancel", buttonWidth, 25) then
             dropZoneState.showRulePopup = false
             dropZoneState.selectedRule = "Keep"
             dropZoneState.threshold = 1
         end
+        ImGui.PopStyleColor(3)
         
         ImGui.EndPopup()
     end
@@ -820,12 +883,36 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                         
                         -- Only update if the rule actually changed
                         if newRuleValue ~= ruleData.rule then
-                            -- Use the centralized update function, preserving iconID
-                            updateItemRule(itemName, newRuleValue, targetCharacter, database, util, true, itemID, iconID)
-                            
-                            -- Update the local ruleData to reflect the change immediately
-                            ruleData.rule = newRuleValue
-                            displayRule = ruleType
+                            -- Check if this item is from the fallback table
+                            if ruleData and ruleData.tableSource == "lootrules_name_fallback" then
+                                -- Use name-based rule saving for fallback table items
+                                local success = false
+                                if targetCharacter == mq.TLO.Me.Name() then
+                                    success = database.saveNameBasedRuleFor(targetCharacter, itemName, newRuleValue)
+                                else
+                                    success = database.saveNameBasedRuleFor(targetCharacter, itemName, newRuleValue)
+                                end
+                                
+                                if success then
+                                    logging.debug("Changed fallback rule for " .. itemName .. " to " .. newRuleValue .. " on " .. targetCharacter)
+                                    -- Trigger cache refresh
+                                    pendingCacheRefresh = true
+                                    cacheRefreshTimer = mq.gettime() + 100
+                                    
+                                    -- Update the local ruleData to reflect the change immediately
+                                    ruleData.rule = newRuleValue
+                                    displayRule = ruleType
+                                else
+                                    logging.debug("Failed to save fallback rule for " .. itemName .. " on " .. targetCharacter)
+                                end
+                            else
+                                -- Use the centralized update function for itemID-based rules
+                                updateItemRule(itemName, newRuleValue, targetCharacter, database, util, true, itemID, iconID)
+                                
+                                -- Update the local ruleData to reflect the change immediately
+                                ruleData.rule = newRuleValue
+                                displayRule = ruleType
+                            end
                         else
                             logging.debug("Skipped update for " .. itemName .. " - rule value unchanged (" .. newRuleValue .. ")")
                         end
@@ -853,8 +940,28 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                     local newRuleValue = "KeepIfFewerThan:" .. newThreshold
                     local targetCharacter = lootUI.selectedCharacterForRules
                     
-                    -- Use the centralized update function, preserving iconID  
-                    updateItemRule(itemName, newRuleValue, targetCharacter, database, util, true, itemID, iconID)
+                    -- Check if this item is from the fallback table
+                    if ruleData and ruleData.tableSource == "lootrules_name_fallback" then
+                        -- Use name-based rule saving for fallback table items
+                        local success = false
+                        if targetCharacter == mq.TLO.Me.Name() then
+                            success = database.saveNameBasedRuleFor(targetCharacter, itemName, newRuleValue)
+                        else
+                            success = database.saveNameBasedRuleFor(targetCharacter, itemName, newRuleValue)
+                        end
+                        
+                        if success then
+                            logging.debug("Changed fallback rule for " .. itemName .. " to " .. newRuleValue .. " on " .. targetCharacter)
+                            -- Trigger cache refresh
+                            pendingCacheRefresh = true
+                            cacheRefreshTimer = mq.gettime() + 100
+                        else
+                            logging.debug("Failed to save fallback rule for " .. itemName .. " on " .. targetCharacter)
+                        end
+                    else
+                        -- Use the centralized update function for itemID-based rules
+                        updateItemRule(itemName, newRuleValue, targetCharacter, database, util, true, itemID, iconID)
+                    end
                 end
                 
                 ImGui.PopID()
@@ -870,53 +977,86 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                 lootUI.peerItemRulesPopup.itemName = itemName
                 lootUI.peerItemRulesPopup.itemID = itemID
                 lootUI.peerItemRulesPopup.iconID = iconID
+                lootUI.peerItemRulesPopup.tableSource = ruleData and ruleData.tableSource or nil
             end
             
             ImGui.SameLine()
             
             -- Apply All button - applies LOCAL rule to all peers
-            if ImGui.Button("Apply All") then
+            if ImGui.Button("Apply All##" .. i) then
+                logging.debug("[ApplyAll] Button clicked!")
                 local connectedPeers = util.getConnectedPeers()
                 local currentCharacter = mq.TLO.Me.Name()
+                local tableSource = ruleData and ruleData.tableSource or nil
+                
+                logging.debug(string.format("[ApplyAll] Item: %s, tableSource: %s, itemID: %d", 
+                              itemName, tostring(tableSource), itemID or 0))
+                
+                logging.debug(string.format("[ApplyAll] Connected peers: %d", #connectedPeers))
                 
                 if #connectedPeers > 0 then
                     -- Get the LOCAL rule for this item (not the rule from the currently selected character)
                     local localRule, localItemID, localIconID = database.getLootRule(itemName, true, itemID)
                     
+                    logging.debug(string.format("[ApplyAll] Local rule lookup: %s -> %s (itemID:%d, iconID:%d)", 
+                                  itemName, tostring(localRule), localItemID or 0, localIconID or 0))
+                    
                     if localRule and localRule ~= "" then
                         local appliedCount = 0
-                        -- Use the itemID and iconID from the current row, not from the local rule lookup
-                        -- This ensures we don't accidentally change IDs when applying rules
-                        local useItemID = itemID  -- From the current row
-                        local useIconID = iconID  -- From the current row
                         
-                        -- Only use local values if current row has no IDs
-                        if useItemID == 0 and localItemID and localItemID > 0 then
-                            useItemID = localItemID
-                        end
-                        if useIconID == 0 and localIconID and localIconID > 0 then
-                            useIconID = localIconID
-                        end
-                        
-                        -- First, update the local character's rule to ensure IDs are consistent
-                        if useItemID ~= localItemID or useIconID ~= localIconID then
-                            database.saveLootRule(itemName, useItemID, localRule, useIconID)
-                            logging.debug(string.format("Updated local rule IDs for '%s' (itemID=%d, iconID=%d)", 
-                                                      itemName, useItemID, useIconID))
-                        end
-                        
-                        -- Then apply to all peers
-                        for _, peer in ipairs(connectedPeers) do
-                            if peer ~= currentCharacter then
-                                if database.saveLootRuleFor then
-                                    local success = database.saveLootRuleFor(peer, itemName, useItemID, localRule, useIconID)
+                        -- Handle name-based rules (fallback table) differently
+                        if tableSource == "lootrules_name_fallback" then
+                            logging.debug(string.format("[ApplyAll] Using name-based path for %s", itemName))
+                            -- For name-based rules, use the name-based peer save function
+                            for _, peer in ipairs(connectedPeers) do
+                                if peer ~= currentCharacter then
+                                    local success = database.saveLootRuleForNameBased(peer, itemName, localRule)
                                     if success then
                                         appliedCount = appliedCount + 1
                                         sendReloadMessageToPeer(peer)
-                                        logging.debug(string.format("Applied local rule '%s' for '%s' to peer %s (itemID=%d, iconID=%d)", 
-                                                                localRule, itemName, peer, useItemID, useIconID))
+                                        logging.debug(string.format("Applied name-based rule '%s' for '%s' to peer %s", 
+                                                                localRule, itemName, peer))
                                     else
-                                        logging.debug(string.format("No change (or failed) applying rule for '%s' to peer %s - reload sent anyway", itemName, peer))
+                                        logging.debug(string.format("Failed to apply name-based rule for '%s' to peer %s", itemName, peer))
+                                    end
+                                end
+                            end
+                        else
+                            logging.debug(string.format("[ApplyAll] Using itemID-based path for %s", itemName))
+                            -- Handle regular itemID-based rules
+                            -- Use the itemID and iconID from the current row, not from the local rule lookup
+                            -- This ensures we don't accidentally change IDs when applying rules
+                            local useItemID = itemID  -- From the current row
+                            local useIconID = iconID  -- From the current row
+                            
+                            -- Only use local values if current row has no IDs
+                            if useItemID == 0 and localItemID and localItemID > 0 then
+                                useItemID = localItemID
+                            end
+                            if useIconID == 0 and localIconID and localIconID > 0 then
+                                useIconID = localIconID
+                            end
+                            
+                            -- First, update the local character's rule to ensure IDs are consistent
+                            if useItemID ~= localItemID or useIconID ~= localIconID then
+                                database.saveLootRule(itemName, useItemID, localRule, useIconID)
+                                logging.debug(string.format("Updated local rule IDs for '%s' (itemID=%d, iconID=%d)", 
+                                                          itemName, useItemID, useIconID))
+                            end
+                            
+                            -- Then apply to all peers
+                            for _, peer in ipairs(connectedPeers) do
+                                if peer ~= currentCharacter then
+                                    if database.saveLootRuleFor then
+                                        local success = database.saveLootRuleFor(peer, itemName, useItemID, localRule, useIconID)
+                                        if success then
+                                            appliedCount = appliedCount + 1
+                                            sendReloadMessageToPeer(peer)
+                                            logging.debug(string.format("Applied local rule '%s' for '%s' to peer %s (itemID=%d, iconID=%d)", 
+                                                                    localRule, itemName, peer, useItemID, useIconID))
+                                        else
+                                            logging.debug(string.format("No change (or failed) applying rule for '%s' to peer %s - reload sent anyway", itemName, peer))
+                                        end
                                     end
                                 end
                             end
@@ -929,10 +1069,10 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                             logging.debug("Failed to apply rule to any connected peers")
                         end
                     else
-                        logging.debug(string.format("No local rule found for '%s' - cannot apply to peers", itemName))
+                        logging.debug(string.format("[ApplyAll] No local rule found for '%s' - cannot apply to peers", itemName))
                     end
                 else
-                    logging.debug("No connected peers found to apply rule to")
+                    logging.debug("[ApplyAll] No connected peers found to apply rule to")
                 end
             end
             

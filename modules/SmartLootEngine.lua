@@ -880,10 +880,7 @@ end
 -- ============================================================================
 
 function SmartLootEngine.checkLoreConflict(itemName, itemSlot)
-    -- Check if Lore checking is enabled in config
-    if not config.enableLoreCheck then
-        return false, "Lore checking disabled"
-    end
+    -- Lore checking is always enabled to prevent getting stuck on corpses
 
     -- Check if the item on the corpse is Lore
     local corpseItem = mq.TLO.Corpse.Item(itemSlot)
@@ -1929,7 +1926,9 @@ function SmartLootEngine.processOnceModeCompletionState()
     SmartLootEngine.notifyRGMercsComplete()
 
     -- Restart Chase
-    mq.cmd('/luachase pause off')
+    if config.chaseResumeCommand then
+        mq.cmd(config.chaseResumeCommand)
+    end
     -- Switch to background mode
     SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Background, "Once mode complete")
     setState(SmartLootEngine.LootState.Idle, "Once mode complete")
