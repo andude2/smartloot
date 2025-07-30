@@ -107,6 +107,7 @@ SmartLootEngine.LootMode = {
     Background = "background",
     RGMain = "rgmain",
     RGOnce = "rgonce",
+    CombatLoot = "combatloot",
     Disabled = "disabled"
 }
 
@@ -128,6 +129,9 @@ SmartLootEngine.state = {
     currentState = SmartLootEngine.LootState.Idle,
     mode = SmartLootEngine.LootMode.Background,
     nextActionTime = 0,
+    
+    -- CombatLoot mode state
+    preCombatLootMode = nil,
 
     -- Current processing context
     currentCorpseID = 0,
@@ -187,7 +191,6 @@ SmartLootEngine.state = {
 
     -- RG Mode state
     rgMainTriggered = false,
-    useRGChase = false,
 
     -- RGMain peer tracking
     rgMainPeerCompletions = {}, -- peer_name -> { completed = bool, timestamp = number }
@@ -616,8 +619,8 @@ function SmartLootEngine.isSafeToLoot()
         return false
     end
 
-    -- Combat check
-    if SmartLootEngine.isInCombat() then
+    -- Combat check - skip for CombatLoot mode
+    if SmartLootEngine.state.mode ~= SmartLootEngine.LootMode.CombatLoot and SmartLootEngine.isInCombat() then
         return false
     end
 
@@ -1295,13 +1298,111 @@ function SmartLootEngine.findNextInterestedPeer(itemName, itemID)
     return nil
 end
 
+function SmartLootEngine.findNextInterestedPeerInZone(itemName, itemID)
+    if not SmartLootEngine.config.enablePeerCoordination then
+        return nil
+    end
+    
+    local myZoneID = mq.TLO.Zone.ID()
+    
+    -- Check for temporary peer assignment first
+    local assignedPeer = tempRules.getPeerAssignment(itemName)
+    if assignedPeer then
+        -- Verify peer is connected and in same zone
+        local connectedPeers = util.getConnectedPeers()
+        for _, peer in ipairs(connectedPeers) do
+            if peer:lower() == assignedPeer:lower() then
+                -- Zone check for assigned peer
+                local peerSpawn = mq.TLO.Spawn(string.format("pc =%s", assignedPeer))
+                if peerSpawn and peerSpawn() then
+                    local peerZoneID = peerSpawn.Zone.ID()
+                    if myZoneID == peerZoneID then
+                        return assignedPeer
+                    else
+                        logging.debug(string.format("[Engine] Assigned peer %s in different zone (%s vs %s) - skipping", 
+                                     assignedPeer, peerZoneID or "unknown", myZoneID or "unknown"))
+                    end
+                end
+                break
+            end
+        end
+    end
+
+    local currentToon = util.getCurrentToon()
+    local connectedPeers = util.getConnectedPeers()
+
+    if not config.peerLootOrder or #config.peerLootOrder == 0 then
+        return nil
+    end
+
+    -- Find current character's position in loot order
+    local currentIndex = nil
+    for i, peer in ipairs(config.peerLootOrder) do
+        if peer:lower() == currentToon:lower() then
+            currentIndex = i
+            break
+        end
+    end
+
+    if not currentIndex then
+        return nil
+    end
+
+    -- Check peers after current character, filtering by zone
+    for i = currentIndex + 1, #config.peerLootOrder do
+        local peer = config.peerLootOrder[i]
+
+        -- Check if peer is connected
+        local isConnected = false
+        for _, connectedPeer in ipairs(connectedPeers) do
+            if peer:lower() == connectedPeer:lower() then
+                isConnected = true
+                break
+            end
+        end
+
+        if isConnected then
+            -- Zone check before rule check
+            local peerSpawn = mq.TLO.Spawn(string.format("pc =%s", peer))
+            if peerSpawn and peerSpawn() then
+                local peerZoneID = peerSpawn.Zone and peerSpawn.Zone.ID and peerSpawn.Zone.ID() or nil
+                if not peerZoneID or myZoneID == peerZoneID then
+                    -- Peer is in same zone, check loot rules
+                    local peerRules = database.getLootRulesForPeer(peer)
+                    local ruleData = nil
+                    if itemID and itemID > 0 then
+                        local compositeKey = string.format("%s_%d", itemName, itemID)
+                        ruleData = peerRules[compositeKey]
+                    end
+
+                    if not ruleData then
+                        local lowerName = string.lower(itemName)
+                        ruleData = peerRules[lowerName] or peerRules[itemName]
+                    end
+
+                    if ruleData and (ruleData.rule == "Keep" or ruleData.rule:find("KeepIfFewerThan")) then
+                        return peer
+                    end
+                else
+                    logging.debug(string.format("[Engine] Peer %s in different zone (%s vs %s) - skipping", 
+                                 peer, peerZoneID or "unknown", myZoneID or "unknown"))
+                end
+            else
+                logging.debug(string.format("[Engine] Peer %s not found in zone - skipping", peer))
+            end
+        end
+    end
+
+    return nil
+end
+
 function SmartLootEngine.triggerPeerForItem(itemName, itemID)
     local now = mq.gettime()
     if now - SmartLootEngine.state.lastPeerTriggerTime < SmartLootEngine.config.peerTriggerDelay then
         return false
     end
 
-    local interestedPeer = SmartLootEngine.findNextInterestedPeer(itemName, itemID)
+    local interestedPeer = SmartLootEngine.findNextInterestedPeerInZone(itemName, itemID)
     if not interestedPeer then
         return false
     end
@@ -1403,6 +1504,7 @@ function SmartLootEngine.processIdleState()
     -- Check if we should transition to active looting
     if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Main or
         SmartLootEngine.state.mode == SmartLootEngine.LootMode.Once or
+        SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot or
         (SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGMain and SmartLootEngine.state.rgMainTriggered) or
         SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce then
         setState(SmartLootEngine.LootState.FindingCorpse, "Active mode detected")
@@ -1426,7 +1528,8 @@ function SmartLootEngine.processFindingCorpseState()
     if not corpse then
         -- No corpses found - handle based on mode
         if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Once or
-            SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce then
+            SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce or
+            SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot then
             setState(SmartLootEngine.LootState.ProcessingPeers, "No corpses in once mode")
         else
             setState(SmartLootEngine.LootState.ProcessingPeers, "No corpses found")
@@ -1858,7 +1961,8 @@ function SmartLootEngine.processProcessingPeersState()
 
             -- Handle mode transitions
             if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Once or
-                SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce then
+                SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce or
+                SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot then
                 setState(SmartLootEngine.LootState.OnceModeCompletion, "Waterfall complete - once mode")
             else
                 -- For Background/Main mode, check for more corpses before going idle
@@ -1885,7 +1989,8 @@ function SmartLootEngine.processProcessingPeersState()
     else
         -- No waterfall session - proceed normally
         if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Once or
-            SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce then
+            SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce or
+            SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot then
             setState(SmartLootEngine.LootState.OnceModeCompletion, "Once mode peer processing complete")
         else
             -- For Background/Main mode, check for more corpses before going idle
@@ -1914,6 +2019,23 @@ end
 function SmartLootEngine.processOnceModeCompletionState()
     logging.debug("[Engine] Once mode completion")
 
+    -- Handle CombatLoot mode completion differently
+    if SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot then
+        logging.debug("[Engine] CombatLoot mode completion")
+        
+        -- Revert to original mode stored before CombatLoot
+        local originalMode = SmartLootEngine.state.preCombatLootMode or SmartLootEngine.LootMode.Background
+        SmartLootEngine.state.preCombatLootMode = nil -- Clear the stored mode
+        
+        logging.debug(string.format("[Engine] Reverting from CombatLoot to original mode: %s", originalMode))
+        SmartLootEngine.setLootMode(originalMode, "CombatLoot mode complete")
+        setState(SmartLootEngine.LootState.Idle, "CombatLoot mode complete")
+        
+        scheduleNextTick(100)
+        return
+    end
+
+    -- Original Once mode completion logic
     -- Send completion announcement
     if config and config.sendChatMessage then
         config.sendChatMessage("Looting session completed")
@@ -1926,7 +2048,7 @@ function SmartLootEngine.processOnceModeCompletionState()
     SmartLootEngine.notifyRGMercsComplete()
 
     -- Restart Chase
-    if config.chaseResumeCommand then
+    if config.useChaseCommands and config.chaseResumeCommand then
         mq.cmd(config.chaseResumeCommand)
     end
     -- Switch to background mode
@@ -2038,7 +2160,8 @@ function SmartLootEngine.processWaitingForWaterfallCompletionState()
 
         -- Handle mode transitions based on original mode
         if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Once or
-            SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce then
+            SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce or
+            SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot then
             setState(SmartLootEngine.LootState.OnceModeCompletion, "Waterfall complete - once mode")
         else
             setState(SmartLootEngine.LootState.Idle, "Waterfall complete")
@@ -2062,7 +2185,8 @@ function SmartLootEngine.processWaitingForWaterfallCompletionState()
             SmartLootEngine.notifyRGMercsComplete()
 
             if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Once or
-                SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce then
+                SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce or
+                SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot then
                 setState(SmartLootEngine.LootState.OnceModeCompletion, "Waterfall timeout")
             else
                 setState(SmartLootEngine.LootState.Idle, "Waterfall timeout")
@@ -2198,28 +2322,21 @@ function SmartLootEngine.setLootMode(newMode, reason)
     SmartLootEngine.state.mode = newMode
 
     logging.debug(string.format("[Engine] Mode changed: %s -> %s (%s)", oldMode, newMode, reason or ""))
+    
+    -- Clear stored mode if we're changing away from CombatLoot manually or to a different mode
+    if oldMode == SmartLootEngine.LootMode.CombatLoot and newMode ~= SmartLootEngine.LootMode.CombatLoot then
+        SmartLootEngine.state.preCombatLootMode = nil
+    end
 
     -- Handle mode-specific initialization
     if newMode == SmartLootEngine.LootMode.RGMain then
         SmartLootEngine.state.rgMainTriggered = false
     elseif newMode == SmartLootEngine.LootMode.Once or newMode == SmartLootEngine.LootMode.RGOnce then
-        -- Pause chase if configured
-        if SmartLootEngine.state.useRGChase then
-            if config and config.executeChaseCommand then
-                config.executeChaseCommand("pause")
-            else
-                mq.cmd("/rgl pauseon")
-            end
-        end
+    elseif newMode == SmartLootEngine.LootMode.CombatLoot then
+        -- CombatLoot mode - store original mode to revert to later
+        SmartLootEngine.state.preCombatLootMode = oldMode
+        logging.debug(string.format("[Engine] CombatLoot mode activated - stored original mode: %s", oldMode))
     elseif newMode == SmartLootEngine.LootMode.Background then
-        -- Resume chase if coming from Once mode
-        if (oldMode == SmartLootEngine.LootMode.Once or oldMode == SmartLootEngine.LootMode.RGOnce) and SmartLootEngine.state.useRGChase then
-            if config and config.executeChaseCommand then
-                config.executeChaseCommand("resume")
-            else
-                mq.cmd("/rgl pauseoff")
-            end
-        end
     elseif newMode == SmartLootEngine.LootMode.Disabled then
         SmartLootEngine.state.emergencyStop = true
         SmartLootEngine.state.emergencyReason = "Mode disabled"
@@ -2399,7 +2516,6 @@ function SmartLootEngine.setLootUIReference(lootUI, settings)
         SmartLootEngine.config.lootRadius = settings.lootRadius or SmartLootEngine.config.lootRadius
         SmartLootEngine.config.lootRange = settings.lootRange or SmartLootEngine.config.lootRange
         SmartLootEngine.config.combatWaitDelayMs = settings.combatWaitDelay or SmartLootEngine.config.combatWaitDelayMs
-        SmartLootEngine.state.useRGChase = settings.useRGChase or false
     end
 
     logging.debug("[Engine] UI and settings references configured")

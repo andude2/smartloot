@@ -141,7 +141,7 @@ local function bindPeerCommands()
 
         if not mode or mode == "" then
             util.printSmartLoot("Usage: /sl_mode <mode>", "error")
-            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once", "info")
+            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once, combatloot", "info")
 
             -- Show current mode
             local status = modeHandler.getPeerStatus()
@@ -150,11 +150,11 @@ local function bindPeerCommands()
         end
 
         mode = mode:lower()
-        local validModes = { main = true, background = true, rgmain = true, rgonce = true, once = true }
+        local validModes = { main = true, background = true, rgmain = true, rgonce = true, once = true, combatloot = true }
 
         if not validModes[mode] then
             util.printSmartLoot("Invalid mode: " .. mode, "error")
-            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once", "info")
+            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once, combatloot", "info")
             return
         end
 
@@ -173,6 +173,8 @@ local function bindPeerCommands()
                 engineMode = SmartLootEngine.LootMode.RGOnce
             elseif mode == "once" and SmartLootEngine.LootMode.Once then
                 engineMode = SmartLootEngine.LootMode.Once
+            elseif mode == "combatloot" and SmartLootEngine.LootMode.CombatLoot then
+                engineMode = SmartLootEngine.LootMode.CombatLoot
             end
 
             if engineMode and SmartLootEngine.setLootMode then
@@ -191,6 +193,19 @@ local function bindPeerCommands()
         end
 
         util.printSmartLoot("Mode set to: " .. mode, "success")
+    end)
+
+    mq.bind("/sl_combatloot", function()
+        if not SmartLootEngine then
+            util.printSmartLoot("SmartLoot engine not available", "warning")
+            return
+        end
+
+        logging.log("CombatLoot command received - activating combat loot mode")
+        
+        -- Set CombatLoot mode directly - this ignores combat checks and loots all nearby corpses
+        SmartLootEngine.setLootMode(SmartLootEngine.LootMode.CombatLoot, "Combat loot command")
+        util.printSmartLoot("CombatLoot mode activated - will loot all corpses ignoring combat, then revert", "success")
     end)
 
     mq.bind("/sl_peer_monitor", function(action)
@@ -299,7 +314,7 @@ local function bindEngineCommands()
         end
 
         logging.log("Manual loot command - setting once mode")
-        if config.chasePauseCommand then
+        if config.useChaseCommands and config.chasePauseCommand then
             mq.cmd(config.chasePauseCommand)
         end
         SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Once, "Manual /sl_doloot command")
@@ -816,6 +831,7 @@ local function bindUtilityCommands()
             util.printSmartLoot("Engine Control:", "info")
             util.printSmartLoot("  /sl_pause [on|off] - Pause/resume engine", "info")
             util.printSmartLoot("  /sl_doloot - Trigger once mode", "info")
+            util.printSmartLoot("  /sl_combatloot - Loot all corpses ignoring combat, then revert", "info")
             util.printSmartLoot("  /sl_rg_trigger - Trigger RGMain mode", "info")
             util.printSmartLoot("  /sl_emergency_stop - Emergency stop", "info")
             util.printSmartLoot("  /sl_resume - Resume from emergency stop", "info")
@@ -835,7 +851,7 @@ local function bindUtilityCommands()
             util.printSmartLoot("Peer Management:", "info")
             util.printSmartLoot("  /sl_check_peers - Check peer connections", "info")
             util.printSmartLoot("  /sl_refresh_mode - Refresh mode based on peers", "info")
-            util.printSmartLoot("  /sl_mode <mode> - Set loot mode (main|background|rgmain|rgonce|once)", "info")
+            util.printSmartLoot("  /sl_mode <mode> - Set loot mode (main|background|rgmain|rgonce|once|combatloot)", "info")
             util.printSmartLoot("  /sl_peer_monitor [on|off] - Toggle peer monitoring", "info")
             util.printSmartLoot("Maintenance:", "info")
             util.printSmartLoot("  /sl_clearcache - Clear corpse cache", "info")
@@ -929,7 +945,7 @@ end
 
 function bindings.listBindings()
     local commands = {
-        "/sl_pause", "/sl_doloot", "/sl_rg_trigger", "/sl_emergency_stop", "/sl_resume",
+        "/sl_pause", "/sl_doloot", "/sl_combatloot", "/sl_rg_trigger", "/sl_emergency_stop", "/sl_resume",
         "/sl_toggle_hotbar", "/sl_debug", "/sl_stats",
         "/sl_engine_status", "/sl_mode_status", "/sl_waterfall_status", "/sl_waterfall_debug", "/sl_waterfall_complete",
         "/sl_test_peer_complete",

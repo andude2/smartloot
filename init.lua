@@ -280,7 +280,6 @@ local settings = {
     peerTriggerPaused = false,
     showLogWindow = false,
     rgMainTriggered = false,
-    useRGChase = false,
 }
 
 local historyUI = {

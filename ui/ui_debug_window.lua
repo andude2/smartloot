@@ -230,7 +230,6 @@ function debugWindow.draw(SmartLootEngine, lootUI)
             end
             
             ImGui.Text("RG Main Triggered: " .. (engineState.rgMainTriggered and "YES" or "NO"))
-            ImGui.Text("Use RG Chase: " .. (engineState.useRGChase and "YES" or "NO"))
             
             ImGui.Unindent()
         end
