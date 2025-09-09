@@ -238,19 +238,20 @@ end
 
 function ui_help.render()
     if not showHelpWindow then return end
-    
+
     -- Set window size constraints (wider to accommodate execute buttons)
     ImGui.SetNextWindowSizeConstraints(ImVec2(800, 400), ImVec2(1400, 800))
-    
-    -- Begin window
-    local isOpen = true
-    isOpen, showHelpWindow = ImGui.Begin("SmartLoot Help##SLHelp", showHelpWindow, windowFlags)
-    
-    if isOpen then
+
+    -- Begin window with close button; detect user close and hide
+    local open = ImGui.Begin("SmartLoot Help##SLHelp", true, windowFlags)
+    if open then
         renderHelpContent()
     end
-    
     ImGui.End()
+
+    if not open then
+        showHelpWindow = false
+    end
 end
 
 -- ============================================================================

@@ -8,6 +8,143 @@ local database = require("modules.database")
 local json = require("dkjson")
 
 local uiPopups = {}
+local uiUtils = require("ui.ui_utils")
+
+-- Session Report Popup
+function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
+    if not lootUI.sessionReportPopup or not lootUI.sessionReportPopup.isOpen then return end
+
+    local popup = lootUI.sessionReportPopup
+    ImGui.SetNextWindowSize(560, 420, ImGuiCond.FirstUseEver)
+    local open = ImGui.Begin("SmartLoot - Session Report", true)
+    if not open then
+        lootUI.sessionReportPopup.isOpen = false
+        ImGui.End()
+        return
+    end
+
+    -- Controls row
+    ImGui.Text("Scope:")
+    ImGui.SameLine()
+    local currentScope = popup.scope or "all"
+    if ImGui.BeginCombo("##sl_report_scope", currentScope == "me" and "Me" or "All") then
+        if ImGui.Selectable("All", currentScope == "all") then popup.scope = "all"; popup.needsFetch = true end
+        if ImGui.Selectable("Me", currentScope == "me") then popup.scope = "me"; popup.needsFetch = true end
+        ImGui.EndCombo()
+    end
+
+    ImGui.SameLine()
+    if ImGui.Button("Refresh") then popup.needsFetch = true end
+
+    -- Info line
+    local startIso = (SmartLootEngine.stats and SmartLootEngine.stats.sessionStartIsoUtc) or os.date("!%Y-%m-%d %H:%M:%S")
+    ImGui.SameLine()
+    ImGui.TextColored(0.8, 0.8, 0.8, 1, string.format("Since %s UTC", startIso))
+
+    ImGui.Separator()
+
+    -- Fetch data if needed
+    if popup.needsFetch or not popup.rows then
+        local filters = { startDate = startIso, orderBy = 'looted_quantity', orderDir = 'DESC' }
+        if popup.scope == 'me' then
+            filters.looter = mq.TLO.Me.Name() or 'All'
+        end
+        local ok, result = pcall(function() return lootHistory.getAggregatedHistory(filters) end)
+        if ok then
+            popup.rows = result or {}
+            popup.zonesByItem = {} -- reset cache when refetching
+        else
+            popup.rows = {}
+            logging.log("[SessionReport] Failed to fetch history: " .. tostring(result))
+        end
+        popup.needsFetch = false
+    end
+
+    -- Summary
+    local s = SmartLootEngine.stats or {}
+    local minutes = 0
+    if s.sessionStartUnix and type(s.sessionStartUnix) == 'number' then
+        minutes = math.floor(math.max(0, os.difftime(os.time(), s.sessionStartUnix)) / 60)
+    end
+    ImGui.Text(string.format("Items Looted: %d | Corpses: %d", s.itemsLooted or 0, s.corpsesProcessed or 0))
+    ImGui.Text(string.format("Session Length: %d min", minutes))
+
+    ImGui.Spacing()
+
+    -- Table
+    local flags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)
+    if ImGui.BeginTable("SL_SessionReportTable", 6, flags) then
+        ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 30)
+        ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch)
+        ImGui.TableSetupColumn("Qty", ImGuiTableColumnFlags.WidthFixed, 60)
+        ImGui.TableSetupColumn("Events", ImGuiTableColumnFlags.WidthFixed, 70)
+        ImGui.TableSetupColumn("Zones", ImGuiTableColumnFlags.WidthStretch)
+        ImGui.TableSetupColumn("ID", ImGuiTableColumnFlags.WidthFixed, 60)
+        ImGui.TableHeadersRow()
+
+        for _, row in ipairs(popup.rows or {}) do
+            local qty = tonumber(row.looted_quantity) or 0
+            if qty > 0 then
+                ImGui.TableNextRow()
+
+                -- Icon
+                ImGui.TableSetColumnIndex(0)
+                uiUtils.drawItemIcon(tonumber(row.icon_id) or 0)
+
+                -- Item name
+                ImGui.TableSetColumnIndex(1)
+                ImGui.Text(row.item_name or "")
+
+                -- Quantity
+                ImGui.TableSetColumnIndex(2)
+                ImGui.Text(tostring(qty))
+
+                -- Events (number of looted events)
+                ImGui.TableSetColumnIndex(3)
+                ImGui.Text(tostring(tonumber(row.looted_count) or 0))
+
+                -- Zones
+                ImGui.TableSetColumnIndex(4)
+                local zonesText = "-"
+                local itemName = row.item_name or ""
+                popup.zonesByItem = popup.zonesByItem or {}
+                if not popup.zonesByItem[itemName] then
+                    local zfilters = { startDate = startIso }
+                    if popup.scope == 'me' then zfilters.looter = mq.TLO.Me.Name() or 'All' end
+                    local okZ, zones = pcall(function() return lootHistory.getDistinctZonesForItemSince(itemName, zfilters) end)
+                    popup.zonesByItem[itemName] = okZ and (zones or {}) or {}
+                end
+                local zones = popup.zonesByItem[itemName]
+                if #zones == 0 then
+                    zonesText = "-"
+                elseif #zones == 1 then
+                    zonesText = zones[1]
+                else
+                    zonesText = tostring(#zones) .. " zones"
+                end
+                ImGui.Text(zonesText)
+
+                -- ID
+                ImGui.TableSetColumnIndex(5)
+                ImGui.Text(tostring(tonumber(row.item_id) or 0))
+            end
+        end
+
+        ImGui.EndTable()
+    else
+        ImGui.Text("No data.")
+    end
+
+    ImGui.Separator()
+    if ImGui.Button("Close") then
+        lootUI.sessionReportPopup.isOpen = false
+    end
+
+    ImGui.SameLine()
+    ImGui.TextDisabled("Tip: Use /sl_engine_reset to reset session.")
+
+    ImGui.End()
+end
 
 -- Loot Decision Popup - REDESIGNED with better layout and consistent button sizing
 function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
@@ -43,7 +180,7 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             -- Rule dropdown with better spacing
             ImGui.SetNextItemWidth(180)
             if ImGui.BeginCombo("##pendingRule", lootUI.pendingDecisionRule) then
-                for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan"}) do
+                for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
                     local isSelected = (lootUI.pendingDecisionRule == rule)
                     if ImGui.Selectable(rule, isSelected) then
                         lootUI.pendingDecisionRule = rule
@@ -56,7 +193,7 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             end
             
             -- Threshold input for KeepIfFewerThan
-            if lootUI.pendingDecisionRule == "KeepIfFewerThan" then
+            if lootUI.pendingDecisionRule == "KeepIfFewerThan" or lootUI.pendingDecisionRule == "KeepThenIgnore" then
                 ImGui.SameLine()
                 ImGui.Text("Threshold:")
                 ImGui.SameLine()
@@ -75,6 +212,8 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             local function getFinalRule()
                 if lootUI.pendingDecisionRule == "KeepIfFewerThan" then
                     return "KeepIfFewerThan:" .. lootUI.pendingThreshold
+                elseif lootUI.pendingDecisionRule == "KeepThenIgnore" then
+                    return "KeepIfFewerThan:" .. lootUI.pendingThreshold .. ":AutoIgnore"
                 else
                     return lootUI.pendingDecisionRule
                 end
@@ -537,11 +676,10 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                     -- Parse the current rule for display
                     local displayRule, threshold
                     if string.sub(currentRuleStr, 1, 15) == "KeepIfFewerThan" then
-                        displayRule = "KeepIfFewerThan"
-                        local colonPos = string.find(currentRuleStr, ":")
-                        if colonPos then
-                            threshold = tonumber(string.sub(currentRuleStr, colonPos + 1)) or 1
-                        end
+                        local th = currentRuleStr:match("^KeepIfFewerThan:(%d+)")
+                        local auto = currentRuleStr:find(":AutoIgnore") ~= nil
+                        displayRule = auto and "KeepThenIgnore" or "KeepIfFewerThan"
+                        threshold = tonumber(th) or 1
                     elseif currentRuleStr == "" then
                         displayRule = "Unset"
                     else
@@ -556,12 +694,14 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
 
                     -- Rule combo box
                     if ImGui.BeginCombo("##ruleCombo_" .. peer, peerState.displayRule) then
-                        for _, option in ipairs({"Keep", "Ignore", "KeepIfFewerThan", "Destroy", "Unset"}) do
+                        for _, option in ipairs({"Keep", "Ignore", "KeepIfFewerThan", "KeepThenIgnore", "Destroy", "Unset"}) do
                             local isSelected = (peerState.displayRule == option)
                             if ImGui.Selectable(option, isSelected) then
                                 local newRuleValue = option
                                 if option == "KeepIfFewerThan" then
-                                    newRuleValue = "KeepIfFewerThan:" .. peerState.threshold
+                                    newRuleValue = "KeepIfFewerThan:" .. (peerState.threshold or 1)
+                                elseif option == "KeepThenIgnore" then
+                                    newRuleValue = "KeepIfFewerThan:" .. (peerState.threshold or 1) .. ":AutoIgnore"
                                 elseif option == "Unset" then
                                     newRuleValue = ""
                                 end
@@ -628,14 +768,19 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                         ImGui.EndCombo()
                     end
 
-                    -- Threshold input for KeepIfFewerThan
-                    if peerState.displayRule == "KeepIfFewerThan" then
+                    -- Threshold input for KeepIfFewerThan/KeepThenIgnore
+                    if peerState.displayRule == "KeepIfFewerThan" or peerState.displayRule == "KeepThenIgnore" then
                         ImGui.SameLine()
                         local newThreshold, changedThreshold = ImGui.InputInt("##threshold_" .. peer, peerState.threshold)
                         if changedThreshold then
                             newThreshold = math.max(1, newThreshold)
                             if newThreshold ~= peerState.threshold then
-                                local updatedRule = "KeepIfFewerThan:" .. newThreshold
+                                local updatedRule
+                                if peerState.displayRule == "KeepThenIgnore" then
+                                    updatedRule = "KeepIfFewerThan:" .. newThreshold .. ":AutoIgnore"
+                                else
+                                    updatedRule = "KeepIfFewerThan:" .. newThreshold
+                                end
                                 -- Use the itemID and iconID from the popup if available, otherwise fall back to database values
                                 local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
                                 local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0

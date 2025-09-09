@@ -265,6 +265,15 @@ local lootUI = {
     showPeerCommands = true,
     showSettingsTab = false,
     emergencyStop = false,
+    
+    -- Session Report Popup state
+    sessionReportPopup = {
+        isOpen = false,
+        scope = "all", -- all|me
+        limit = 20,
+        rows = nil,
+        needsFetch = false,
+    },
 }
 
 local settings = {
@@ -1220,6 +1229,7 @@ mq.imgui.init("SmartLoot", function()
         uiPopups.drawDuplicateCleanupPopup(lootUI, database)
         uiPopups.drawLegacyImportPopup(lootUI, database, util)
         uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
+        uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
     end
     
     if lootUI.showPeerCommands and uiPeerCommands then

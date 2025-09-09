@@ -447,4 +447,48 @@ function lootHistory.close()
   end
 end
 
+-- Return distinct zones where an item was looted within optional filters (startDate/endDate/looter/zoneName)
+function lootHistory.getDistinctZonesForItemSince(itemName, filters)
+  local whereClauses = { "item_name = ?" }
+  local params = { itemName }
+
+  if filters then
+    if filters.startDate and filters.startDate ~= "" then
+      table.insert(whereClauses, "timestamp >= ?")
+      table.insert(params, filters.startDate)
+    end
+    if filters.endDate and filters.endDate ~= "" then
+      table.insert(whereClauses, "timestamp < ?")
+      table.insert(params, filters.endDate)
+    end
+    if filters.looter and filters.looter ~= "All" then
+      table.insert(whereClauses, "looter = ?")
+      table.insert(params, filters.looter)
+    end
+    if filters.zoneName and filters.zoneName ~= "All" then
+      table.insert(whereClauses, "zone_name = ?")
+      table.insert(params, filters.zoneName)
+    end
+  end
+
+  local whereSql = "WHERE " .. table.concat(whereClauses, " AND ")
+  local sql = string.format("SELECT DISTINCT zone_name FROM loot_history %s ORDER BY zone_name ASC", whereSql)
+
+  local results, err = (function()
+    return executeSelect(sql, params)
+  end)()
+  if not results then
+    logging.debug("[LootHistory] Error in getDistinctZonesForItemSince: " .. tostring(err))
+    return {}
+  end
+
+  local zones = {}
+  for _, row in ipairs(results) do
+    if row.zone_name and row.zone_name ~= "" then
+      table.insert(zones, row.zone_name)
+    end
+  end
+  return zones
+end
+
 return lootHistory

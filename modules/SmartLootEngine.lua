@@ -270,6 +270,8 @@ SmartLootEngine.config = {
 
 SmartLootEngine.stats = {
     sessionStart = mq.gettime(),
+    sessionStartUnix = os.time(),
+    sessionStartIsoUtc = os.date("!%Y-%m-%d %H:%M:%S"),
     corpsesProcessed = 0,
     itemsLooted = 0,
     itemsIgnored = 0,
@@ -976,7 +978,9 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
 
     -- Handle threshold rules
     if rule:find("KeepIfFewerThan") then
-        local threshold = tonumber(rule:match(":(%d+)")) or 0
+        -- Support extended format: KeepIfFewerThan:<n>[:AutoIgnore]
+        local threshold = tonumber(rule:match("^KeepIfFewerThan:(%d+)")) or 0
+        local autoIgnore = rule:find(":AutoIgnore") ~= nil
         local currentCount = mq.TLO.FindItemCount(itemName)() or 0
 
         if currentCount < threshold then
@@ -988,6 +992,24 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
             end
             return "Keep", itemID, iconID
         else
+            -- Threshold reached
+            if autoIgnore then
+                -- Auto demote the rule to Ignore for future encounters
+                local ok, err = pcall(function()
+                    local database = require("modules.database")
+                    database.saveLootRule(itemName, itemID or 0, "Ignore", iconID or 0)
+                    database.refreshLootRuleCache()
+                    -- Notify connected peers to refresh their rules cache/UI
+                    local util = require("modules.util")
+                    util.broadcastCommand("/sl_rulescache")
+                end)
+                if not ok then
+                    logging.debug("[Engine] Failed to auto-set rule to Ignore at threshold: " .. tostring(err))
+                else
+                    logging.log(string.format("[Engine] Auto-set rule to Ignore for '%s' (threshold %d reached)", itemName, threshold))
+                end
+                return "Ignore", itemID, iconID
+            end
             return "LeftBehind", itemID, iconID
         end
     end

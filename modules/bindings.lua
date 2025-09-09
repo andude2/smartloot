@@ -4,6 +4,7 @@ local mq = require("mq")
 local logging = require("modules.logging")
 local util = require("modules.util")
 local config = require("modules.config")
+local lootHistory = require("modules.loot_history")
 
 -- Module will be initialized with references to required components
 local SmartLootEngine = nil
@@ -840,6 +841,8 @@ local function bindUtilityCommands()
             util.printSmartLoot("  /sl_debug - Toggle debug window", "info")
             util.printSmartLoot("  /sl_debug level [X] - Set/show debug level (0-5 or name)", "info")
             util.printSmartLoot("  /sl_stats [show|hide|toggle|reset|compact] - Live stats", "info")
+            util.printSmartLoot("Reporting:", "info")
+            util.printSmartLoot("  /sl_report [show|hide|toggle|all|me] - Session loot report", "info")
             util.printSmartLoot("Status & Debug:", "info")
             util.printSmartLoot("  /sl_engine_status - Show engine status", "info")
             util.printSmartLoot("  /sl_mode_status - Show mode status", "info")
@@ -902,6 +905,40 @@ local function bindUtilityCommands()
     end)
 end
 
+-- Session loot report: /sl_report [all|me] [limit]
+function bindings.bindSessionReport()
+    mq.bind("/sl_report", function(arg)
+        if not SmartLootEngine or not lootHistory then
+            util.printSmartLoot("SmartLoot modules not available", "warning")
+            return
+        end
+
+        -- Initialize popup state if needed
+        if not lootUI.sessionReportPopup then
+            lootUI.sessionReportPopup = { isOpen = false, scope = "all", limit = 20, rows = nil, needsFetch = false }
+        end
+
+        -- Apply args (show|hide|toggle|all|me)
+        if arg and arg ~= "" then
+            local a = string.lower(arg)
+            if a == "show" then
+                lootUI.sessionReportPopup.isOpen = true
+            elseif a == "hide" then
+                lootUI.sessionReportPopup.isOpen = false
+            elseif a == "toggle" then
+                lootUI.sessionReportPopup.isOpen = not (lootUI.sessionReportPopup.isOpen or false)
+            elseif a == "me" or a == "all" then
+                lootUI.sessionReportPopup.scope = a
+                lootUI.sessionReportPopup.isOpen = true
+            end
+        else
+            lootUI.sessionReportPopup.isOpen = true
+        end
+        lootUI.sessionReportPopup.needsFetch = true
+        util.printSmartLoot("Session report " .. (lootUI.sessionReportPopup.isOpen and "opened" or "closed") .. ".", "info")
+    end)
+end
+
 -- ============================================================================
 -- MAIN REGISTRATION FUNCTION
 -- ============================================================================
@@ -919,6 +956,8 @@ function bindings.registerAllBindings()
     bindChaseCommands()
     bindTempRuleCommands()
     bindUtilityCommands()
+    -- New: session loot report
+    if bindings.bindSessionReport then bindings.bindSessionReport() end
 
     logging.log("[Bindings] All command bindings registered")
 end
@@ -952,7 +991,8 @@ function bindings.listBindings()
         "/sl_check_peers", "/sl_refresh_mode", "/sl_mode", "/sl_peer_monitor",
         "/sl_chat", "/sl_chase", "/sl_chase_on", "/sl_chase_off",
         "/sl_addtemp", "/sl_removetemp", "/sl_cleartemp", "/sl_afkfarm",
-        "/sl_clearcache", "/sl_rulescache", "/sl_cleanup", "/sl_help", "/sl_getstarted", "/sl_version"
+        "/sl_clearcache", "/sl_rulescache", "/sl_cleanup", "/sl_help", "/sl_getstarted", "/sl_version",
+        "/sl_report"
     }
 
     util.printSmartLoot("=== Registered SmartLoot Commands ===", "system")

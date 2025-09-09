@@ -50,7 +50,7 @@ local RULE_COLORS = {
     Unset = {0.5, 0.5, 0.5, 1}
 }
 
-local RULE_TYPES = {"Keep", "Ignore", "KeepIfFewerThan", "Destroy"}
+local RULE_TYPES = {"Keep", "Ignore", "KeepIfFewerThan", "KeepThenIgnore", "Destroy"}
 
 -- Helper function to get rule color
 local function getRuleColor(rule)
@@ -59,14 +59,18 @@ end
 
 -- Helper function to parse rule and threshold
 local function parseRule(ruleString)
-    if not ruleString then return "Unset", 1 end
+    if not ruleString then return "Unset", 1, false end
     
     if string.find(ruleString, "KeepIfFewerThan:") then
         local threshold = ruleString:match("KeepIfFewerThan:(%d+)")
-        return "KeepIfFewerThan", tonumber(threshold) or 1
+        local autoIgnore = string.find(ruleString, ":AutoIgnore") ~= nil
+        if autoIgnore then
+            return "KeepThenIgnore", tonumber(threshold) or 1, true
+        end
+        return "KeepIfFewerThan", tonumber(threshold) or 1, false
     end
     
-    return ruleString, 1
+    return ruleString, 1, false
 end
 
 -- Helper function to get ItemID from game only
@@ -291,7 +295,7 @@ local function drawDropZoneRulePopup(lootUI, database, util)
                 ImGui.PushStyleColor(ImGuiCol.Text, color[1], color[2], color[3], color[4])
                 if ImGui.Selectable(rule, isSelected) then
                     dropZoneState.selectedRule = rule
-                    if rule == "KeepIfFewerThan" then
+                    if rule == "KeepIfFewerThan" or rule == "KeepThenIgnore" then
                         dropZoneState.threshold = 1
                     end
                 end
@@ -303,8 +307,8 @@ local function drawDropZoneRulePopup(lootUI, database, util)
             ImGui.EndCombo()
         end
         
-        -- Threshold input for conditional rules
-        if dropZoneState.selectedRule == "KeepIfFewerThan" then
+        -- Threshold for KeepIfFewerThan/KeepThenIgnore
+        if dropZoneState.selectedRule == "KeepIfFewerThan" or dropZoneState.selectedRule == "KeepThenIgnore" then
             ImGui.SameLine()
             ImGui.Text("Threshold:")
             ImGui.SameLine()
@@ -359,6 +363,8 @@ local function drawDropZoneRulePopup(lootUI, database, util)
             local finalRule = dropZoneState.selectedRule
             if dropZoneState.selectedRule == "KeepIfFewerThan" then
                 finalRule = "KeepIfFewerThan:" .. dropZoneState.threshold
+            elseif dropZoneState.selectedRule == "KeepThenIgnore" then
+                finalRule = "KeepIfFewerThan:" .. dropZoneState.threshold .. ":AutoIgnore"
             end
             
             -- Apply to current character
@@ -407,6 +413,8 @@ local function drawDropZoneRulePopup(lootUI, database, util)
             local finalRule = dropZoneState.selectedRule
             if dropZoneState.selectedRule == "KeepIfFewerThan" then
                 finalRule = "KeepIfFewerThan:" .. dropZoneState.threshold
+            elseif dropZoneState.selectedRule == "KeepThenIgnore" then
+                finalRule = "KeepIfFewerThan:" .. dropZoneState.threshold .. ":AutoIgnore"
             end
             
             -- Apply to selected character only
@@ -578,7 +586,7 @@ local function drawUniversalRuleSection(lootUI, database, util, allRules)
         end
         
         -- Threshold input for KeepIfFewerThan
-        if lootUI.newRule == "KeepIfFewerThan" then
+        if lootUI.newRule == "KeepIfFewerThan" or lootUI.newRule == "KeepThenIgnore" then
             ImGui.SameLine()
             ImGui.SetNextItemWidth(60)
             lootUI.newRuleThreshold = lootUI.newRuleThreshold or 1
@@ -589,6 +597,7 @@ local function drawUniversalRuleSection(lootUI, database, util, allRules)
             if ImGui.IsItemHovered() then
                 ImGui.SetTooltip("Threshold amount")
             end
+            ImGui.SameLine()
         end
         
         -- Name-based rule option
@@ -614,6 +623,8 @@ local function drawUniversalRuleSection(lootUI, database, util, allRules)
                 local finalRule = lootUI.newRule
                 if lootUI.newRule == "KeepIfFewerThan" then
                     finalRule = "KeepIfFewerThan:" .. (lootUI.newRuleThreshold or 1)
+                elseif lootUI.newRule == "KeepThenIgnore" then
+                    finalRule = "KeepIfFewerThan:" .. (lootUI.newRuleThreshold or 1) .. ":AutoIgnore"
                 end
                 
                 local success = false
@@ -711,7 +722,7 @@ local function drawUniversalRuleSection(lootUI, database, util, allRules)
         lootUI.ruleFilter = lootUI.ruleFilter or "All"
         
         if ImGui.BeginCombo("##filter", lootUI.ruleFilter) then
-            local filters = {"All", "Keep", "Ignore", "Destroy", "KeepIfFewerThan"}
+        local filters = {"All", "Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}
             for _, filter in ipairs(filters) do
                 local isSelected = (lootUI.ruleFilter == filter)
                 if ImGui.Selectable(filter, isSelected) then
@@ -856,7 +867,7 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
             ImGui.TableSetColumnIndex(3)
             
             -- Use the already fetched ruleData from earlier - don't re-fetch
-            local displayRule, threshold = parseRule(ruleData.rule)
+            local displayRule, threshold, autoIgnore = parseRule(ruleData.rule)
             local ruleColor = getRuleColor(displayRule)
             
             ImGui.PushStyleColor(ImGuiCol.Button, ruleColor[1] * 0.3, ruleColor[2] * 0.3, ruleColor[3] * 0.3, 0.8)
@@ -877,9 +888,11 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                         local targetCharacter = lootUI.selectedCharacterForRules
                         local newRuleValue = ruleType
                         
-                        if ruleType == "KeepIfFewerThan" then
-                            newRuleValue = "KeepIfFewerThan:" .. threshold
-                        end
+                    if ruleType == "KeepIfFewerThan" then
+                        newRuleValue = "KeepIfFewerThan:" .. (threshold or 1)
+                    elseif ruleType == "KeepThenIgnore" then
+                        newRuleValue = "KeepIfFewerThan:" .. (threshold or 1) .. ":AutoIgnore"
+                    end
                         
                         -- Only update if the rule actually changed
                         if newRuleValue ~= ruleData.rule then
@@ -928,16 +941,21 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
             
             ImGui.PopStyleColor()
             
-            -- Threshold input for KeepIfFewerThan
-            if displayRule == "KeepIfFewerThan" then
+            -- Threshold input for KeepIfFewerThan/KeepThenIgnore
+            if displayRule == "KeepIfFewerThan" or displayRule == "KeepThenIgnore" then
                 ImGui.SameLine()
                 ImGui.PushID("Threshold" .. i)
-                ImGui.SetNextItemWidth(80)
+                ImGui.SetNextItemWidth(30)
                 
                 local newThreshold, changedThreshold = ImGui.InputInt("##threshold", threshold, 0, 0)
                 if changedThreshold then
                     newThreshold = math.max(1, newThreshold)
-                    local newRuleValue = "KeepIfFewerThan:" .. newThreshold
+                    local newRuleValue
+                    if displayRule == "KeepThenIgnore" then
+                        newRuleValue = "KeepIfFewerThan:" .. newThreshold .. ":AutoIgnore"
+                    else
+                        newRuleValue = "KeepIfFewerThan:" .. newThreshold
+                    end
                     local targetCharacter = lootUI.selectedCharacterForRules
                     
                     -- Check if this item is from the fallback table
@@ -1185,7 +1203,9 @@ local function getFilteredItems(allRules, searchFilter, ruleFilter)
         if not matchesFilter then
             if ruleData then
                 local rule = ruleData.rule or "Unset"
-                if ruleFilter == "KeepIfFewerThan" and string.find(rule, "KeepIfFewerThan") then
+                if ruleFilter == "KeepIfFewerThan" and string.find(rule, "KeepIfFewerThan:") and not string.find(rule, ":AutoIgnore") then
+                    matchesFilter = true
+                elseif ruleFilter == "KeepThenIgnore" and string.find(rule, "KeepIfFewerThan:") and string.find(rule, ":AutoIgnore") then
                     matchesFilter = true
                 elseif rule == ruleFilter then
                     matchesFilter = true
