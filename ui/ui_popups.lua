@@ -2760,8 +2760,9 @@ end
 function uiPopups.drawGettingStartedPopup(lootUI)
     if lootUI.showGettingStartedPopup then
         ImGui.SetNextWindowSize(700, 600, ImGuiCond.FirstUseEver)
-        local keepOpen = true
-        if ImGui.Begin("SmartLoot - Getting Started Guide", keepOpen) then
+        local visible, keepOpen = ImGui.Begin("SmartLoot - Getting Started Guide", lootUI.showGettingStartedPopup)
+
+        if visible then
             -- Welcome header with a nice color
             ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0) -- Light blue
             ImGui.Text("Welcome to SmartLoot!")
@@ -2843,10 +2844,7 @@ function uiPopups.drawGettingStartedPopup(lootUI)
             end
         end
         ImGui.End()
-
-        if not keepOpen then
-            lootUI.showGettingStartedPopup = false
-        end
+        lootUI.showGettingStartedPopup = keepOpen and visible
     end
 end
 
