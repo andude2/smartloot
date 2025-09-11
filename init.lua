@@ -14,25 +14,7 @@ local actors = require("actors")
 local modeHandler = require("modules.mode_handler")
 local SmartLootEngine = require("modules.SmartLootEngine")
 local waterfallTracker = require("modules.waterfall_chain_tracker")
-local bindings = require("modules.bindings")  -- NEW: Load bindings module
-
--- init.lua - PURE STATE MACHINE VERSION with Bindings Module
-local mq = require("mq")
-local database = require("modules.database")
-local ImGui = require("ImGui")
-local logging = require("modules.logging")
-local lootHistory = require("modules.loot_history")
-local lootStats = require("modules.loot_stats")
-local json = require("dkjson")
-local config = require("modules.config")
-local util = require("modules.util")
-local lfs = require("lfs")
-local Icons = require("mq.Icons")
-local actors = require("actors")
-local modeHandler = require("modules.mode_handler")
-local SmartLootEngine = require("modules.SmartLootEngine")
-local waterfallTracker = require("modules.waterfall_chain_tracker")
-local bindings = require("modules.bindings")  -- NEW: Load bindings module
+local bindings = require("modules.bindings")
 
 -- ============================================================================
 -- INITIALIZATION
@@ -59,23 +41,23 @@ end
 
 local function processStartupArguments(args)
     modeHandler.initialize("main")
-    
+
     if #args == 0 then
         -- No arguments provided - use dynamic detection
         local rgRunning = false
         if mq.TLO.Lua.Script("rgmercs").Status() == "RUNNING" then
             rgRunning = true
         end
-        
+
         local inGroupRaid = mq.TLO.Group.Members() > 1 or mq.TLO.Raid.Members() > 0
-        
+
         if rgRunning and inGroupRaid then
             logging.log("No arguments but detected RGMercs context - using dynamic mode")
             return modeHandler.handleRGMercsCall(args)
         else
             -- Non-RGMercs scenario - check peer order for dynamic mode
             logging.log("No arguments and no RGMercs - checking peer order for dynamic mode")
-            
+
             if modeHandler.shouldBeRGMain() then
                 logging.log("Peer order indicates this character should be Main looter")
                 return "main"
@@ -85,9 +67,9 @@ local function processStartupArguments(args)
             end
         end
     end
-    
+
     local firstArg = args[1]:lower()
-    
+
     if firstArg == "main" then
         return "main"
     elseif firstArg == "once" then
@@ -117,7 +99,7 @@ local function initializeSmartLootEngine(args)
     end
 
     local initialMode = processStartupArguments(args or {})
-    
+
     local modeMapping = {
         ["main"] = SmartLootEngine.LootMode.Main,
         ["once"] = SmartLootEngine.LootMode.Once,
@@ -125,7 +107,7 @@ local function initializeSmartLootEngine(args)
         ["rgmain"] = SmartLootEngine.LootMode.RGMain,
         ["rgonce"] = SmartLootEngine.LootMode.RGOnce
     }
-    
+
     local engineMode = modeMapping[initialMode] or SmartLootEngine.LootMode.Background
 
     SmartLootEngine.setLootMode(engineMode, "Startup initialization")
@@ -138,7 +120,7 @@ end
 -- STARTUP
 -- ============================================================================
 
-local args = {...}
+local args = { ... }
 
 mq.delay(150)
 
@@ -150,9 +132,10 @@ if not engineInitialized then
     logging.log("[SmartLoot] Engine initialization failed, defaulting to main mode")
 end
 
-if runMode ~= "main" and runMode ~= "once" and runMode ~= "background" and 
-   runMode ~= "rgmain" and runMode ~= "rgonce" then
-    util.printSmartLoot('Invalid run mode: ' .. runMode .. '. Valid options are "main", "once", "background", "rgmain", or "rgonce"', "error")
+if runMode ~= "main" and runMode ~= "once" and runMode ~= "background" and
+    runMode ~= "rgmain" and runMode ~= "rgonce" then
+    util.printSmartLoot(
+    'Invalid run mode: ' .. runMode .. '. Valid options are "main", "once", "background", "rgmain", or "rgonce"', "error")
     runMode = "main"
 end
 
@@ -175,12 +158,12 @@ end
 local availablePeers = {}
 local function scanForPeerDatabases()
     local dbPath = mq.TLO.MacroQuest.Path('resources')()
-    
+
     if not dbPath then
         logging.log("[SmartLoot] Could not get resources path")
         return
     end
-    
+
     for file in lfs.dir(dbPath) do
         local server = file:match("^smartloot_(.-)%.db$")
         if server then
@@ -200,7 +183,7 @@ scanForPeerDatabases()
 -- UI STATE (Simplified for State Engine)
 -- ============================================================================
 
-local lootUI = { 
+local lootUI = {
     show = true,
     currentItem = nil,
     choices = {},
@@ -218,8 +201,8 @@ local lootUI = {
     remoteDecisions = {},
     showHotbar = true,
     showUI = false,
-    showDebugWindow = false,  -- Add debug window flag
-    windowLocked = false,     -- Lock window feature
+    showDebugWindow = false, -- Add debug window flag
+    windowLocked = false,    -- Lock window feature
     selectedItemForPopup = nil,
 
     peerItemRulesPopup = {
@@ -243,7 +226,7 @@ local lootUI = {
         threshold = 1,
         selectedCharacter = ""
     },
-    
+
     iconUpdatePopup = {
         isOpen = false,
         itemName = "",
@@ -265,7 +248,7 @@ local lootUI = {
     showPeerCommands = true,
     showSettingsTab = false,
     emergencyStop = false,
-    
+
     -- Session Report Popup state
     sessionReportPopup = {
         isOpen = false,
@@ -314,7 +297,7 @@ local historyUI = {
 
 local function handleEnginePendingDecision()
     local engineState = SmartLootEngine.getState()
-    
+
     -- Check if engine needs a pending decision and UI doesn't have one
     if engineState.needsPendingDecision and not lootUI.currentItem then
         local pendingDetails = engineState.pendingItemDetails
@@ -327,7 +310,7 @@ local function handleEnginePendingDecision()
             itemID = pendingDetails.itemID,
             iconID = pendingDetails.iconID
         }
-        
+
         logging.debug("[Bridge] Created UI pending decision for: " .. pendingDetails.itemName)
     end
 end
@@ -340,15 +323,15 @@ local function processUIDecisionForEngine()
         local action = lootUI.pendingLootAction
         local itemName = action.item.name
         local rule = action.rule
-        
+
         SmartLootEngine.resolvePendingDecision(itemName, action.itemID, rule, action.iconID)
         lootUI.pendingLootAction = nil
         lootUI.currentItem = nil
-        
+
         logging.debug("[Bridge] Resolved engine decision for: " .. itemName .. " with rule: " .. rule)
         return
     end
-    
+
     -- Clear stale UI state if engine doesn't need a decision
     if not engineState.needsPendingDecision and lootUI.currentItem and not lootUI.pendingLootAction then
         logging.debug("[Bridge] Clearing stale UI pending decision state")
@@ -376,7 +359,7 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
     if cmd == "set_rgmain_flag" then
         local isRGMain = data.isRGMain or false
         util.printSmartLoot("RGMain flag received from " .. sender .. ": " .. tostring(isRGMain), "info")
-        
+
         if isRGMain then
             -- Switch to RGMain mode and wait for triggers
             SmartLootEngine.setLootMode(SmartLootEngine.LootMode.RGMain, "RGMain flag from " .. sender)
@@ -386,11 +369,9 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
             SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Background, "Non-RGMain flag from " .. sender)
             util.printSmartLoot("Character set to Background mode - autonomous looting", "success")
         end
-        
     elseif cmd == "waterfall_session_start" or cmd == "waterfall_completion" or cmd == "waterfall_status_request" then
         waterfallTracker.handleMailboxMessage(data)
         return
-        
     elseif cmd == "reload_rules" then
         util.printSmartLoot("Reload command received from " .. sender .. ". Refreshing rule cache.", "info")
         database.refreshLootRuleCache()
@@ -401,7 +382,6 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
         if currentToon then
             database.refreshLootRuleCacheForPeer(currentToon)
         end
-        
     elseif cmd == "rg_trigger" then
         util.printSmartLoot("RG trigger command received from " .. sender, "info")
         if SmartLootEngine.triggerRGMain() then
@@ -409,36 +389,29 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
         else
             --util.printSmartLoot("RG trigger ignored - not in RGMain mode", "warning")
         end
-        
     elseif cmd == "start_once" then
         util.printSmartLoot("Once mode trigger received from " .. sender, "info")
         SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Once, "Mailbox command from " .. sender)
-        
     elseif cmd == "start_rgonce" then
         util.printSmartLoot("RGOnce mode trigger received from " .. sender, "info")
         SmartLootEngine.setLootMode(SmartLootEngine.LootMode.RGOnce, "Mailbox command from " .. sender)
-        
     elseif cmd == "rg_peer_trigger" then
         -- RGMain has triggered us to start looting
         util.printSmartLoot("RGMain peer trigger received from " .. sender, "info")
         local sessionId = data.sessionId
         SmartLootEngine.state.rgMainSessionId = sessionId
         SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Once, "RGMain peer trigger from " .. sender)
-        
     elseif cmd == "rg_peer_complete" then
         -- A peer is reporting completion to RGMain
         local sessionId = data.sessionId
         SmartLootEngine.reportRGMainCompletion(sender, sessionId)
-
     elseif message.cmd == "refresh_rules" then
         local database = require("modules.database")
         database.refreshLootRuleCache()
         logging.log("[SmartLoot] Reloaded local loot rule cache")
-        
     elseif cmd == "emergency_stop" then
         SmartLootEngine.emergencyStop("Emergency stop from " .. sender)
         util.printSmartLoot("Emergency stop executed by " .. sender, "system")
-        
     elseif cmd == "pause" then
         local action = data.action or "toggle"
         if action == "on" then
@@ -457,15 +430,13 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
                 util.printSmartLoot("Paused by " .. sender, "warning")
             end
         end
-        
     elseif cmd == "clear_cache" then
         util.printSmartLoot("Cache clear command received from " .. sender, "info")
         SmartLootEngine.resetProcessedCorpses()
         util.printSmartLoot("Corpse cache cleared", "system")
-        
     elseif cmd == "status_request" then
         util.printSmartLoot("Status request from " .. sender, "info")
-        
+
         local engineState = SmartLootEngine.getState()
         local statusData = {
             cmd = "status_response",
@@ -477,9 +448,8 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
             pendingDecision = engineState.needsPendingDecision,
             corpseID = engineState.currentCorpseID
         }
-        
+
         actors.send(sender .. "_smartloot_mailbox", json.encode(statusData))
-        
     else
         util.printSmartLoot("Unknown command '" .. tostring(cmd) .. "' from " .. sender, "warning")
     end
@@ -493,7 +463,7 @@ local smartLootType = mq.DataType.new('SmartLoot', {
     Members = {
         State = function(_, self)
             local state = SmartLootEngine.getState()
-            
+
             if state.mode == SmartLootEngine.LootMode.Disabled then
                 return 'string', "Disabled"
             elseif state.needsPendingDecision then
@@ -512,46 +482,46 @@ local smartLootType = mq.DataType.new('SmartLoot', {
         Mode = function(_, self)
             return 'string', SmartLootEngine.getLootMode()
         end,
-        
+
         EngineState = function(_, self)
             local state = SmartLootEngine.getState()
             return 'string', state.currentStateName
         end,
-        
+
         Paused = function(_, self)
             local currentMode = SmartLootEngine.getLootMode()
             return 'bool', currentMode == SmartLootEngine.LootMode.Disabled
         end,
-        
+
         PendingDecision = function(_, self)
             local state = SmartLootEngine.getState()
             return 'string', state.needsPendingDecision and "TRUE" or "FALSE"
         end,
-        
+
         CorpseCount = function(_, self)
             local corpseCount = mq.TLO.SpawnCount(string.format("npccorpse radius %d", settings.lootRadius))() or 0
             return 'string', tostring(corpseCount)
         end,
-        
+
         CurrentCorpse = function(_, self)
             local state = SmartLootEngine.getState()
             return 'string', tostring(state.currentCorpseID)
         end,
-        
+
         ItemsProcessed = function(_, self)
             local state = SmartLootEngine.getState()
             return 'string', tostring(state.stats.itemsLooted + state.stats.itemsIgnored)
         end,
-        
+
         Version = function(_, self)
             return 'string', "SmartLoot 2.0 State Engine"
         end,
-        
+
         -- Processing state indicators
         IsProcessing = function(_, self)
             local state = SmartLootEngine.getState()
             local processingStates = {
-                "ProcessingItems", "FindingCorpse", "NavigatingToCorpse", 
+                "ProcessingItems", "FindingCorpse", "NavigatingToCorpse",
                 "OpeningLootWindow", "CleaningUpCorpse"
             }
             for _, stateName in ipairs(processingStates) do
@@ -561,83 +531,83 @@ local smartLootType = mq.DataType.new('SmartLoot', {
             end
             return 'bool', false
         end,
-        
+
         IsIdle = function(_, self)
             local state = SmartLootEngine.getState()
             return 'bool', state.currentStateName == "Idle"
         end,
-        
+
         -- Detailed statistics
         ItemsLooted = function(_, self)
             local state = SmartLootEngine.getState()
             return 'int', state.stats.itemsLooted or 0
         end,
-        
+
         ItemsIgnored = function(_, self)
             local state = SmartLootEngine.getState()
             return 'int', state.stats.itemsIgnored or 0
         end,
-        
+
         ProcessedCorpses = function(_, self)
             local state = SmartLootEngine.getState()
             return 'int', state.stats.corpsesProcessed or 0
         end,
-        
+
         PeersTriggered = function(_, self)
             local state = SmartLootEngine.getState()
             return 'int', state.stats.peersTriggered or 0
         end,
-        
+
         -- Safety state checks
         SafeToLoot = function(_, self)
             -- Check if it's safe to loot (no combat, etc.)
             local me = mq.TLO.Me
             if not me() then return 'bool', false end
-            
+
             -- Not safe if in combat
             if me.Combat() then return 'bool', false end
-            
+
             -- Not safe if casting
             if me.Casting() then return 'bool', false end
-            
+
             -- Not safe if moving
             if me.Moving() then return 'bool', false end
-            
+
             return 'bool', true
         end,
-        
+
         InCombat = function(_, self)
             return 'bool', mq.TLO.Me.Combat() or false
         end,
-        
+
         LootWindowOpen = function(_, self)
             return 'bool', mq.TLO.Corpse.Open() or false
         end,
-        
+
         -- Time tracking
         LastAction = function(_, self)
             local state = SmartLootEngine.getState()
             -- Return seconds since last action (placeholder - needs engine support)
             return 'int', 0
         end,
-        
+
         TimeInCurrentState = function(_, self)
             local state = SmartLootEngine.getState()
             -- Return seconds in current state (placeholder - needs engine support)
             return 'int', 0
         end,
-        
+
         -- State information
         IsEnabled = function(_, self)
             local state = SmartLootEngine.getState()
             return 'bool', state.mode ~= SmartLootEngine.LootMode.Disabled
         end,
-        
+
         NeedsDecision = function(_, self)
             local state = SmartLootEngine.getState()
             return 'bool', state.needsPendingDecision or false
         end,
-        
+
         PendingItem = function(_, self)
             local state = SmartLootEngine.getState()
             if state.needsPendingDecision and state.pendingItemDetails then
@@ -645,19 +615,19 @@ local smartLootType = mq.DataType.new('SmartLoot', {
             end
             return 'string', ""
         end,
-        
+
         -- Error handling
         ErrorState = function(_, self)
             local state = SmartLootEngine.getState()
             return 'string', state.errorMessage or ""
         end,
-        
+
         EmergencyStatus = function(_, self)
             local state = SmartLootEngine.getState()
-            return 'string', string.format("State: %s, Mode: %s, Corpse: %s", 
+            return 'string', string.format("State: %s, Mode: %s, Corpse: %s",
                 state.currentStateName, state.mode, tostring(state.currentCorpseID))
         end,
-        
+
         -- Global order system
         GlobalOrder = function(_, self, index)
             local globalOrder = database.loadGlobalLootOrder()
@@ -669,23 +639,23 @@ local smartLootType = mq.DataType.new('SmartLoot', {
             end
             return 'int', #globalOrder
         end,
-        
+
         GlobalOrderList = function(_, self)
             local globalOrder = database.loadGlobalLootOrder()
             return 'string', table.concat(globalOrder, ",")
         end,
-        
+
         GlobalOrderCount = function(_, self)
             local globalOrder = database.loadGlobalLootOrder()
             return 'int', #globalOrder
         end,
-        
+
         IsMainLooter = function(_, self)
             local currentChar = mq.TLO.Me.Name()
             local globalOrder = database.loadGlobalLootOrder()
             return 'bool', globalOrder[1] == currentChar
         end,
-        
+
         GlobalOrderPosition = function(_, self)
             local currentChar = mq.TLO.Me.Name()
             local globalOrder = database.loadGlobalLootOrder()
@@ -696,12 +666,12 @@ local smartLootType = mq.DataType.new('SmartLoot', {
             end
             return 'int', 0
         end,
-        
+
         -- Corpse detection
         HasNewCorpses = function(_, self)
             local state = SmartLootEngine.getState()
             local processedCorpses = state.processedCorpses or {}
-            
+
             -- Check for unprocessed NPC corpses
             local corpseCount = mq.TLO.SpawnCount(string.format("npccorpse radius %d", settings.lootRadius))()
             if corpseCount and corpseCount > 0 then
@@ -714,12 +684,12 @@ local smartLootType = mq.DataType.new('SmartLoot', {
             end
             return 'bool', false
         end,
-        
+
         -- Control/interrupt states
         CanSafelyInterrupt = function(_, self)
             local state = SmartLootEngine.getState()
             -- Can interrupt if idle or between actions
-            local safeStates = {"Idle", "WaitingForCorpses", "CheckingCorpses"}
+            local safeStates = { "Idle", "WaitingForCorpses", "CheckingCorpses" }
             for _, stateName in ipairs(safeStates) do
                 if state.currentStateName == stateName then
                     return 'bool', true
@@ -728,7 +698,7 @@ local smartLootType = mq.DataType.new('SmartLoot', {
             return 'bool', false
         end,
     },
-    
+
     Methods = {
         TriggerRGMain = function(_, self)
             if SmartLootEngine.triggerRGMain() then
@@ -739,7 +709,7 @@ local smartLootType = mq.DataType.new('SmartLoot', {
                 return 'string', "FALSE"
             end
         end,
-        
+
         EmergencyStop = function(_, self)
             SmartLootEngine.emergencyStop("TLO call")
             logging.log("EMERGENCY STOP via TLO")
@@ -754,7 +724,7 @@ local smartLootType = mq.DataType.new('SmartLoot', {
                 ["rgmain"] = SmartLootEngine.LootMode.RGMain,
                 ["disabled"] = SmartLootEngine.LootMode.Disabled
             }
-            
+
             local engineMode = modeMapping[newMode:lower()]
             if engineMode then
                 SmartLootEngine.setLootMode(engineMode, "TLO call")
@@ -771,19 +741,19 @@ local smartLootType = mq.DataType.new('SmartLoot', {
 
         GetPerformance = function(_, self)
             local perf = SmartLootEngine.getPerformanceMetrics()
-            return 'string', string.format("Avg Tick: %.2fms, CPM: %.1f, IPM: %.1f", 
-                   perf.averageTickTime, perf.corpsesPerMinute, perf.itemsPerMinute)
+            return 'string', string.format("Avg Tick: %.2fms, CPM: %.1f, IPM: %.1f",
+                perf.averageTickTime, perf.corpsesPerMinute, perf.itemsPerMinute)
         end,
-        
+
         -- Command handling (matches C++ TLO)
         Command = function(_, self, command)
             if not command then
                 return 'string', "Available commands: once, main, background, stop, emergency, quickstop, clear"
             end
-            
+
             local cmd = command:lower()
             local result = "Unknown command"
-            
+
             if cmd == "once" then
                 SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Once, "TLO Command")
                 result = "Once mode started"
@@ -806,26 +776,26 @@ local smartLootType = mq.DataType.new('SmartLoot', {
                 SmartLootEngine.resetProcessedCorpses()
                 result = "Cache cleared"
             end
-            
+
             return 'string', result
         end,
-        
+
         -- Emergency stop (matches C++ TLO)
         Stop = function(_, self)
             SmartLootEngine.emergencyStop("TLO Stop")
             return 'bool', true
         end,
-        
+
         -- Quick stop (matches C++ TLO)
         QuickStop = function(_, self)
             SmartLootEngine.quickStop("TLO QuickStop")
             return 'bool', true
         end,
     },
-    
+
     ToString = function(self)
         local state = SmartLootEngine.getState()
-        
+
         if state.mode == SmartLootEngine.LootMode.Disabled then
             return "Paused"
         elseif state.needsPendingDecision then
@@ -908,22 +878,22 @@ mq.imgui.init("SmartLoot", function()
     if lootUI.showUI then
         ImGui.SetNextWindowBgAlpha(0.75)
         ImGui.SetNextWindowSize(800, 600, ImGuiCond.FirstUseEver)
-        
+
         local windowFlags = bit32.bor(ImGuiWindowFlags.None)
         if lootUI.windowLocked then
             windowFlags = bit32.bor(windowFlags, ImGuiWindowFlags.NoMove, ImGuiWindowFlags.NoResize)
         end
-        
+
         local open, shouldClose = ImGui.Begin("SmartLoot - Loot Smarter, Not Harder", true, windowFlags)
         if open then
             -- Header with dynamic status and buttons
             local currentTime = mq.gettime()
-            
+
             -- Status indicator with animated pulse
             local pulseSpeed = 2.0 -- seconds for full pulse cycle
             local pulsePhase = (currentTime / 1000) % pulseSpeed / pulseSpeed * 2 * math.pi
             local pulseAlpha = 0.5 + 0.3 * math.sin(pulsePhase)
-            
+
             if lootUI.paused then
                 ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.4, 0.2, 1.0) -- Orange
                 ImGui.Text(Icons.FA_PAUSE .. " Paused")
@@ -932,9 +902,9 @@ mq.imgui.init("SmartLoot", function()
                 ImGui.Text(Icons.FA_COG .. " Active")
             end
             ImGui.PopStyleColor()
-            
+
             ImGui.SameLine()
-            
+
             -- Add some status info based on recent activity
             local statusText = ""
             if lootUI.lastProcessedItem and (currentTime - (lootUI.lastProcessedTime or 0)) < 5000 then
@@ -944,10 +914,10 @@ mq.imgui.init("SmartLoot", function()
             else
                 statusText = "Ready"
             end
-            
+
             ImGui.TextColored(0.7, 0.7, 0.7, 1.0, " | " .. statusText)
             ImGui.SameLine()
-            
+
             -- Animated stick figure
             if not lootUI.paused then
                 -- Calculate available space for animation
@@ -957,62 +927,62 @@ mq.imgui.init("SmartLoot", function()
                 local totalButtonWidth = (buttonWidth * 2) + buttonSpacing + 20 -- extra margin
                 local windowWidth = ImGui.GetWindowWidth()
                 local availableSpace = windowWidth - currentPos - totalButtonWidth
-                
+
                 if availableSpace > 120 then -- Minimum space needed for animation + buffer
                     -- Animation cycle: 8 seconds to cross the space (much slower)
-                    local animSpeed = 8000 -- milliseconds for full cycle
+                    local animSpeed = 8000   -- milliseconds for full cycle
                     local animPhase = (currentTime % animSpeed) / animSpeed
                     -- Stop before hitting buttons - leave 40px buffer
                     local maxTravel = availableSpace - 40
                     local stickX = currentPos + (maxTravel * animPhase)
-                    
+
                     -- Sword-waving animation frames (much slower)
                     local frameSpeed = 600 -- Change frame every 600ms (much slower)
                     local frameIndex = math.floor((currentTime / frameSpeed) % 4)
-                    
+
                     -- 3-line ASCII stick figure warrior with FA weapon effects
                     local swordFrames = {
                         -- Frame 1: sword raised high
                         {
-                            " o " .. Icons.FA_MAGIC,      -- head + magic sparkles
-                            "/|\\",                       -- arms up + body
-                            "/ \\" .. Icons.FA_BOLT       -- legs + lightning
+                            " o " .. Icons.FA_MAGIC, -- head + magic sparkles
+                            "/|\\",                  -- arms up + body
+                            "/ \\" .. Icons.FA_BOLT  -- legs + lightning
                         },
-                        -- Frame 2: sword swing  
+                        -- Frame 2: sword swing
                         {
-                            " o ",                        -- head
-                            "-|\\" .. Icons.FA_FIRE,      -- swing + body + fire
-                            "| |"                         -- legs standing
+                            " o ",                   -- head
+                            "-|\\" .. Icons.FA_FIRE, -- swing + body + fire
+                            "| |"                    -- legs standing
                         },
                         -- Frame 3: sword down
                         {
-                            " o ",                        -- head
-                            " |/",                        -- body + arm down
-                            "/ \\" .. Icons.FA_MAGIC      -- legs + magic effect
+                            " o ",                   -- head
+                            " |/",                   -- body + arm down
+                            "/ \\" .. Icons.FA_MAGIC -- legs + magic effect
                         },
                         -- Frame 4: ready position
                         {
-                            " o " .. Icons.FA_BOLT,       -- head + energy
-                            "\\|/",                       -- arms spread + body
-                            "| |"                         -- legs ready
+                            " o " .. Icons.FA_BOLT, -- head + energy
+                            "\\|/",                 -- arms spread + body
+                            "| |"                   -- legs ready
                         }
                     }
-                    
+
                     local currentFrame = swordFrames[frameIndex + 1]
-                    
+
                     -- Store button Y position before drawing stick figure
                     local buttonY = ImGui.GetCursorPosY()
-                    
+
                     -- Position and draw the 3-line stick figure
                     local startY = buttonY
-                    
+
                     -- Draw each line of the stick figure
                     for i, line in ipairs(currentFrame) do
                         ImGui.SetCursorPosX(stickX)
                         ImGui.SetCursorPosY(startY + (i - 1) * 12) -- 12px line spacing
                         ImGui.TextColored(0.8, 0.6, 0.2, 1.0, line)
                     end
-                    
+
                     -- Reset cursor position to align buttons with top of stick figure
                     ImGui.SetCursorPosY(buttonY)
                     ImGui.SetCursorPosX(currentPos + maxTravel + 50) -- Position after stick figure's travel area
@@ -1022,67 +992,71 @@ mq.imgui.init("SmartLoot", function()
                 ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "(˘▾˘)~♪ Zzz...")
                 ImGui.SameLine()
             end
-            
+
             -- Push buttons to the right side
             local buttonWidth = 30
             local buttonSpacing = 5
             local totalButtonWidth = (buttonWidth * 2) + buttonSpacing
             local availableWidth = ImGui.GetContentRegionAvail()
             local offsetX = availableWidth - totalButtonWidth
-            
+
             if offsetX > 0 then
                 ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX)
             end
-            
+
             -- Pause/Resume button
             local pauseIcon = lootUI.paused and Icons.FA_PLAY or Icons.FA_PAUSE
-            local pauseColor = lootUI.paused and {0.2, 0.8, 0.2, 1.0} or {0.8, 0.2, 0.2, 1.0}
-            local pauseHoverColor = lootUI.paused and {0.3, 0.9, 0.3, 1.0} or {0.9, 0.3, 0.3, 1.0}
-            local pauseActiveColor = lootUI.paused and {0.1, 0.6, 0.1, 1.0} or {0.6, 0.1, 0.1, 1.0}
-            
+            local pauseColor = lootUI.paused and { 0.2, 0.8, 0.2, 1.0 } or { 0.8, 0.2, 0.2, 1.0 }
+            local pauseHoverColor = lootUI.paused and { 0.3, 0.9, 0.3, 1.0 } or { 0.9, 0.3, 0.3, 1.0 }
+            local pauseActiveColor = lootUI.paused and { 0.1, 0.6, 0.1, 1.0 } or { 0.6, 0.1, 0.1, 1.0 }
+
             ImGui.PushStyleColor(ImGuiCol.Button, pauseColor[1], pauseColor[2], pauseColor[3], pauseColor[4])
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, pauseHoverColor[1], pauseHoverColor[2], pauseHoverColor[3], pauseHoverColor[4])
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, pauseActiveColor[1], pauseActiveColor[2], pauseActiveColor[3], pauseActiveColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, pauseHoverColor[1], pauseHoverColor[2], pauseHoverColor[3],
+                pauseHoverColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, pauseActiveColor[1], pauseActiveColor[2], pauseActiveColor[3],
+                pauseActiveColor[4])
             ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 6.0)
-            
+
             if ImGui.Button(pauseIcon, buttonWidth, buttonWidth) then
                 lootUI.paused = not lootUI.paused
                 mq.cmd("/sl_pause " .. (lootUI.paused and "on" or "off"))
             end
-            
+
             if ImGui.IsItemHovered() then
                 ImGui.SetTooltip(lootUI.paused and "Resume loot processing" or "Pause loot processing")
             end
-            
+
             ImGui.PopStyleVar()
             ImGui.PopStyleColor(3)
-            
+
             -- Lock button next to pause button
             ImGui.SameLine()
-            
+
             local lockIcon = lootUI.windowLocked and Icons.FA_LOCK or Icons.FA_UNLOCK
-            local lockColor = lootUI.windowLocked and {0.8, 0.6, 0.2, 1.0} or {0.6, 0.6, 0.6, 1.0}
-            local lockHoverColor = lootUI.windowLocked and {1.0, 0.8, 0.4, 1.0} or {0.8, 0.8, 0.8, 1.0}
-            local lockActiveColor = lootUI.windowLocked and {0.6, 0.4, 0.1, 1.0} or {0.4, 0.4, 0.4, 1.0}
-            
+            local lockColor = lootUI.windowLocked and { 0.8, 0.6, 0.2, 1.0 } or { 0.6, 0.6, 0.6, 1.0 }
+            local lockHoverColor = lootUI.windowLocked and { 1.0, 0.8, 0.4, 1.0 } or { 0.8, 0.8, 0.8, 1.0 }
+            local lockActiveColor = lootUI.windowLocked and { 0.6, 0.4, 0.1, 1.0 } or { 0.4, 0.4, 0.4, 1.0 }
+
             ImGui.PushStyleColor(ImGuiCol.Button, lockColor[1], lockColor[2], lockColor[3], lockColor[4])
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, lockHoverColor[1], lockHoverColor[2], lockHoverColor[3], lockHoverColor[4])
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, lockActiveColor[1], lockActiveColor[2], lockActiveColor[3], lockActiveColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, lockHoverColor[1], lockHoverColor[2], lockHoverColor[3],
+                lockHoverColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, lockActiveColor[1], lockActiveColor[2], lockActiveColor[3],
+                lockActiveColor[4])
             ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 6.0)
-            
+
             if ImGui.Button(lockIcon, buttonWidth, buttonWidth) then
                 lootUI.windowLocked = not lootUI.windowLocked
             end
-            
+
             if ImGui.IsItemHovered() then
                 ImGui.SetTooltip(lootUI.windowLocked and "Unlock window" or "Lock window")
             end
-            
+
             ImGui.PopStyleVar()
             ImGui.PopStyleColor(3)
             ImGui.Spacing(5)
             ImGui.Separator()
-            
+
             if ImGui.BeginTabBar("MainTabBar") then
                 if uiLootRules then
                     uiLootRules.draw(lootUI, database, settings, util, uiPopups)
@@ -1100,12 +1074,12 @@ mq.imgui.init("SmartLoot", function()
                 if uiPeerLootOrder then
                     uiPeerLootOrder.draw(lootUI, config, util)
                 end
-                
+
                 --[[Engine Stats Tab
                 if ImGui.BeginTabItem("Engine Stats") then
                     local state = SmartLootEngine.getState()
                     local perf = SmartLootEngine.getPerformanceMetrics()
-                    
+
                     ImGui.Text("Performance Metrics:")
                     ImGui.Indent()
                     ImGui.Text("Average Tick Time: " .. string.format("%.2fms", perf.averageTickTime))
@@ -1114,9 +1088,9 @@ mq.imgui.init("SmartLoot", function()
                     ImGui.Text("Corpses/Minute: " .. string.format("%.1f", perf.corpsesPerMinute))
                     ImGui.Text("Items/Minute: " .. string.format("%.1f", perf.itemsPerMinute))
                     ImGui.Unindent()
-                    
+
                     ImGui.Separator()
-                    
+
                     ImGui.Text("Session Statistics:")
                     ImGui.Indent()
                     ImGui.Text("Corpses Processed: " .. state.stats.corpsesProcessed)
@@ -1127,9 +1101,9 @@ mq.imgui.init("SmartLoot", function()
                     ImGui.Text("Decisions Required: " .. state.stats.decisionsRequired)
                     ImGui.Text("Emergency Stops: " .. state.stats.emergencyStops)
                     ImGui.Unindent()
-                    
+
                     ImGui.Separator()
-                    
+
                     if ImGui.Button("Reset Processed Corpses") then
                         SmartLootEngine.resetProcessedCorpses()
                     end
@@ -1141,16 +1115,16 @@ mq.imgui.init("SmartLoot", function()
                     if ImGui.Button("Resume") then
                         SmartLootEngine.resume()
                     end
-                    
+
                     ImGui.Separator()
-                    
+
                     if ImGui.Button("Open Debug Window") then
                         lootUI.showDebugWindow = true
                         lootUI.forceDebugWindowVisible = true
                     end
-                    
+
                     ImGui.Separator()
-                    
+
                     if ImGui.Button("Open Live Stats") then
                         if uiLiveStats then
                             uiLiveStats.setVisible(true)
@@ -1162,9 +1136,9 @@ mq.imgui.init("SmartLoot", function()
                             uiLiveStats.toggle()
                         end
                     end
-                    
+
                     ImGui.Separator()
-                    
+
                     -- NEW: Add bindings information to Engine Stats tab
                     ImGui.Text("Command Bindings:")
                     if ImGui.Button("List All Commands") then
@@ -1178,15 +1152,15 @@ mq.imgui.init("SmartLoot", function()
                             mq.cmd("/sl_help")
                         end
                     end
-                    
+
                     ImGui.EndTabItem()
                 end]]
-                
+
                 ImGui.EndTabBar()
             end
         end
         ImGui.End()
-        
+
         if not open and lootUI.showUI then
             lootUI.showUI = false
         end
@@ -1195,8 +1169,8 @@ mq.imgui.init("SmartLoot", function()
     -- UI Components
     if lootUI.useFloatingButton then
         if uiFloatingButton and uiFloatingButton.draw then
-            uiFloatingButton.draw(lootUI, settings, function() 
-                lootUI.showUI = not lootUI.showUI 
+            uiFloatingButton.draw(lootUI, settings, function()
+                lootUI.showUI = not lootUI.showUI
                 if lootUI.showUI then
                     lootUI.forceWindowVisible = true
                     lootUI.forceWindowUncollapsed = true
@@ -1206,7 +1180,7 @@ mq.imgui.init("SmartLoot", function()
     end
 
     if uiHotbar and uiHotbar.draw then
-        uiHotbar.draw(lootUI, settings, function() 
+        uiHotbar.draw(lootUI, settings, function()
             lootUI.showUI = not lootUI.showUI
             if lootUI.showUI then
                 lootUI.forceWindowVisible = true
@@ -1231,21 +1205,21 @@ mq.imgui.init("SmartLoot", function()
         uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
         uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
     end
-    
+
     if lootUI.showPeerCommands and uiPeerCommands then
         uiPeerCommands.draw(lootUI, nil, util)
     end
-    
+
     -- Log window UI not implemented yet
     -- if uiLogWindow then
     --     uiLogWindow.draw(settings, logging)
     -- end
-    
+
     -- Live stats window
     if uiLiveStats then
         local liveStatsConfig = {
-            getConnectedPeers = function() 
-                return util.getConnectedPeers() 
+            getConnectedPeers = function()
+                return util.getConnectedPeers()
             end,
             isDatabaseConnected = function()
                 return dbInitialized
@@ -1263,12 +1237,12 @@ mq.imgui.init("SmartLoot", function()
         }
         uiLiveStats.draw(SmartLootEngine, liveStatsConfig)
     end
-    
+
     -- Debug window
     if lootUI.showDebugWindow and uiDebugWindow then
         uiDebugWindow.draw(SmartLootEngine, lootUI)
     end
-    
+
     -- Help window
     if uiHelp then
         uiHelp.render()
@@ -1293,7 +1267,7 @@ end
 -- STARTUP COMPLETE
 -- ============================================================================
 
--- Add live stats configuration to the main settings 
+-- Add live stats configuration to the main settings
 local liveStatsSettings = {
     show = true,
     compactMode = false,
@@ -1325,7 +1299,7 @@ if dbInitialized then
     SmartLootEngine.config.pendingDecisionTimeoutMs = settings.pendingDecisionTimeout
     SmartLootEngine.config.defaultUnknownItemAction = settings.defaultUnknownItemAction
     logging.log("[SmartLoot] Pending decision timeout set to: " .. (settings.pendingDecisionTimeout / 1000) .. " seconds")
-    
+
     -- Sync timing settings from persistent config to engine
     config.syncTimingToEngine()
     logging.log("[SmartLoot] Timing settings loaded from persistent config")
@@ -1341,16 +1315,16 @@ end
 local function processMainTick()
     -- CORE ENGINE PROCESSING - This drives everything
     SmartLootEngine.processTick()
-    
+
     -- BRIDGE: Handle engine -> UI communication
     handleEnginePendingDecision()
-    
-    -- BRIDGE: Handle UI -> engine communication  
+
+    -- BRIDGE: Handle UI -> engine communication
     processUIDecisionForEngine()
-    
+
     -- PEER MONITORING: Check for peer connection changes and auto-adjust mode
     modeHandler.checkPeerChanges()
-    
+
     -- Zone change detection
     checkForZoneChange()
 end
@@ -1359,12 +1333,12 @@ end
 local mainTimer = mq.gettime()
 while true do
     mq.doevents()
-    
+
     local now = mq.gettime()
     if now >= mainTimer then
         processMainTick()
-        mainTimer = now + 50  -- Process every 50ms
+        mainTimer = now + 50 -- Process every 50ms
     end
-    
-    mq.delay(10)  -- Small delay to prevent 100% CPU usage
+
+    mq.delay(10) -- Small delay to prevent 100% CPU usage
 end

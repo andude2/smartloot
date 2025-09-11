@@ -23,23 +23,18 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
         return
     end
 
-    -- Controls row
-    ImGui.Text("Scope:")
-    ImGui.SameLine()
-    local currentScope = popup.scope or "all"
-    if ImGui.BeginCombo("##sl_report_scope", currentScope == "me" and "Me" or "All") then
-        if ImGui.Selectable("All", currentScope == "all") then popup.scope = "all"; popup.needsFetch = true end
-        if ImGui.Selectable("Me", currentScope == "me") then popup.scope = "me"; popup.needsFetch = true end
-        ImGui.EndCombo()
+    local s = SmartLootEngine.stats or {}
+    local minutes = 0
+    if s.sessionStartUnix and type(s.sessionStartUnix) == 'number' then
+        minutes = math.floor(math.max(0, os.difftime(os.time(), s.sessionStartUnix)) / 60)
     end
-
-    ImGui.SameLine()
-    if ImGui.Button("Refresh") then popup.needsFetch = true end
 
     -- Info line
     local startIso = (SmartLootEngine.stats and SmartLootEngine.stats.sessionStartIsoUtc) or os.date("!%Y-%m-%d %H:%M:%S")
     ImGui.SameLine()
     ImGui.TextColored(0.8, 0.8, 0.8, 1, string.format("Since %s UTC", startIso))
+    ImGui.SameLine()
+    ImGui.Text(string.format("Session Length: %d min", minutes))
 
     ImGui.Separator()
 
@@ -61,13 +56,21 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
     end
 
     -- Summary
-    local s = SmartLootEngine.stats or {}
-    local minutes = 0
-    if s.sessionStartUnix and type(s.sessionStartUnix) == 'number' then
-        minutes = math.floor(math.max(0, os.difftime(os.time(), s.sessionStartUnix)) / 60)
+    ImGui.Text("Scope:")
+    ImGui.SameLine()
+    local currentScope = popup.scope or "all"
+    if ImGui.BeginCombo("##sl_report_scope", currentScope == "me" and "Me" or "All", ImGuiComboFlags.WidthFitPreview) then
+        if ImGui.Selectable("All", currentScope == "all") then popup.scope = "all"; popup.needsFetch = true end
+        if ImGui.Selectable("Me", currentScope == "me") then popup.scope = "me"; popup.needsFetch = true end
+        ImGui.EndCombo()
     end
+
+    ImGui.SameLine()
+    if ImGui.Button("Refresh") then popup.needsFetch = true end
+
+    ImGui.SameLine()
+
     ImGui.Text(string.format("Items Looted: %d | Corpses: %d", s.itemsLooted or 0, s.corpsesProcessed or 0))
-    ImGui.Text(string.format("Session Length: %d min", minutes))
 
     ImGui.Spacing()
 

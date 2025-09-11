@@ -165,6 +165,7 @@ SmartLootEngine.state = {
     lootActionStartTime = 0,
     lootActionType = SmartLootEngine.LootAction.None,
     lootActionTimeoutMs = 5000,
+    lootRetryCount = 0,
 
     -- Decision state
     needsPendingDecision = false,
@@ -261,7 +262,11 @@ SmartLootEngine.config = {
 
     -- Corpse scanning settings
     maxCorpseSlots = 30,
-    emptySlotThreshold = 3
+    emptySlotThreshold = 3,
+
+    -- Loot action settings
+    maxLootRetries = 3,
+    lootRetryIntervalMs = 400,
 }
 
 -- ============================================================================
@@ -324,6 +329,15 @@ end
 
 local function scheduleNextTick(delayMs)
     SmartLootEngine.state.nextActionTime = mq.gettime() + (delayMs or SmartLootEngine.config.tickIntervalMs)
+end
+
+local function isCorpseSlotCleared(slot, originalName)
+    if not SmartLootEngine.isLootWindowOpen() then return true end
+
+    local item = SmartLootEngine.getCorpseItem(slot)
+    if not item then return true end                    -- slot empty now
+    if item.name ~= originalName then return true end   -- corpse collapsed/shuffled
+    return false
 end
 
 local function resetCurrentItem()
@@ -1133,6 +1147,7 @@ function SmartLootEngine.executeLootAction(action, itemSlot, itemName, itemID, i
     SmartLootEngine.state.lootActionInProgress = true
     SmartLootEngine.state.lootActionStartTime = mq.gettime()
     SmartLootEngine.state.lootActionType = action
+    SmartLootEngine.state.lootRetryCount = 0
 
     if action == SmartLootEngine.LootAction.Loot then
         -- Use shift+click for stacked items
@@ -1158,55 +1173,71 @@ function SmartLootEngine.checkLootActionCompletion()
         return false
     end
 
-    local now = mq.gettime()
-    local elapsed = now - SmartLootEngine.state.lootActionStartTime
-    local action = SmartLootEngine.state.lootActionType
-    local itemName = SmartLootEngine.state.currentItem.name
-    local itemSlot = SmartLootEngine.state.currentItem.slot
+    local now      = mq.gettime()
+    local elapsed  = now - SmartLootEngine.state.lootActionStartTime
+    local action   = SmartLootEngine.state.lootActionType
+    local item     = SmartLootEngine.state.currentItem
+    local itemSlot = item.slot
 
-    -- Check if item was removed from corpse
-    local currentItem = SmartLootEngine.getCorpseItem(itemSlot)
-    local itemWasRemoved = not currentItem or currentItem.name ~= itemName
+    local slotCleared    = isCorpseSlotCleared(itemSlot, item.name)
+    local itemOnCursor   = SmartLootEngine.isItemOnCursor()
 
-    -- Check if item is on cursor
-    local itemOnCursor = SmartLootEngine.isItemOnCursor()
-
-    -- Handle successful loot action
-    if itemWasRemoved or itemOnCursor then
+    -- SUCCESS: item left corpse (slot cleared or shuffled), or it is on cursor
+    if slotCleared or itemOnCursor then
         SmartLootEngine.state.lootActionInProgress = false
 
         if action == SmartLootEngine.LootAction.Destroy and itemOnCursor then
-            -- Destroy the item
             mq.cmd("/destroy")
-            SmartLootEngine.recordLootAction("Destroyed", itemName,
-                SmartLootEngine.state.currentItem.itemID,
-                SmartLootEngine.state.currentItem.iconID,
-                SmartLootEngine.state.currentItem.quantity)
+            SmartLootEngine.recordLootAction("Destroyed", item.name, item.itemID, item.iconID, item.quantity)
             SmartLootEngine.stats.itemsDestroyed = SmartLootEngine.stats.itemsDestroyed + 1
+
         elseif action == SmartLootEngine.LootAction.Loot then
-            -- Auto-inventory the item
             if SmartLootEngine.config.autoInventoryOnLoot then
                 for i = 1, 3 do
                     mq.cmd("/autoinv")
                     mq.delay(5)
-                    if not SmartLootEngine.isItemOnCursor() then
-                        break
-                    end
+                    if not SmartLootEngine.isItemOnCursor() then break end
                 end
             end
-
-            SmartLootEngine.recordLootAction("Looted", itemName,
-                SmartLootEngine.state.currentItem.itemID,
-                SmartLootEngine.state.currentItem.iconID,
-                SmartLootEngine.state.currentItem.quantity)
+            SmartLootEngine.recordLootAction("Looted", item.name, item.itemID, item.iconID, item.quantity)
             SmartLootEngine.stats.itemsLooted = SmartLootEngine.stats.itemsLooted + 1
         end
 
-        logging.debug(string.format("[Engine] Loot action completed for %s in %dms", itemName, elapsed))
+        logging.debug(string.format("[Engine] Loot action completed for %s in %dms", item.name, elapsed))
         return true
-    elseif elapsed > SmartLootEngine.state.lootActionTimeoutMs then
-        -- Action timed out
-        logging.debug(string.format("[Engine] Loot action for %s timed out after %dms", itemName, elapsed))
+    end
+
+    -- RETRY PATH: for Loot/Destroy, if slot still shows the same item, re-click before timeout
+    local isRetryable = (action == SmartLootEngine.LootAction.Loot) or (action == SmartLootEngine.LootAction.Destroy)
+    if isRetryable and not slotCleared then
+        if SmartLootEngine.state.lootRetryCount < SmartLootEngine.config.maxLootRetries then
+            -- space attempts across time
+            local due = (SmartLootEngine.state.lootRetryCount + 1) * SmartLootEngine.config.lootRetryIntervalMs
+            if elapsed >= due then
+                SmartLootEngine.state.lootRetryCount = SmartLootEngine.state.lootRetryCount + 1
+                logging.debug(string.format(
+                    "[Engine] Reattempting %s for %s (retry %d/%d)",
+                    getActionName(action), item.name,
+                    SmartLootEngine.state.lootRetryCount, SmartLootEngine.config.maxLootRetries
+                ))
+
+                -- Re-click without resetting timers/flags
+                if action == SmartLootEngine.LootAction.Loot then
+                    if (item.quantity or 1) > 1 then
+                        mq.cmdf("/nomodkey /shift /itemnotify loot%d rightmouseup", itemSlot)
+                    else
+                        mq.cmdf("/nomodkey /shift /itemnotify loot%d leftmouseup", itemSlot)
+                    end
+                else -- Destroy
+                    mq.cmdf("/nomodkey /shift /itemnotify loot%d leftmouseup", itemSlot)
+                end
+            end
+        end
+    end
+
+    -- TIMEOUT: give up and count a failure
+    if elapsed > SmartLootEngine.state.lootActionTimeoutMs then
+        logging.debug(string.format("[Engine] Loot action for %s timed out after %dms", item.name, elapsed))
         SmartLootEngine.state.lootActionInProgress = false
         SmartLootEngine.stats.lootActionFailures = SmartLootEngine.stats.lootActionFailures + 1
         return true
