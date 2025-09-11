@@ -456,6 +456,193 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
 end)
 
 -- ============================================================================
+-- COMMAND MAILBOX (EZInventory-style targeted commands)
+-- ============================================================================
+
+local smartlootCommandMailbox = actors.register("smartloot_command", function(message)
+    local content = message()
+    if type(content) ~= "table" then return end
+    if content.type ~= "command" then return end
+
+    local myName = mq.TLO.Me.Name()
+    local target = content.target
+    if target and myName and target ~= myName then
+        -- Not for me
+        return
+    end
+
+    local cmd = content.command or ""
+    local args = content.args or {}
+
+    if cmd == "reload_rules" then
+        database.refreshLootRuleCache()
+        database.clearPeerRuleCache()
+        local currentToon = mq.TLO.Me.Name()
+        if currentToon then
+            database.refreshLootRuleCacheForPeer(currentToon)
+        end
+        util.printSmartLoot("Rules reloaded via command mailbox", "info")
+    elseif cmd == "start_once" then
+        SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Once, "Command mailbox")
+        util.printSmartLoot("Starting Once via command mailbox", "info")
+    elseif cmd == "start_rgonce" then
+        SmartLootEngine.setLootMode(SmartLootEngine.LootMode.RGOnce, "Command mailbox")
+        util.printSmartLoot("Starting RGOnce via command mailbox", "info")
+    elseif cmd == "pause" then
+        local action = args.action or "toggle"
+        if action == "on" then
+            SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Disabled, "Paused by command")
+            util.printSmartLoot("Paused via command mailbox", "warning")
+        elseif action == "off" then
+            SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Background, "Resumed by command")
+            util.printSmartLoot("Resumed via command mailbox", "success")
+        else
+            local currentMode = SmartLootEngine.getLootMode()
+            if currentMode == SmartLootEngine.LootMode.Disabled then
+                SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Background, "Toggled by command")
+                util.printSmartLoot("Resumed via command mailbox", "success")
+            else
+                SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Disabled, "Toggled by command")
+                util.printSmartLoot("Paused via command mailbox", "warning")
+            end
+        end
+    end
+end)
+
+if smartlootCommandMailbox then
+    logging.log("[SmartLoot] Command mailbox registered: smartloot_command")
+else
+    logging.log("[SmartLoot] smartloot_command mailbox already in use or failed to register")
+end
+
+-- ============================================================================
+-- LOOT STATUS PRESENCE (Mailbox-based, no globals)
+-- ============================================================================
+
+local LOOT_STATUS = {
+    mailbox_name = "smartloot_loot_status",
+    actor = nil,
+    peers = {},                 -- [peerName] = { isLooting=bool, lastSeen=os.time(), mode="once|rgonce" }
+    lastHeartbeatSent = 0,
+    heartbeatInterval = 5,      -- seconds
+    staleAfter = 12,            -- seconds (2x heartbeat)
+    lastPrune = 0,
+}
+
+local function _safeLower(s)
+    if type(s) ~= "string" then return "" end
+    return s:lower()
+end
+
+local function handleLootStatusMessage(message)
+    local msg = message()
+    if type(msg) ~= "table" then return end
+
+    local sender = msg.character or msg.sender or "Unknown"
+    local myName = mq.TLO.Me.Name()
+    if sender and myName and _safeLower(sender) == _safeLower(myName) then
+        -- Ignore our own broadcast
+        return
+    end
+
+    local now = os.time()
+    local cmd = msg.cmd or ""
+    local mode = msg.mode or ""
+    local entry = LOOT_STATUS.peers[sender] or {}
+
+    if cmd == "looting_start" or cmd == "looting_heartbeat" then
+        entry.isLooting = (mode == "once" or mode == "rgonce")
+        entry.mode = mode
+        entry.lastSeen = now
+        LOOT_STATUS.peers[sender] = entry
+    elseif cmd == "looting_stop" then
+        entry.isLooting = false
+        entry.mode = mode
+        entry.lastSeen = now
+        LOOT_STATUS.peers[sender] = entry
+    end
+end
+
+-- Register mailbox to receive peer looting presence
+local ok_mailbox
+ok_mailbox, LOOT_STATUS.actor = pcall(function()
+    return actors.register(LOOT_STATUS.mailbox_name, handleLootStatusMessage)
+end)
+if not ok_mailbox or not LOOT_STATUS.actor then
+    logging.log(string.format("[SmartLoot] Failed to register mailbox %s (presence tracker)", LOOT_STATUS.mailbox_name))
+else
+    logging.log(string.format("[SmartLoot] Presence mailbox registered: %s", LOOT_STATUS.mailbox_name))
+end
+
+-- Mode transition + heartbeat publisher
+local _lastPublishedMode = nil
+local function publishLootStatusTick()
+    local mode = SmartLootEngine.getLootMode()
+    local myName = mq.TLO.Me.Name()
+    local now = os.time()
+
+    local inActive = (mode == SmartLootEngine.LootMode.Once or mode == SmartLootEngine.LootMode.RGOnce)
+    local lastWasActive = (_lastPublishedMode == "once" or _lastPublishedMode == "rgonce")
+
+    local function _send(msg)
+        -- Prefer actor handle if registered, fall back to global send
+        if LOOT_STATUS.actor then
+            LOOT_STATUS.actor:send({ mailbox = LOOT_STATUS.mailbox_name }, msg)
+        else
+            actors.send({ mailbox = LOOT_STATUS.mailbox_name }, msg)
+        end
+    end
+
+    -- Entering once/rgonce: announce start immediately
+    if inActive and not lastWasActive then
+        _send({
+            cmd = "looting_start",
+            character = myName,
+            mode = mode,
+            timestamp = now,
+        })
+        LOOT_STATUS.lastHeartbeatSent = 0 -- force heartbeat soon after
+    end
+
+    -- Heartbeat while active
+    if inActive and (now - (LOOT_STATUS.lastHeartbeatSent or 0) >= LOOT_STATUS.heartbeatInterval) then
+        _send({
+            cmd = "looting_heartbeat",
+            character = myName,
+            mode = mode,
+            timestamp = now,
+        })
+        LOOT_STATUS.lastHeartbeatSent = now
+    end
+
+    -- Exiting once/rgonce: announce stop
+    if (not inActive) and lastWasActive then
+        _send({
+            cmd = "looting_stop",
+            character = myName,
+            mode = _lastPublishedMode,
+            timestamp = now,
+        })
+    end
+
+    _lastPublishedMode = mode
+end
+
+-- Prune stale peer entries
+local function pruneStalePeerLootStatus()
+    local now = os.time()
+    if now - (LOOT_STATUS.lastPrune or 0) < 3 then return end
+    LOOT_STATUS.lastPrune = now
+
+    for name, entry in pairs(LOOT_STATUS.peers) do
+        local last = entry.lastSeen or 0
+        if (now - last) > LOOT_STATUS.staleAfter then
+            LOOT_STATUS.peers[name] = nil
+        end
+    end
+end
+
+-- ============================================================================
 -- TLO (Top Level Object)
 -- ============================================================================
 
@@ -693,6 +880,36 @@ local smartLootType = mq.DataType.new('SmartLoot', {
             for _, stateName in ipairs(safeStates) do
                 if state.currentStateName == stateName then
                     return 'bool', true
+                end
+            end
+            return 'bool', false
+        end,
+
+        -- Peer looting presence (Actor Mailbox-based)
+        PeerLooting = function(_, self, peerName)
+            if not peerName or peerName == "" then return 'bool', false end
+            local me = mq.TLO.Me.Name()
+            if me and _safeLower(peerName) == _safeLower(me) then
+                return 'bool', false
+            end
+            local entry = LOOT_STATUS and LOOT_STATUS.peers and LOOT_STATUS.peers[peerName]
+            if not entry then return 'bool', false end
+            local now = os.time()
+            if entry.lastSeen and (now - entry.lastSeen) > (LOOT_STATUS.staleAfter or 12) then
+                return 'bool', false
+            end
+            return 'bool', entry.isLooting == true
+        end,
+
+        AnyPeerLooting = function(_, self)
+            local me = mq.TLO.Me.Name()
+            local now = os.time()
+            if not LOOT_STATUS or not LOOT_STATUS.peers then return 'bool', false end
+            for name, entry in pairs(LOOT_STATUS.peers) do
+                if not me or _safeLower(name) ~= _safeLower(me) then
+                    if entry.isLooting and entry.lastSeen and (now - entry.lastSeen) <= (LOOT_STATUS.staleAfter or 12) then
+                        return 'bool', true
+                    end
                 end
             end
             return 'bool', false
@@ -1321,6 +1538,10 @@ local function processMainTick()
 
     -- BRIDGE: Handle UI -> engine communication
     processUIDecisionForEngine()
+
+    -- Publish our looting presence and maintain peer table
+    publishLootStatusTick()
+    pruneStalePeerLootStatus()
 
     -- PEER MONITORING: Check for peer connection changes and auto-adjust mode
     modeHandler.checkPeerChanges()

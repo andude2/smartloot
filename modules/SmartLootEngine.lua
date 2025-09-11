@@ -1464,15 +1464,30 @@ function SmartLootEngine.triggerPeerForItem(itemName, itemID)
 
     -- Register with waterfall tracker BEFORE triggering
     local peerRegistered = waterfallTracker.onPeerTriggered(interestedPeer)
-    util.sendPeerCommand(interestedPeer, "/sl_rulescache")
 
-    mq.delay(100) -- optional: slight delay to let cache refresh
+    -- Request peer to refresh rules then start once via targeted command mailbox
+    local cmdTarget = interestedPeer
 
-    -- Send peer command using centralized utility function
-    if util.sendPeerCommand(interestedPeer, "/sl_doloot") then
-        logging.debug(string.format("[Engine] Successfully sent loot command to %s", interestedPeer))
+    local okReload = pcall(function()
+        actors.send(
+            { mailbox = "smartloot_command" },
+            { type = "command", command = "reload_rules", args = {}, target = cmdTarget }
+        )
+    end)
+
+    mq.delay(100) -- slight delay to let cache refresh
+
+    local okStart = pcall(function()
+        actors.send(
+            { mailbox = "smartloot_command" },
+            { type = "command", command = "start_once", args = {}, target = cmdTarget }
+        )
+    end)
+
+    if okStart then
+        logging.debug(string.format("[Engine] Sent command start_once to %s via smartloot_command", interestedPeer))
     else
-        logging.debug(string.format("[Engine] Failed to send loot command to %s", interestedPeer))
+        logging.debug(string.format("[Engine] Failed to send start_once command to %s", interestedPeer))
     end
 
     -- Send chat announcement about triggering peer
