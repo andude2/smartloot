@@ -107,6 +107,7 @@ SmartLootEngine.LootMode = {
     Background = "background",
     RGMain = "rgmain",
     RGOnce = "rgonce",
+    Directed = "directed",
     CombatLoot = "combatloot",
     Disabled = "disabled"
 }
@@ -197,6 +198,21 @@ SmartLootEngine.state = {
     rgMainPeerCompletions = {}, -- peer_name -> { completed = bool, timestamp = number }
     rgMainSessionId = nil,
     rgMainSessionStartTime = 0,
+
+    -- Directed Mode (main looter collection and peer task processing)
+    directed = {
+        enabled = false,                    -- true when mode is Directed
+        candidates = {},                    -- items left/ignored to assign later
+        showAssignmentUI = false            -- UI should present assignment window
+    },
+    directedTasksQueue = {},               -- queue of tasks for this character
+    directedProcessing = {                 -- lightweight processor state
+        active = false,
+        step = "idle",
+        currentTask = nil,
+        navStartTime = 0,
+        navMethod = nil,
+    },
 
     -- Emergency state
     emergencyStop = false,
@@ -294,6 +310,288 @@ SmartLootEngine.stats = {
 -- ============================================================================
 -- UTILITY FUNCTIONS
 -- ============================================================================
+
+-- ============================================================================
+-- DIRECTED MODE SUPPORT (helpers and API)
+-- ============================================================================
+
+-- Local scheduler that doesn't depend on outer local function resolution
+local function _dirScheduleNextTick(delayMs)
+    SmartLootEngine.state.nextActionTime = mq.gettime() + (delayMs or SmartLootEngine.config.tickIntervalMs)
+end
+
+function SmartLootEngine._addDirectedCandidate(entry)
+    table.insert(SmartLootEngine.state.directed.candidates, entry)
+end
+
+function SmartLootEngine.addDirectedCandidate(itemName, itemID, iconID, quantity, corpseSpawnID, corpseName)
+    if SmartLootEngine.state.mode ~= SmartLootEngine.LootMode.Directed then return end
+    local zoneName = mq.TLO.Zone.Name() or "Unknown"
+    SmartLootEngine._addDirectedCandidate({
+        corpseSpawnID = corpseSpawnID or 0,
+        corpseID = corpseSpawnID or 0,
+        corpseName = corpseName or "",
+        zone = zoneName,
+        itemName = itemName,
+        itemID = itemID or 0,
+        iconID = iconID or 0,
+        quantity = quantity or 1,
+    })
+end
+
+function SmartLootEngine.getDirectedCandidates()
+    return SmartLootEngine.state.directed.candidates or {}
+end
+
+function SmartLootEngine.clearDirectedCandidates()
+    SmartLootEngine.state.directed.candidates = {}
+end
+
+function SmartLootEngine.shouldShowDirectedAssignment()
+    return SmartLootEngine.state.directed.showAssignmentUI == true
+end
+
+function SmartLootEngine.setDirectedAssignmentVisible(visible)
+    SmartLootEngine.state.directed.showAssignmentUI = visible and true or false
+end
+
+function SmartLootEngine.enqueueDirectedTasks(tasks)
+    if type(tasks) ~= "table" then 
+        logging.debug("[Directed] Invalid tasks parameter - not a table")
+        util.printSmartLoot("Directed: invalid tasks payload", "error")
+        return 
+    end
+    
+    local validTasks = 0
+    for _, t in ipairs(tasks) do
+        if type(t) == "table" and t.itemName and t.itemName ~= "" then
+            table.insert(SmartLootEngine.state.directedTasksQueue, {
+                corpseSpawnID = tonumber(t.corpseSpawnID) or tonumber(t.corpseID) or 0,
+                itemName = tostring(t.itemName),
+                itemID = tonumber(t.itemID) or 0,
+                iconID = tonumber(t.iconID) or 0,
+                quantity = math.max(1, tonumber(t.quantity) or 1),
+            })
+            validTasks = validTasks + 1
+        else
+            logging.debug("[Directed] Skipped invalid task: " .. tostring(t and t.itemName or "unknown"))
+        end
+    end
+    
+    if validTasks > 0 then
+        SmartLootEngine.state.directedProcessing.active = true
+        SmartLootEngine.state.directedProcessing.step = "idle"
+        util.printSmartLoot(string.format("Directed: enqueued %d task(s)", validTasks), "info")
+        logging.debug(string.format("[Directed] Enqueued %d valid tasks", validTasks))
+    else
+        logging.debug("[Directed] No valid tasks to enqueue")
+        util.printSmartLoot("Directed: no valid tasks in payload", "warning")
+    end
+end
+
+function SmartLootEngine.startDirectedTaskProcessing()
+    if #SmartLootEngine.state.directedTasksQueue > 0 then
+        SmartLootEngine.state.directedProcessing.active = true
+        SmartLootEngine.state.directedProcessing.step = "idle"
+    end
+end
+
+local function _beginNextDirectedTask()
+    SmartLootEngine.state.directedProcessing.currentTask = table.remove(SmartLootEngine.state.directedTasksQueue, 1)
+    SmartLootEngine.state.directedProcessing.step = SmartLootEngine.state.directedProcessing.currentTask and "navigating" or "idle"
+    if SmartLootEngine.state.directedProcessing.currentTask then
+        local t = SmartLootEngine.state.directedProcessing.currentTask
+        util.printSmartLoot(string.format("Directed: starting task for %s at corpse %d", t.itemName or "?", t.corpseSpawnID or 0), "info")
+        SmartLootEngine.state.navStartTime = mq.gettime()
+        SmartLootEngine.state.directedProcessing.navStartTime = SmartLootEngine.state.navStartTime
+        SmartLootEngine.state.directedProcessing.navMethod = smartNavigate(t.corpseSpawnID, "directed task")
+    else
+        util.printSmartLoot("Directed: no more tasks in queue", "info")
+    end
+end
+
+function SmartLootEngine.processDirectedTasksTick()
+    if not SmartLootEngine.state.directedProcessing or not SmartLootEngine.state.directedProcessing.active then 
+        return false 
+    end
+
+    -- Safety check for task queue
+    if not SmartLootEngine.state.directedTasksQueue then
+        SmartLootEngine.state.directedTasksQueue = {}
+        SmartLootEngine.state.directedProcessing.active = false
+        return false
+    end
+
+    -- If nothing queued, deactivate and allow normal engine
+    if not SmartLootEngine.state.directedProcessing.currentTask and (#SmartLootEngine.state.directedTasksQueue == 0) then
+        SmartLootEngine.state.directedProcessing.active = false
+        SmartLootEngine.state.directedProcessing.step = "idle"
+        return false
+    end
+
+    -- Start a new task if needed
+    if not SmartLootEngine.state.directedProcessing.currentTask then
+        _beginNextDirectedTask()
+        _dirScheduleNextTick(SmartLootEngine.config.navRetryDelayMs)
+        return true
+    end
+
+    local task = SmartLootEngine.state.directedProcessing.currentTask
+    if not task then
+        logging.debug("[Directed] No current task - deactivating")
+        SmartLootEngine.state.directedProcessing.active = false
+        return false
+    end
+    
+    -- Safely check corpse
+    local corpse = nil
+    local corpseExists = false
+    
+    local ok, result = pcall(function()
+        corpse = mq.TLO.Spawn(task.corpseSpawnID)
+        return corpse and corpse()
+    end)
+    
+    corpseExists = ok and result
+    
+    -- If corpse disappeared or can't be accessed, skip task
+    if not corpseExists then
+        logging.debug(string.format("[Directed] Corpse %d not found - skipping task for %s", task.corpseSpawnID or 0, task.itemName or "unknown"))
+        SmartLootEngine.state.directedProcessing.currentTask = nil
+        _beginNextDirectedTask()
+        _dirScheduleNextTick(50)
+        return true
+    end
+
+    if SmartLootEngine.state.directedProcessing.step == "navigating" then
+        local distance = corpse.Distance() or 999
+
+        -- If we're very close (<= lootRange), proceed to opening
+        if distance <= (SmartLootEngine.config.lootRange or 15) then
+            stopMovement()
+            util.printSmartLoot("Directed: reached corpse, opening loot window", "info")
+            SmartLootEngine.state.directedProcessing.step = "opening"
+            _dirScheduleNextTick(150)
+            return true
+        end
+
+        -- Fallback: if navigation has stopped but we're within a reasonable radius, try to open anyway
+        local navActive = false
+        local okNav, active = pcall(function() return mq.TLO.Navigation.Active() end)
+        if okNav then navActive = active end
+        local openRadius = (SmartLootEngine.config.lootRange or 15) + (SmartLootEngine.config.lootRangeTolerance or 2) + 20 -- generous buffer
+        if (not navActive) and distance <= openRadius then
+            util.printSmartLoot(string.format("Directed: nav complete at distance %.1f - attempting to open loot", distance), "info")
+            SmartLootEngine.state.directedProcessing.step = "opening"
+            _dirScheduleNextTick(150)
+            return true
+        end
+
+        -- Timeout check
+        local navElapsed = mq.gettime() - (SmartLootEngine.state.directedProcessing.navStartTime or mq.gettime())
+        if navElapsed > SmartLootEngine.config.maxNavTimeMs then
+            logging.debug("[Directed] Navigation timeout - skipping task")
+            stopMovement()
+            SmartLootEngine.state.directedProcessing.currentTask = nil
+            _beginNextDirectedTask()
+            _dirScheduleNextTick(100)
+            return true
+        end
+        _dirScheduleNextTick(SmartLootEngine.config.navRetryDelayMs)
+        return true
+    end
+
+    if SmartLootEngine.state.directedProcessing.step == "opening" then
+        -- Target then open loot window
+        mq.cmdf("/target id %d", task.corpseSpawnID)
+        
+        -- If window not open, try to open explicitly
+        if not SmartLootEngine.isLootWindowOpen() then
+            mq.cmd("/loot")
+            _dirScheduleNextTick(150)
+            -- After a short delay, loop will re-check
+            return true
+        end
+        
+        if SmartLootEngine.isLootWindowOpen() then
+            -- Prepare engine corpse context for logging/history
+            SmartLootEngine.state.currentCorpseID = task.corpseSpawnID
+            SmartLootEngine.state.currentCorpseSpawnID = task.corpseSpawnID
+            SmartLootEngine.state.currentCorpseName = corpse.Name() or ""
+            SmartLootEngine.state.currentCorpseDistance = corpse.Distance() or 0
+            SmartLootEngine.state.currentItemIndex = 1
+
+            -- Find the target item on the corpse by ID first then name
+            local itemCount = SmartLootEngine.getCorpseItemCount()
+            local targetSlot = nil
+            local foundItemInfo = nil
+            for i = 1, itemCount do
+                local it = SmartLootEngine.getCorpseItem(i)
+                if it then
+                    if (task.itemID and task.itemID > 0 and it.itemID == task.itemID) or (it.name == task.itemName) then
+                        targetSlot = i
+                        foundItemInfo = it
+                        break
+                    end
+                end
+            end
+
+            if not targetSlot then
+                util.printSmartLoot(string.format("Directed: item '%s' not found on corpse %d - skipping", task.itemName or "?", task.corpseSpawnID or 0), "warning")
+                SmartLootEngine.state.directedProcessing.currentTask = nil
+                _beginNextDirectedTask()
+                _dirScheduleNextTick(50)
+                return true
+            end
+
+            -- Configure currentItem and execute loot
+            SmartLootEngine.state.currentItem.name = foundItemInfo.name
+            SmartLootEngine.state.currentItem.itemID = foundItemInfo.itemID
+            SmartLootEngine.state.currentItem.iconID = foundItemInfo.iconID
+            SmartLootEngine.state.currentItem.quantity = foundItemInfo.quantity
+            SmartLootEngine.state.currentItem.slot = targetSlot
+            SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Loot
+
+            SmartLootEngine.state.directedProcessing.step = "looting"
+            util.printSmartLoot(string.format("Directed: looting '%s' from slot %d", foundItemInfo.name or "?", targetSlot), "info")
+            if SmartLootEngine.executeLootAction(SmartLootEngine.LootAction.Loot, targetSlot, foundItemInfo.name, foundItemInfo.itemID, foundItemInfo.iconID, foundItemInfo.quantity) then
+                _dirScheduleNextTick(SmartLootEngine.config.lootActionDelayMs)
+            else
+                -- Couldn't start action, skip
+                util.printSmartLoot("Directed: failed to start loot action - skipping task", "warning")
+                SmartLootEngine.state.directedProcessing.currentTask = nil
+                _beginNextDirectedTask()
+                _dirScheduleNextTick(50)
+            end
+            return true
+        else
+            mq.cmd("/loot")
+            scheduleNextTick(200)
+            return true
+        end
+    end
+
+    if SmartLootEngine.state.directedProcessing.step == "looting" then
+        if SmartLootEngine.checkLootActionCompletion() then
+            -- Done with this task
+            -- Close loot window if open
+            if SmartLootEngine.isLootWindowOpen() then
+                mq.cmd("/notify LootWnd DoneButton leftmouseup")
+            end
+            util.printSmartLoot("Directed: task complete", "success")
+            SmartLootEngine.state.directedProcessing.currentTask = nil
+            _beginNextDirectedTask()
+            _dirScheduleNextTick(100)
+            return true
+        end
+        scheduleNextTick(25)
+        return true
+    end
+
+    -- Fallback
+    scheduleNextTick(50)
+    return true
+end
 
 local function getStateName(state)
     for name, value in pairs(SmartLootEngine.LootState) do
@@ -1572,6 +1870,7 @@ function SmartLootEngine.processIdleState()
     -- Check if we should transition to active looting
     if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Main or
         SmartLootEngine.state.mode == SmartLootEngine.LootMode.Once or
+        SmartLootEngine.state.mode == SmartLootEngine.LootMode.Directed or
         SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot or
         (SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGMain and SmartLootEngine.state.rgMainTriggered) or
         SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce then
@@ -1692,6 +1991,13 @@ end
 function SmartLootEngine.processOpeningLootWindowState()
     -- Target the corpse
     mq.cmdf("/target id %d", SmartLootEngine.state.currentCorpseSpawnID)
+
+    -- If Directed task processing is currently active, defer to directed task loop when appropriate
+    if SmartLootEngine.state.directedProcessing and SmartLootEngine.state.directedProcessing.active then
+        -- Let directed loop manage the window open/close for targeted item
+        local handled = SmartLootEngine.processDirectedTasksTick()
+        if handled then return end
+    end
 
     if SmartLootEngine.isLootWindowOpen() then
         -- Ensure we've stopped moving before processing items
@@ -1881,6 +2187,13 @@ function SmartLootEngine.processProcessingItemsState()
             logging.debug(string.format("[Engine] Final Keep rule overridden by Lore check: %s", loreReason))
             SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
             SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
+            
+            -- In Directed mode, collect for assignment
+            if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Directed then
+                SmartLootEngine.addDirectedCandidate(itemInfo.name, finalItemID, finalIconID, itemInfo.quantity,
+                    SmartLootEngine.state.currentCorpseSpawnID, SmartLootEngine.state.currentCorpseName)
+            end
+
             SmartLootEngine.recordLootAction("Ignored (Lore Conflict)", itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
             SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
             
@@ -1899,6 +2212,12 @@ function SmartLootEngine.processProcessingItemsState()
     elseif rule == "Ignore" or rule == "LeftBehind" then
         SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
         SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
+        
+        -- In Directed mode, collect for assignment instead of automatic triggering later
+        if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Directed then
+            SmartLootEngine.addDirectedCandidate(itemInfo.name, finalItemID, finalIconID, itemInfo.quantity,
+                SmartLootEngine.state.currentCorpseSpawnID, SmartLootEngine.state.currentCorpseName)
+        end
 
         local actionText = rule == "LeftBehind" and "Left Behind" or "Ignored"
         SmartLootEngine.recordLootAction(actionText, itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
@@ -1991,6 +2310,19 @@ function SmartLootEngine.processCleaningUpCorpseState()
 end
 
 function SmartLootEngine.processProcessingPeersState()
+    -- Directed mode: do not auto-trigger peers; present assignment UI at session end
+    if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Directed then
+        -- Clear any auto-ignored queue to avoid triggering peers
+        SmartLootEngine.state.ignoredItemsThisSession = {}
+        -- Show assignment UI if there are candidates
+        if #SmartLootEngine.getDirectedCandidates() > 0 then
+            SmartLootEngine.setDirectedAssignmentVisible(true)
+        end
+        setState(SmartLootEngine.LootState.Idle, "Directed session complete - awaiting assignment")
+        scheduleNextTick(500)
+        return
+    end
+
     -- Process ignored items for peer coordination
     if #SmartLootEngine.state.ignoredItemsThisSession > 0 then
         local triggeredAny = false
@@ -2086,6 +2418,16 @@ end
 
 function SmartLootEngine.processOnceModeCompletionState()
     logging.debug("[Engine] Once mode completion")
+
+    -- Handle Directed mode completion: present assignment UI and remain idle
+    if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Directed then
+        if #SmartLootEngine.getDirectedCandidates() > 0 then
+            SmartLootEngine.setDirectedAssignmentVisible(true)
+        end
+        setState(SmartLootEngine.LootState.Idle, "Directed once mode complete - awaiting assignment")
+        scheduleNextTick(500)
+        return
+    end
 
     -- Handle CombatLoot mode completion differently
     if SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot then
@@ -2312,6 +2654,21 @@ function SmartLootEngine.processTick()
         return
     end
 
+    -- If we have directed tasks queued, process them with priority
+    if SmartLootEngine.state.directedProcessing and SmartLootEngine.state.directedProcessing.active then
+        local ok, shouldReturn = pcall(SmartLootEngine.processDirectedTasksTick)
+        if ok and shouldReturn then
+            return
+        elseif not ok then
+            util.printSmartLoot("Directed: error in task processing - " .. tostring(shouldReturn), "error")
+            -- Keep processing enabled so we can recover next tick
+            SmartLootEngine.state.directedProcessing.active = true
+            -- Nudge next tick soon to retry
+            scheduleNextTick(150)
+            return
+        end
+    end
+
     -- Resume from combat if we were in combat state
     if SmartLootEngine.state.currentState == SmartLootEngine.LootState.CombatDetected and
         SmartLootEngine.state.emergencyStop == false then
@@ -2389,6 +2746,14 @@ function SmartLootEngine.setLootMode(newMode, reason)
     local oldMode = SmartLootEngine.state.mode
     SmartLootEngine.state.mode = newMode
 
+    -- Directed flag handling
+    if newMode == SmartLootEngine.LootMode.Directed then
+        SmartLootEngine.state.directed.enabled = true
+    else
+        SmartLootEngine.state.directed.enabled = false
+        SmartLootEngine.state.directed.showAssignmentUI = false
+    end
+
     logging.debug(string.format("[Engine] Mode changed: %s -> %s (%s)", oldMode, newMode, reason or ""))
     
     -- Clear stored mode if we're changing away from CombatLoot manually or to a different mode
@@ -2400,11 +2765,13 @@ function SmartLootEngine.setLootMode(newMode, reason)
     if newMode == SmartLootEngine.LootMode.RGMain then
         SmartLootEngine.state.rgMainTriggered = false
     elseif newMode == SmartLootEngine.LootMode.Once or newMode == SmartLootEngine.LootMode.RGOnce then
+        -- Once-style modes: nothing special here
     elseif newMode == SmartLootEngine.LootMode.CombatLoot then
         -- CombatLoot mode - store original mode to revert to later
         SmartLootEngine.state.preCombatLootMode = oldMode
         logging.debug(string.format("[Engine] CombatLoot mode activated - stored original mode: %s", oldMode))
     elseif newMode == SmartLootEngine.LootMode.Background then
+        -- Background
     elseif newMode == SmartLootEngine.LootMode.Disabled then
         SmartLootEngine.state.emergencyStop = true
         SmartLootEngine.state.emergencyReason = "Mode disabled"

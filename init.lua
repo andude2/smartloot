@@ -395,6 +395,12 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
     elseif cmd == "start_rgonce" then
         util.printSmartLoot("RGOnce mode trigger received from " .. sender, "info")
         SmartLootEngine.setLootMode(SmartLootEngine.LootMode.RGOnce, "Mailbox command from " .. sender)
+    elseif cmd == "directed_tasks" then
+        local tasks = data.tasks or {}
+        if type(tasks) == "table" and SmartLootEngine.enqueueDirectedTasks then
+            SmartLootEngine.enqueueDirectedTasks(tasks)
+            util.printSmartLoot(string.format("Received %d directed tasks from %s", #tasks, sender), "info")
+        end
     elseif cmd == "rg_peer_trigger" then
         -- RGMain has triggered us to start looting
         util.printSmartLoot("RGMain peer trigger received from " .. sender, "info")
@@ -430,6 +436,9 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
                 util.printSmartLoot("Paused by " .. sender, "warning")
             end
         end
+    elseif cmd == "directed_assign_open" then
+        SmartLootEngine.setDirectedAssignmentVisible(true)
+        util.printSmartLoot("Directed Assignment UI opened by " .. sender, "info")
     elseif cmd == "clear_cache" then
         util.printSmartLoot("Cache clear command received from " .. sender, "info")
         SmartLootEngine.resetProcessedCorpses()
@@ -505,6 +514,17 @@ local smartlootCommandMailbox = actors.register("smartloot_command", function(me
                 SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Disabled, "Toggled by command")
                 util.printSmartLoot("Paused via command mailbox", "warning")
             end
+        end
+    elseif cmd == "directed_tasks" then
+        local tasks = args.tasks or {}
+        if type(tasks) == "table" and SmartLootEngine.enqueueDirectedTasks then
+            SmartLootEngine.enqueueDirectedTasks(tasks)
+            util.printSmartLoot(string.format("Enqueued %d directed tasks via command mailbox", #tasks), "info")
+        end
+    elseif cmd == "directed_assign_open" then
+        if SmartLootEngine and SmartLootEngine.setDirectedAssignmentVisible then
+            SmartLootEngine.setDirectedAssignmentVisible(true)
+            util.printSmartLoot("Directed Assignment UI opened via command mailbox", "info")
         end
     end
 end)
@@ -1064,6 +1084,7 @@ local uiSettings = safeRequire("ui.ui_settings", "Settings")
 local uiDebugWindow = safeRequire("ui.ui_debug_window", "DebugWindow")
 local uiLiveStats = safeRequire("ui.ui_live_stats", "LiveStats")
 local uiHelp = safeRequire("ui.ui_help", "Help")
+local uiDirectedAssign = safeRequire("ui.ui_directed_assign", "DirectedAssign")
 -- local uiTempRules = safeRequire("ui.ui_temp_rules", "TempRules") -- Removed - replaced with name-based rules
 
 -- Configure engine UI integration
@@ -1404,6 +1425,11 @@ mq.imgui.init("SmartLoot", function()
                 lootUI.forceWindowUncollapsed = true
             end
         end, nil, util)
+    end
+
+    -- Directed Assignment UI (only when flagged by engine)
+    if uiDirectedAssign and uiDirectedAssign.draw then
+        uiDirectedAssign.draw(SmartLootEngine)
     end
 
     -- Always show popups
