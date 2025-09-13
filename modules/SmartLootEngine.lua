@@ -401,7 +401,16 @@ local function _beginNextDirectedTask()
     SmartLootEngine.state.directedProcessing.step = SmartLootEngine.state.directedProcessing.currentTask and "navigating" or "idle"
     if SmartLootEngine.state.directedProcessing.currentTask then
         local t = SmartLootEngine.state.directedProcessing.currentTask
-        util.printSmartLoot(string.format("Directed: starting task for %s at corpse %d", t.itemName or "?", t.corpseSpawnID or 0), "info")
+        -- Initialize attempts and baseline inventory count for verification
+        t.attempts = (t.attempts or 0)
+        local baseCount = 0
+        local okBase, val = pcall(function()
+            return (mq.TLO.FindItemCount(t.itemName)() or 0)
+        end)
+        if okBase and type(val) == "number" then baseCount = val end
+        t.baseCount = baseCount
+
+        util.printSmartLoot(string.format("Directed: starting task for %s at corpse %d (have=%d)", t.itemName or "?", t.corpseSpawnID or 0, baseCount), "info")
         SmartLootEngine.state.navStartTime = mq.gettime()
         SmartLootEngine.state.directedProcessing.navStartTime = SmartLootEngine.state.navStartTime
         SmartLootEngine.state.directedProcessing.navMethod = smartNavigate(t.corpseSpawnID, "directed task")
@@ -578,13 +587,38 @@ function SmartLootEngine.processDirectedTasksTick()
             if SmartLootEngine.isLootWindowOpen() then
                 mq.cmd("/notify LootWnd DoneButton leftmouseup")
             end
-            util.printSmartLoot("Directed: task complete", "success")
-            SmartLootEngine.state.directedProcessing.currentTask = nil
-            _beginNextDirectedTask()
-            _dirScheduleNextTick(100)
-            return true
+
+            -- Verify we actually looted the item by comparing inventory count
+            local t = SmartLootEngine.state.directedProcessing.currentTask or {}
+            local newCount = t.baseCount or 0
+            local okNew, valNew = pcall(function()
+                return (mq.TLO.FindItemCount(t.itemName or "")() or 0)
+            end)
+            if okNew and type(valNew) == "number" then newCount = valNew end
+
+            if newCount > (t.baseCount or 0) then
+                util.printSmartLoot("Directed: task complete (verified)", "success")
+                SmartLootEngine.state.directedProcessing.currentTask = nil
+                _beginNextDirectedTask()
+                _dirScheduleNextTick(100)
+                return true
+            else
+                -- Did not verify loot; requeue once for another attempt
+                t.attempts = (t.attempts or 0) + 1
+                if t.attempts <= 1 then
+                    util.printSmartLoot("Directed: verification failed - retrying once", "warning")
+                    -- Requeue at front
+                    table.insert(SmartLootEngine.state.directedTasksQueue, 1, t)
+                else
+                    util.printSmartLoot("Directed: verification failed after retry - giving up", "error")
+                end
+                SmartLootEngine.state.directedProcessing.currentTask = nil
+                _beginNextDirectedTask()
+                _dirScheduleNextTick(150)
+                return true
+            end
         end
-        scheduleNextTick(25)
+        _dirScheduleNextTick(25)
         return true
     end
 
@@ -2660,7 +2694,6 @@ function SmartLootEngine.processTick()
         if ok and shouldReturn then
             return
         elseif not ok then
-            util.printSmartLoot("Directed: error in task processing - " .. tostring(shouldReturn), "error")
             -- Keep processing enabled so we can recover next tick
             SmartLootEngine.state.directedProcessing.active = true
             -- Nudge next tick soon to retry
