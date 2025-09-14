@@ -90,6 +90,30 @@ local function broadcastDirectedTasks(perPeerTasks)
     end
 end
 
+-- Filter the candidate list to only include items that have an assignment
+local function clearUnassignedCandidates(SmartLootEngine)
+    if not SmartLootEngine or not SmartLootEngine.getDirectedCandidates then return end
+    local candidates = SmartLootEngine.getDirectedCandidates() or {}
+    if #candidates == 0 then return end
+
+    local keep = {}
+    for i, c in ipairs(candidates) do
+        local sel = uiDirectedAssign.state.assignments[i]
+        local assigned = sel and sel.peerName and sel.peerName ~= ""
+        if assigned then
+            table.insert(keep, c)
+        end
+    end
+
+    -- Replace the candidate list with only assigned rows
+    if SmartLootEngine.clearDirectedCandidates and SmartLootEngine._addDirectedCandidate then
+        SmartLootEngine.clearDirectedCandidates()
+        for _, c in ipairs(keep) do
+            SmartLootEngine._addDirectedCandidate(c)
+        end
+    end
+end
+
 function uiDirectedAssign.draw(SmartLootEngine)
     if not SmartLootEngine then return end
     if not SmartLootEngine.shouldShowDirectedAssignment or not SmartLootEngine.shouldShowDirectedAssignment() then
@@ -172,6 +196,28 @@ function uiDirectedAssign.draw(SmartLootEngine)
     end
 
     ImGui.Separator()
+
+    -- Cleanup helpers for unassigned items
+    if ImGui.Button(Icons.FA_ERASER .. " Clear Unassigned") then
+        clearUnassignedCandidates(SmartLootEngine)
+        -- Also clean any stale assignment rows (those now removed)
+        local newAssignments = {}
+        local refreshed = SmartLootEngine.getDirectedCandidates() or {}
+        for idx, _ in ipairs(refreshed) do
+            newAssignments[idx] = uiDirectedAssign.state.assignments[idx] or { peerName = "" }
+        end
+        uiDirectedAssign.state.assignments = newAssignments
+    end
+    ImGui.SameLine()
+    if ImGui.Button(Icons.FA_TRASH .. " Clear All") then
+        if SmartLootEngine and SmartLootEngine.clearDirectedCandidates then
+            SmartLootEngine.clearDirectedCandidates()
+        end
+        uiDirectedAssign.state.assignments = {}
+        SmartLootEngine.setDirectedAssignmentVisible(false)
+    end
+
+    ImGui.SameLine()
 
     -- Action buttons
     if ImGui.Button(Icons.FA_PAPER_PLANE .. " Execute Assignments") then
