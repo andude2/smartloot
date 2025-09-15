@@ -876,16 +876,21 @@ local smartLootType = mq.DataType.new('SmartLoot', {
 
         -- Corpse detection
         HasNewCorpses = function(_, self)
-            local state = SmartLootEngine.getState()
-            local processedCorpses = state.processedCorpses or {}
+            -- Get processed corpses directly from the engine's internal state
+            local processedCorpses = SmartLootEngine.state.processedCorpsesThisSession or {}
 
             -- Check for unprocessed NPC corpses
             local corpseCount = mq.TLO.SpawnCount(string.format("npccorpse radius %d", settings.lootRadius))()
             if corpseCount and corpseCount > 0 then
                 for i = 1, corpseCount do
                     local corpse = mq.TLO.NearestSpawn(i, string.format("npccorpse radius %d", settings.lootRadius))
-                    if corpse and corpse.ID() and not processedCorpses[corpse.ID()] then
-                        return 'bool', true
+                    if corpse and corpse.ID() then
+                        local corpseID = corpse.ID()
+                        -- Check if corpse is processed using the SmartLootEngine's helper function
+                        -- This handles both old boolean format and new table format
+                        if not SmartLootEngine.isCorpseProcessed(corpseID) then
+                            return 'bool', true
+                        end
                     end
                 end
             end

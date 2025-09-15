@@ -15,6 +15,10 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
     if not lootUI.sessionReportPopup or not lootUI.sessionReportPopup.isOpen then return end
 
     local popup = lootUI.sessionReportPopup
+    -- Defaults for live refresh behavior
+    if popup.autoRefresh == nil then popup.autoRefresh = true end
+    if popup.refreshIntervalMs == nil then popup.refreshIntervalMs = 1000 end
+    if popup.lastRefreshAt == nil then popup.lastRefreshAt = 0 end
     ImGui.SetNextWindowSize(560, 420, ImGuiCond.FirstUseEver)
     local open = ImGui.Begin("SmartLoot - Session Report", true)
     if not open then
@@ -31,12 +35,15 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
 
     -- Info line
     local startIso = (SmartLootEngine.stats and SmartLootEngine.stats.sessionStartIsoUtc) or os.date("!%Y-%m-%d %H:%M:%S")
-    ImGui.SameLine()
-    ImGui.TextColored(0.8, 0.8, 0.8, 1, string.format("Since %s UTC", startIso))
-    ImGui.SameLine()
     ImGui.Text(string.format("Session Length: %d min", minutes))
 
     ImGui.Separator()
+
+    -- Auto-refresh timer: mark for fetch at interval while open
+    local nowMs = (mq and mq.gettime and mq.gettime()) or 0
+    if popup.autoRefresh and nowMs > 0 and (nowMs - (popup.lastRefreshAt or 0)) >= (popup.refreshIntervalMs or 1000) then
+        popup.needsFetch = true
+    end
 
     -- Fetch data if needed
     if popup.needsFetch or not popup.rows then
@@ -53,22 +60,8 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
             logging.log("[SessionReport] Failed to fetch history: " .. tostring(result))
         end
         popup.needsFetch = false
+        popup.lastRefreshAt = nowMs
     end
-
-    -- Summary
-    ImGui.Text("Scope:")
-    ImGui.SameLine()
-    local currentScope = popup.scope or "all"
-    if ImGui.BeginCombo("##sl_report_scope", currentScope == "me" and "Me" or "All", ImGuiComboFlags.WidthFitPreview) then
-        if ImGui.Selectable("All", currentScope == "all") then popup.scope = "all"; popup.needsFetch = true end
-        if ImGui.Selectable("Me", currentScope == "me") then popup.scope = "me"; popup.needsFetch = true end
-        ImGui.EndCombo()
-    end
-
-    ImGui.SameLine()
-    if ImGui.Button("Refresh") then popup.needsFetch = true end
-
-    ImGui.SameLine()
 
     ImGui.Text(string.format("Items Looted: %d | Corpses: %d", s.itemsLooted or 0, s.corpsesProcessed or 0))
 
@@ -76,16 +69,26 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
 
     -- Table
     local flags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)
-    if ImGui.BeginTable("SL_SessionReportTable", 6, flags) then
+    if ImGui.BeginTable("SL_SessionReportTable", 3, flags) then
         ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 30)
         ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch)
         ImGui.TableSetupColumn("Qty", ImGuiTableColumnFlags.WidthFixed, 60)
-        ImGui.TableSetupColumn("Events", ImGuiTableColumnFlags.WidthFixed, 70)
-        ImGui.TableSetupColumn("Zones", ImGuiTableColumnFlags.WidthStretch)
-        ImGui.TableSetupColumn("ID", ImGuiTableColumnFlags.WidthFixed, 60)
         ImGui.TableHeadersRow()
 
-        for _, row in ipairs(popup.rows or {}) do
+        -- Stable, safe ordering without ImGui sort specs
+        local rowsToDisplay = popup.rows or {}
+        table.sort(rowsToDisplay, function(a, b)
+            local qa = tonumber(a.looted_quantity) or 0
+            local qb = tonumber(b.looted_quantity) or 0
+            if qa ~= qb then return qa > qb end
+            -- tie-breaker by item name
+            local na = tostring(a.item_name or "")
+            local nb = tostring(b.item_name or "")
+            return na < nb
+        end)
+
+        -- Render the rows
+        for _, row in ipairs(rowsToDisplay) do
             local qty = tonumber(row.looted_quantity) or 0
             if qty > 0 then
                 ImGui.TableNextRow()
@@ -101,35 +104,6 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
                 -- Quantity
                 ImGui.TableSetColumnIndex(2)
                 ImGui.Text(tostring(qty))
-
-                -- Events (number of looted events)
-                ImGui.TableSetColumnIndex(3)
-                ImGui.Text(tostring(tonumber(row.looted_count) or 0))
-
-                -- Zones
-                ImGui.TableSetColumnIndex(4)
-                local zonesText = "-"
-                local itemName = row.item_name or ""
-                popup.zonesByItem = popup.zonesByItem or {}
-                if not popup.zonesByItem[itemName] then
-                    local zfilters = { startDate = startIso }
-                    if popup.scope == 'me' then zfilters.looter = mq.TLO.Me.Name() or 'All' end
-                    local okZ, zones = pcall(function() return lootHistory.getDistinctZonesForItemSince(itemName, zfilters) end)
-                    popup.zonesByItem[itemName] = okZ and (zones or {}) or {}
-                end
-                local zones = popup.zonesByItem[itemName]
-                if #zones == 0 then
-                    zonesText = "-"
-                elseif #zones == 1 then
-                    zonesText = zones[1]
-                else
-                    zonesText = tostring(#zones) .. " zones"
-                end
-                ImGui.Text(zonesText)
-
-                -- ID
-                ImGui.TableSetColumnIndex(5)
-                ImGui.Text(tostring(tonumber(row.item_id) or 0))
             end
         end
 

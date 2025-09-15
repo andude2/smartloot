@@ -1039,7 +1039,16 @@ function bindings.bindSessionReport()
 
         -- Initialize popup state if needed
         if not lootUI.sessionReportPopup then
-            lootUI.sessionReportPopup = { isOpen = false, scope = "all", limit = 20, rows = nil, needsFetch = false }
+            lootUI.sessionReportPopup = {
+                isOpen = false,
+                scope = "all",
+                limit = 20,
+                rows = nil,
+                needsFetch = false,
+                autoRefresh = true,
+                refreshIntervalMs = 5000,
+                lastRefreshAt = 0
+            }
         end
 
         -- Apply args (show|hide|toggle|all|me)
