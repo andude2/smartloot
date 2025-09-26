@@ -1117,6 +1117,8 @@ bindings.initialize(
 -- ============================================================================
 
 mq.imgui.init("SmartLoot", function()
+    -- If we're shutting down, don't render any UI to avoid touching freed state
+    if isShuttingDown then return end
     -- Main UI Window
     if lootUI.showUI then
         ImGui.SetNextWindowBgAlpha(0.75)
@@ -1517,7 +1519,7 @@ end
 
 -- Add live stats configuration to the main settings
 local liveStatsSettings = {
-    show = true,
+    show = false,
     compactMode = false,
     alpha = 0.85,
     position = { x = 200, y = 200 }
@@ -1557,10 +1559,152 @@ if uiLiveStats then
 end
 
 -- ============================================================================
+-- CLEANUP AND SHUTDOWN HANDLING
+-- ============================================================================
+
+local isShuttingDown = false
+local function cleanupSmartLoot()
+    if isShuttingDown then return end
+    isShuttingDown = true
+    
+    logging.log("[SmartLoot] Shutdown initiated - cleaning up resources...")
+    
+    -- Clean up the engine completely
+    if SmartLootEngine and SmartLootEngine.cleanup then
+        SmartLootEngine.cleanup()
+        logging.log("[SmartLoot] Engine cleaned up")
+    elseif SmartLootEngine and SmartLootEngine.emergencyStop then
+        SmartLootEngine.emergencyStop("Shutdown cleanup")
+        logging.log("[SmartLoot] Engine emergency stopped")
+    end
+    
+    -- Clean up command bindings
+    if bindings and bindings.cleanup then
+        bindings.cleanup()
+        logging.log("[SmartLoot] Command bindings cleaned up")
+    end
+    
+    -- Close database connections in lootHistory
+    if lootHistory and lootHistory.close then
+        pcall(function()
+            lootHistory.close()
+            logging.log("[SmartLoot] Loot history database connections closed")
+        end)
+    end
+    
+    -- Close database connections in main database module
+    if database and database.cleanup then
+        pcall(function()
+            database.cleanup()
+            logging.log("[SmartLoot] Main database connections closed")
+        end)
+    end
+    
+    -- Attempt to remove/destroy ImGui window first to prevent callbacks during teardown
+    pcall(function()
+        if mq and mq.imgui and (mq.imgui.destroy or mq.imgui.delete or mq.imgui.remove) then
+            local destroy = mq.imgui.destroy or mq.imgui.delete or mq.imgui.remove
+            destroy('SmartLoot')
+            logging.log("[SmartLoot] ImGui window destroyed")
+        end
+    end)
+
+    -- Clean up UI modules
+    if uiLiveStats and uiLiveStats.cleanup then
+        uiLiveStats.cleanup()
+    end
+    
+    -- Clean up mailbox actors
+    if smartlootMailbox then
+        smartlootMailbox = nil
+        logging.log("[SmartLoot] Mailbox actors cleaned up")
+    end
+    
+    if smartlootCommandMailbox then
+        smartlootCommandMailbox = nil
+    end
+    
+    if LOOT_STATUS and LOOT_STATUS.actor then
+        LOOT_STATUS.actor = nil
+        LOOT_STATUS.peers = {}
+    end
+    
+    -- Clean up TLO (best-effort, protected)
+    pcall(function()
+        if mq.RemoveTopLevelObject then
+            mq.RemoveTopLevelObject('SmartLoot')
+            logging.log("[SmartLoot] TLO removed")
+        end
+    end)
+    
+    -- Clean up mode handler
+    if modeHandler and modeHandler.cleanup then
+        pcall(function()
+            modeHandler.cleanup()
+            logging.log("[SmartLoot] Mode handler cleaned up")
+        end)
+    end
+    
+    logging.log("[SmartLoot] Cleanup completed successfully")
+end
+
+-- Register exit handler
+local function exitHandler()
+    -- Keep exit handler minimal to avoid touching MQ state during plugin shutdown
+    logging.log("[SmartLoot] Exit handler called - marking shutdown")
+    isShuttingDown = true
+end
+
+-- Set up multiple exit handling mechanisms
+if mq.atExit then
+    mq.atExit(exitHandler)
+    logging.log("[SmartLoot] Exit handler registered with mq.atExit")
+else
+    logging.log("[SmartLoot] Warning: mq.atExit not available - using alternative shutdown detection")
+end
+
+-- Additional shutdown signal handling (conservative approach)
+local shutdownCheckCount = 0
+local lastShutdownCheck = 0
+local function checkForShutdownSignals()
+    local now = mq.gettime()
+    
+    -- Only check every 5 seconds to avoid false positives
+    if now - lastShutdownCheck < 5000 then
+        return false
+    end
+    lastShutdownCheck = now
+    
+    -- Very conservative shutdown detection - only trigger if multiple checks fail
+    local mqAvailable = pcall(function() return mq.TLO.MacroQuest and mq.TLO.MacroQuest() end)
+    local meAvailable = pcall(function() return mq.TLO.Me and mq.TLO.Me() end)
+    
+    if not mqAvailable or not meAvailable then
+        shutdownCheckCount = shutdownCheckCount + 1
+        
+        -- Only consider shutdown if we've had multiple consecutive failures
+        if shutdownCheckCount >= 3 then
+            logging.log("[SmartLoot] Multiple consecutive TLO failures - shutdown detected")
+            return true
+        end
+    else
+        -- Reset counter if checks pass
+        shutdownCheckCount = 0
+    end
+    
+    return false
+end
+
+-- ============================================================================
 -- MAIN LOOP - PURE STATE ENGINE
 -- ============================================================================
 
 local function processMainTick()
+    -- Check for shutdown signal
+    if isShuttingDown then
+        return false
+    end
+    
     -- CORE ENGINE PROCESSING - This drives everything
     SmartLootEngine.processTick()
 
@@ -1579,18 +1723,44 @@ local function processMainTick()
 
     -- Zone change detection
     checkForZoneChange()
+    
+    return true
 end
 
 -- Main loop - simplified to just run the state engine
 local mainTimer = mq.gettime()
 while true do
-    mq.doevents()
+    -- Avoid pumping events after shutdown begins to prevent callbacks during teardown
+    if not isShuttingDown then
+        mq.doevents()
+    end
+
+    -- If MQ reports we are no longer in-game, begin shutdown
+    local gs = nil
+    pcall(function() gs = mq.TLO.MacroQuest.GameState and mq.TLO.MacroQuest.GameState() end)
+    if gs and gs ~= "INGAME" then
+        isShuttingDown = true
+    end
 
     local now = mq.gettime()
     if now >= mainTimer then
-        processMainTick()
+        if not processMainTick() then
+            -- Shutdown requested
+            break
+        end
         mainTimer = now + 50 -- Process every 50ms
     end
 
     mq.delay(10) -- Small delay to prevent 100% CPU usage
+    
+    -- Check if we should exit (MQ2 shutting down, etc.)
+    if isShuttingDown or checkForShutdownSignals() then
+        if not isShuttingDown then
+            logging.log("[SmartLoot] Shutdown signal detected in main loop")
+        end
+        break
+    end
 end
+
+-- Final cleanup before script ends
+cleanupSmartLoot()

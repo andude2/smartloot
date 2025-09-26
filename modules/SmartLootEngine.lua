@@ -3001,4 +3001,32 @@ function SmartLootEngine.getPerformanceMetrics()
     }
 end
 
+-- Cleanup function for shutdown
+function SmartLootEngine.cleanup()
+    -- Emergency stop to halt any ongoing processing
+    SmartLootEngine.emergencyStop("Cleanup shutdown")
+    
+    -- Clear all state
+    SmartLootEngine.state.currentCorpseID = 0
+    SmartLootEngine.state.currentItemIndex = 0
+    SmartLootEngine.state.needsPendingDecision = false
+    SmartLootEngine.state.lootActionInProgress = false
+    SmartLootEngine.state.waitingForLootAction = false
+    
+    -- Clear UI references to prevent dangling pointers
+    SmartLootEngine.state.lootUI = nil
+    SmartLootEngine.state.settings = nil
+    
+    -- Clear caches
+    SmartLootEngine.state.processedCorpsesThisSession = {}
+    SmartLootEngine.state.directedTasksQueue = {}
+    SmartLootEngine.state.directedProcessing = {
+        active = false,
+        currentTask = nil,
+        step = "idle"
+    }
+    
+    logging.debug("[SmartLootEngine] Cleanup completed")
+end
+
 return SmartLootEngine

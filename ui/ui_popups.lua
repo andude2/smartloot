@@ -1727,8 +1727,9 @@ function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
             ImGui.Spacing()
             
             -- Scan button
-            if ImGui.Button("Scan for Duplicates", 150, 0) then
+            if ImGui.Button("Scan for Errors", 100, 0) then
                 popup.duplicates = database.detectDuplicatePeerNames()
+                popup.malformed = database.detectMalformedSingletonNames()
                 popup.scanned = true
                 popup.selectedGroup = nil
                 popup.ruleSelections = {}
@@ -1965,7 +1966,64 @@ function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
                     end
                 end
             elseif popup.scanned then
-                ImGui.TextColored(0.8, 0.6, 0.2, 1, "Click 'Scan for Duplicates' to check your database.")
+                ImGui.TextColored(0.8, 0.6, 0.2, 1, "Click 'Scan for Potential Errors' to check your database.")
+            end
+
+            -- Malformed singleton section
+            ImGui.Spacing()
+            ImGui.Separator()
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.7, 0.2, 1.0) -- Orange header
+            ImGui.Text("Malformed Names (no clean counterpart)")
+            ImGui.PopStyleColor()
+
+            if not popup.malformed then
+                popup.malformed = {}
+            end
+
+            -- Migrate All button
+            if popup.malformed and #popup.malformed > 0 then
+                if ImGui.Button("Migrate All to Core Names", 220, 0) then
+                    for _, entry in ipairs(popup.malformed) do
+                        database.mergePeerRules(entry.variant.fullName, entry.coreCharacterName)
+                    end
+                    -- Re-scan
+                    popup.duplicates = database.detectDuplicatePeerNames()
+                    popup.malformed = database.detectMalformedSingletonNames()
+                    popup.selectedGroup = nil
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Merge all malformed names into their core character names and delete the source entries")
+                end
+            else
+                ImGui.TextColored(0.6, 0.6, 0.6, 1, "No malformed names found.")
+            end
+
+            if popup.malformed and #popup.malformed > 0 then
+                if ImGui.BeginTable("MalformedTable", 4, ImGuiTableFlags.BordersInnerV + ImGuiTableFlags.RowBg + ImGuiTableFlags.Resizable + ImGuiTableFlags.ScrollY, 0, 200) then
+                    ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthStretch)
+                    ImGui.TableSetupColumn("Core (Target)", ImGuiTableColumnFlags.WidthStretch)
+                    ImGui.TableSetupColumn("Rules", ImGuiTableColumnFlags.WidthFixed, 60)
+                    ImGui.TableSetupColumn("Action", ImGuiTableColumnFlags.WidthFixed, 120)
+                    ImGui.TableHeadersRow()
+
+                    for _, entry in ipairs(popup.malformed) do
+                        ImGui.TableNextRow()
+                        ImGui.TableSetColumnIndex(0)
+                        ImGui.Text(entry.variant.fullName)
+                        ImGui.TableSetColumnIndex(1)
+                        ImGui.Text(entry.coreCharacterName)
+                        ImGui.TableSetColumnIndex(2)
+                        ImGui.Text(tostring(entry.variant.ruleCount or 0))
+                        ImGui.TableSetColumnIndex(3)
+                        if ImGui.Button("Migrate##" .. entry.variant.fullName, 110, 0) then
+                            database.mergePeerRules(entry.variant.fullName, entry.coreCharacterName)
+                            popup.duplicates = database.detectDuplicatePeerNames()
+                            popup.malformed = database.detectMalformedSingletonNames()
+                        end
+                    end
+
+                    ImGui.EndTable()
+                end
             end
             
             ImGui.Separator()

@@ -442,4 +442,29 @@ function modeHandler.reset()
     logging.log(string.format("Mode handler reset: %s -> %s", oldMode, runMode))
 end
 
+-- Cleanup function for shutdown
+function modeHandler.cleanup()
+    -- Stop peer monitoring
+    modeHandler.stopPeerMonitoring()
+    
+    -- Clear all state
+    modeHandler.state = {
+        originalMode = nil,
+        currentMode = "main",
+        modeStack = {},
+        isRGTriggered = false,
+        lastModeChange = 0,
+        peerMonitoringActive = false,
+        lastPeerCheck = 0,
+        lastConnectedPeers = {},
+    }
+    
+    -- Clear global references
+    if _G.settings then
+        _G.settings.rgMainTriggered = false
+    end
+    
+    logging.debug("[ModeHandler] Cleanup completed")
+end
+
 return modeHandler

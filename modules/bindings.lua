@@ -191,13 +191,22 @@ local function bindLiveStats()
 
         if action == "show" then
             uiLiveStats.setVisible(true)
+            local cfg = require("modules.config")
+            cfg.liveStats.show = true
+            pcall(cfg.save)
             util.printSmartLoot("Live stats window shown", "success")
         elseif action == "hide" then
             uiLiveStats.setVisible(false)
+            local cfg = require("modules.config")
+            cfg.liveStats.show = false
+            pcall(cfg.save)
             util.printSmartLoot("Live stats window hidden", "warning")
         elseif action == "toggle" then
             uiLiveStats.toggle()
             local isVisible = uiLiveStats.isVisible()
+            local cfg = require("modules.config")
+            cfg.liveStats.show = isVisible
+            pcall(cfg.save)
             util.printSmartLoot("Live stats window " .. (isVisible and "shown" or "hidden"),
                 isVisible and "success" or "warning")
         elseif action == "reset" then
@@ -212,6 +221,9 @@ local function bindLiveStats()
             -- Default to toggle if no action specified
             uiLiveStats.toggle()
             local isVisible = uiLiveStats.isVisible()
+            local cfg = require("modules.config")
+            cfg.liveStats.show = isVisible
+            pcall(cfg.save)
             util.printSmartLoot("Live stats window " .. (isVisible and "shown" or "hidden"),
                 isVisible and "success" or "warning")
         end
