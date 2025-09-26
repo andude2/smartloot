@@ -58,6 +58,18 @@ config.hotbar = {
     }
 }
 
+-- NEW: Live Stats window configuration
+config.liveStats = {
+    show = false,
+    compactMode = false,
+    alpha = 0.85,
+    position = { x = 200, y = 200 },
+    stateDisplay = {
+        showDetailedState = false,
+        minDisplayTime = 500,
+    },
+}
+
 -- NEW: SmartLoot Engine Speed Configuration
 config.engineSpeed = {
     -- Speed multiplier: 1.0 = normal, 0.75 = 25% faster, 1.25 = 25% slower
@@ -183,6 +195,11 @@ function config.load()
             if configData.global.hotbar then
                 config.hotbar = configData.global.hotbar
             end
+
+            -- NEW: Apply live stats settings
+            if configData.global.liveStats then
+                config.liveStats = configData.global.liveStats
+            end
             
             -- NEW: Apply engine timing settings
             if configData.global.engineTiming then
@@ -231,6 +248,8 @@ function config.save()
     
     -- NEW: Update hotbar settings
     configData.global.hotbar = config.hotbar
+    -- NEW: Update live stats settings
+    configData.global.liveStats = config.liveStats
     
     -- NEW: Update engine timing settings
     configData.global.engineTiming = config.engineTiming

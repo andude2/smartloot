@@ -68,6 +68,120 @@ local function bindPauseResume()
     end)
 end
 
+-- Directed mode helpers
+local function bindDirectedMode()
+    mq.bind("/sl_directed", function(action)
+        local a = (action or ""):lower()
+        if a == "start" or a == "on" then
+            if SmartLootEngine and SmartLootEngine.setLootMode and SmartLootEngine.LootMode.Directed then
+                SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Directed, "Directed mode start")
+                util.printSmartLoot("Directed mode enabled", "success")
+            end
+        elseif a == "stop" or a == "off" then
+            if SmartLootEngine and SmartLootEngine.setLootMode then
+                SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Background, "Directed mode stop")
+                util.printSmartLoot("Directed mode disabled", "warning")
+            end
+        elseif a == "assign" then
+            if SmartLootEngine and SmartLootEngine.shouldShowDirectedAssignment then
+                SmartLootEngine.setDirectedAssignmentVisible(true)
+                util.printSmartLoot("Opening Directed Assignment UI", "info")
+            end
+        else
+            util.printSmartLoot("Usage: /sl_directed <start|stop|assign>", "info")
+        end
+    end)
+
+    -- Background peers receive directed tasks
+    mq.bind("/sl_directed_tasks", function(jsonTasks)
+        if not jsonTasks or jsonTasks == "" then
+            util.printSmartLoot("No directed tasks payload received", "error")
+            return
+        end
+        
+        local json = require("dkjson")
+        local ok, tasks = pcall(json.decode, jsonTasks)
+        if not ok then
+            util.printSmartLoot("Failed to decode directed tasks JSON: " .. tostring(tasks), "error")
+            return
+        end
+        
+        if type(tasks) ~= "table" then
+            util.printSmartLoot("Invalid directed tasks payload - not a table", "error")
+            return
+        end
+        
+        if SmartLootEngine and SmartLootEngine.enqueueDirectedTasks then
+            SmartLootEngine.enqueueDirectedTasks(tasks)
+            util.printSmartLoot(string.format("Enqueued %d directed tasks", #tasks), "success")
+        else
+            util.printSmartLoot("SmartLootEngine not available for directed tasks", "error")
+        end
+    end)
+
+    -- Simple test command for directed mode
+    mq.bind("/sl_directed_status", function()
+        local q = SmartLootEngine.state.directedTasksQueue or {}
+        local dp = SmartLootEngine.state.directedProcessing or {}
+        util.printSmartLoot(string.format("Directed Status: active=%s, queue=%d, step=%s", tostring(dp.active), #q, tostring(dp.step)), "info")
+        if dp.currentTask then
+            util.printSmartLoot(string.format("Current Task: %s @ %d", tostring(dp.currentTask.itemName), tonumber(dp.currentTask.corpseSpawnID) or 0), "info")
+        end
+    end)
+
+    mq.bind("/sl_directed_resume", function()
+        local dp = SmartLootEngine.state.directedProcessing or {}
+        SmartLootEngine.state.directedProcessing.active = true
+        if dp.step == "navigating" then
+            util.printSmartLoot("Directed: forcing step to 'opening'", "warning")
+            SmartLootEngine.state.directedProcessing.step = "opening"
+        else
+            util.printSmartLoot("Directed: resuming current step", "info")
+        end
+    end)
+
+    mq.bind("/sl_directed_test", function()
+        if SmartLootEngine and SmartLootEngine.setDirectedAssignmentVisible then
+            -- Add a test candidate
+            SmartLootEngine._addDirectedCandidate({
+                corpseSpawnID = 12345,
+                corpseID = 12345,
+                corpseName = "test_corpse",
+                zone = "Test Zone",
+                itemName = "Test Item",
+                itemID = 1001,
+                iconID = 123,
+                quantity = 1,
+            })
+            SmartLootEngine.setDirectedAssignmentVisible(true)
+            util.printSmartLoot("Test directed assignment UI opened", "success")
+        end
+    end)
+
+    -- Debug peer discovery
+    mq.bind("/sl_debug_peers", function()
+        local config = require("modules.config")
+        util.printSmartLoot("=== Peer Discovery Debug ===", "system")
+        util.printSmartLoot("Loot Command Type: " .. tostring(config.lootCommandType), "info")
+        
+        local peers = util.getConnectedPeers()
+        util.printSmartLoot("Found " .. #peers .. " peers via util: " .. 
+            (#peers > 0 and table.concat(peers, ", ") or "none"), "info")
+            
+        -- Check group
+        local groupSize = mq.TLO.Group.Members() or 0
+        util.printSmartLoot("Group size: " .. groupSize, "info")
+        
+        -- Check raid
+        local raidSize = mq.TLO.Raid.Members() or 0
+        util.printSmartLoot("Raid size: " .. raidSize, "info")
+        
+        if util.debugPeerDiscovery then
+            util.debugPeerDiscovery()
+        end
+    end)
+end
+
 local function bindLiveStats()
     mq.bind("/sl_stats", function(action)
         if not uiLiveStats then
@@ -77,13 +191,22 @@ local function bindLiveStats()
 
         if action == "show" then
             uiLiveStats.setVisible(true)
+            local cfg = require("modules.config")
+            cfg.liveStats.show = true
+            pcall(cfg.save)
             util.printSmartLoot("Live stats window shown", "success")
         elseif action == "hide" then
             uiLiveStats.setVisible(false)
+            local cfg = require("modules.config")
+            cfg.liveStats.show = false
+            pcall(cfg.save)
             util.printSmartLoot("Live stats window hidden", "warning")
         elseif action == "toggle" then
             uiLiveStats.toggle()
             local isVisible = uiLiveStats.isVisible()
+            local cfg = require("modules.config")
+            cfg.liveStats.show = isVisible
+            pcall(cfg.save)
             util.printSmartLoot("Live stats window " .. (isVisible and "shown" or "hidden"),
                 isVisible and "success" or "warning")
         elseif action == "reset" then
@@ -98,6 +221,9 @@ local function bindLiveStats()
             -- Default to toggle if no action specified
             uiLiveStats.toggle()
             local isVisible = uiLiveStats.isVisible()
+            local cfg = require("modules.config")
+            cfg.liveStats.show = isVisible
+            pcall(cfg.save)
             util.printSmartLoot("Live stats window " .. (isVisible and "shown" or "hidden"),
                 isVisible and "success" or "warning")
         end
@@ -109,6 +235,14 @@ local function bindPeerCommands()
         if lootUI then
             lootUI.showPeerCommands = not (lootUI.showPeerCommands or false)
             util.printSmartLoot("Peer Commands window " .. (lootUI.showPeerCommands and "shown" or "hidden"), "info")
+        end
+    end)
+
+    -- Open Directed Assignment UI
+    mq.bind("/sl_assign", function()
+        if SmartLootEngine and SmartLootEngine.setDirectedAssignmentVisible then
+            SmartLootEngine.setDirectedAssignmentVisible(true)
+            util.printSmartLoot("Opening Directed Assignment UI", "info")
         end
     end)
 
@@ -142,7 +276,7 @@ local function bindPeerCommands()
 
         if not mode or mode == "" then
             util.printSmartLoot("Usage: /sl_mode <mode>", "error")
-            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once, combatloot", "info")
+            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once, directed, combatloot", "info")
 
             -- Show current mode
             local status = modeHandler.getPeerStatus()
@@ -151,11 +285,11 @@ local function bindPeerCommands()
         end
 
         mode = mode:lower()
-        local validModes = { main = true, background = true, rgmain = true, rgonce = true, once = true, combatloot = true }
+        local validModes = { main = true, background = true, rgmain = true, rgonce = true, once = true, directed = true, combatloot = true }
 
         if not validModes[mode] then
             util.printSmartLoot("Invalid mode: " .. mode, "error")
-            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once, combatloot", "info")
+            util.printSmartLoot("Valid modes: main, background, rgmain, rgonce, once, directed, combatloot", "info")
             return
         end
 
@@ -174,6 +308,8 @@ local function bindPeerCommands()
                 engineMode = SmartLootEngine.LootMode.RGOnce
             elseif mode == "once" and SmartLootEngine.LootMode.Once then
                 engineMode = SmartLootEngine.LootMode.Once
+            elseif mode == "directed" and SmartLootEngine.LootMode.Directed then
+                engineMode = SmartLootEngine.LootMode.Directed
             elseif mode == "combatloot" and SmartLootEngine.LootMode.CombatLoot then
                 engineMode = SmartLootEngine.LootMode.CombatLoot
             end
@@ -915,7 +1051,16 @@ function bindings.bindSessionReport()
 
         -- Initialize popup state if needed
         if not lootUI.sessionReportPopup then
-            lootUI.sessionReportPopup = { isOpen = false, scope = "all", limit = 20, rows = nil, needsFetch = false }
+            lootUI.sessionReportPopup = {
+                isOpen = false,
+                scope = "all",
+                limit = 20,
+                rows = nil,
+                needsFetch = false,
+                autoRefresh = true,
+                refreshIntervalMs = 5000,
+                lastRefreshAt = 0
+            }
         end
 
         -- Apply args (show|hide|toggle|all|me)
@@ -944,6 +1089,7 @@ end
 -- ============================================================================
 
 function bindings.registerAllBindings()
+    bindDirectedMode()
     bindHotbarToggle()
     bindPauseResume()
     bindLiveStats()

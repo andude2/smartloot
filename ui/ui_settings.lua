@@ -1313,11 +1313,10 @@ end
 
 function uiSettings.draw(lootUI, settings, config)
     if ImGui.BeginTabItem("Settings") then
-
-        -- Database info on same line
-        ImGui.SameLine()
-        ImGui.Text("  |  ")
-        ImGui.SameLine()
+        -- Add proper spacing after tab header to prevent overlap
+        ImGui.Spacing()
+        
+        -- Database info section
         ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0) -- Gray text
         ImGui.Text("DB:")
         ImGui.PopStyleColor()
@@ -1344,6 +1343,10 @@ function uiSettings.draw(lootUI, settings, config)
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Database Status: SQLite database is connected and operational")
         end
+        
+        -- Add spacing before main content
+        ImGui.Spacing()
+        ImGui.Separator()
 
         -- Core Performance Settings Section
         ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0) -- Light blue header

@@ -1587,6 +1587,123 @@ function database.detectDuplicatePeerNames()
     return duplicates
 end
 
+-- Detect malformed singletons (names that normalize to a core name but have no sibling/clean counterpart)
+function database.detectMalformedSingletonNames()
+    if not db then
+        logging.error("[Database] Database not initialized")
+        return {}
+    end
+
+    -- Get all toon names
+    local getAllNamesStmt = prepareStatement([[
+        SELECT DISTINCT toon FROM (
+            SELECT toon FROM lootrules_v2 
+            UNION 
+            SELECT toon FROM lootrules_name_fallback
+        ) AS all_toons
+        ORDER BY toon
+    ]])
+
+    if not getAllNamesStmt then
+        logging.error("[Database] Failed to prepare name retrieval query (singletons)")
+        return {}
+    end
+
+    local allNames = {}
+    for row in getAllNamesStmt:nrows() do
+        table.insert(allNames, row.toon)
+    end
+    getAllNamesStmt:finalize()
+
+    -- Group by normalized core name
+    local groups = {}
+    for _, fullName in ipairs(allNames) do
+        local coreName = extractCoreCharacterName(fullName)
+        local lowerCore = coreName:lower()
+        groups[lowerCore] = groups[lowerCore] or { coreName = coreName, variants = {} }
+        table.insert(groups[lowerCore].variants, fullName)
+    end
+
+    local malformed = {}
+    for _, group in pairs(groups) do
+        if #group.variants == 1 then
+            local fullName = group.variants[1]
+            local coreName = group.coreName
+            -- If the only variant differs from the core (e.g., DanNet-style), consider it malformed
+            if fullName ~= coreName then
+                -- Collect rules for this name
+                local rules = {}
+                local v2Stmt = prepareStatement([[
+                    SELECT item_name, item_id, rule, icon_id, updated_at 
+                    FROM lootrules_v2 
+                    WHERE toon = ?
+                    ORDER BY item_name
+                ]])
+                if v2Stmt then
+                    v2Stmt:bind(1, fullName)
+                    for ruleRow in v2Stmt:nrows() do
+                        table.insert(rules, {
+                            itemName = ruleRow.item_name,
+                            itemId = ruleRow.item_id or 0,
+                            rule = ruleRow.rule,
+                            iconId = ruleRow.icon_id or 0,
+                            updatedAt = ruleRow.updated_at,
+                            tableSource = "lootrules_v2"
+                        })
+                    end
+                    v2Stmt:finalize()
+                end
+                local fallbackStmt = prepareStatement([[
+                    SELECT item_name, rule, icon_id, updated_at 
+                    FROM lootrules_name_fallback 
+                    WHERE toon = ?
+                    ORDER BY item_name
+                ]])
+                if fallbackStmt then
+                    fallbackStmt:bind(1, fullName)
+                    for ruleRow in fallbackStmt:nrows() do
+                        table.insert(rules, {
+                            itemName = ruleRow.item_name,
+                            itemId = 0,
+                            rule = ruleRow.rule,
+                            iconId = ruleRow.icon_id or 0,
+                            updatedAt = ruleRow.updated_at,
+                            tableSource = "lootrules_name_fallback"
+                        })
+                    end
+                    fallbackStmt:finalize()
+                end
+
+                table.insert(malformed, {
+                    coreCharacterName = coreName:sub(1,1):upper() .. coreName:sub(2):lower(),
+                    variant = {
+                        fullName = fullName,
+                        coreName = coreName,
+                        ruleCount = #rules,
+                        rules = rules
+                    }
+                })
+            end
+        end
+    end
+
+    -- Sort by rule count descending (migrate heavier first)
+    table.sort(malformed, function(a, b)
+        return (a.variant.ruleCount or 0) > (b.variant.ruleCount or 0)
+    end)
+
+    return malformed
+end
+
+-- Convenience: rename a single peer to its core name (merge and delete source)
+function database.renamePeerToCore(fullName)
+    local core = extractCoreCharacterName(fullName)
+    if not core or core == "" or core == fullName then
+        return false
+    end
+    return database.mergePeerRules(fullName, core)
+end
+
 -- Copy a specific rule from one character to another
 function database.copySpecificRule(fromName, toName, itemName, itemId, tableSource)
     if not db then
