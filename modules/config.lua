@@ -26,6 +26,9 @@ config.itemAnnounceMode = "all"  -- Options: "all", "ignored", "none"
 -- NEW: Farming mode configuration
 config.farmingMode = false  -- Whether farming mode is active (bypasses corpse deduplication)
 
+-- NEW: Peer selection strategy for ignored items
+config.peerSelectionStrategy = "items_first" -- Options: items_first, peers_first
+
 -- NEW: Lore item checking configuration (always enabled to prevent getting stuck)
 config.loreCheckAnnounce = true  -- Whether to announce when Lore conflicts are detected
 
@@ -140,6 +143,7 @@ local configData = {
         lootDelay = config.lootDelay,
         retryCount = config.retryCount,
         retryDelay = config.retryDelay,
+        peerSelectionStrategy = config.peerSelectionStrategy,
         -- NEW: Chat configuration in global settings
         chatOutputMode = config.chatOutputMode,
         customChatCommand = config.customChatCommand,
@@ -190,7 +194,7 @@ function config.load()
             config.useChaseCommands = configData.global.useChaseCommands or config.useChaseCommands
             config.chasePauseCommand = configData.global.chasePauseCommand or config.chasePauseCommand
             config.chaseResumeCommand = configData.global.chaseResumeCommand or config.chaseResumeCommand
-            
+
             -- NEW: Apply hotbar settings
             if configData.global.hotbar then
                 config.hotbar = configData.global.hotbar
@@ -200,6 +204,8 @@ function config.load()
             if configData.global.liveStats then
                 config.liveStats = configData.global.liveStats
             end
+
+            config.peerSelectionStrategy = configData.global.peerSelectionStrategy or config.peerSelectionStrategy
             
             -- NEW: Apply engine timing settings
             if configData.global.engineTiming then
@@ -234,6 +240,7 @@ function config.save()
     configData.global.lootDelay = config.lootDelay
     configData.global.retryCount = config.retryCount
     configData.global.retryDelay = config.retryDelay
+    configData.global.peerSelectionStrategy = config.peerSelectionStrategy
     
     -- NEW: Update chat settings
     configData.global.chatOutputMode = config.chatOutputMode
@@ -297,6 +304,24 @@ function config.setChatMode(mode)
     config.chatOutputMode = mode
     config.save()
     return true
+end
+
+function config.setPeerSelectionStrategy(strategy)
+    local normalized = "items_first"
+    if type(strategy) == "string" then
+        strategy = strategy:lower()
+        if strategy == "peers" or strategy == "peers_first" then
+            normalized = "peers_first"
+        end
+    end
+
+    config.peerSelectionStrategy = normalized
+    config.save()
+    return normalized
+end
+
+function config.getPeerSelectionStrategy()
+    return config.peerSelectionStrategy or "items_first"
 end
 
 function config.setCustomChatCommand(command)

@@ -7,26 +7,28 @@ local SmartLootEngine = require("modules.SmartLootEngine")
 
 local uiSettings = {}
 
-local function draw_chat_settings(config)
-    -- Chat Output Settings Section
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 1.0, 1.0) -- Light cyan header
-    if ImGui.CollapsingHeader("Chat Output Settings") then
-        ImGui.PopStyleColor()
-        ImGui.SameLine()
+local function openNextHeader()
+    if ImGui.SetNextItemOpen then
+        ImGui.SetNextItemOpen(true, ImGuiCond.Always)
+    end
+end
 
-        -- Help button that opens popup
-        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)                -- Transparent background
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3) -- Slight highlight on hover
+local TREE_SPAN_FLAG = ImGuiTreeNodeFlags.SpanAvailWidth or 0
+
+local function draw_chat_settings(config, showHeader)
+    local function drawHelpButton()
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)
         if ImGui.Button("(?)##ChatHelp") then
             ImGui.OpenPopup("ChatSettingsHelp")
         end
         ImGui.PopStyleColor(2)
-
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Click for chat mode descriptions and testing options")
         end
+    end
 
-        -- Chat Output Mode Selection
+    local function drawBody()
         ImGui.Text("Chat Output Mode:")
         ImGui.SameLine()
         ImGui.PushItemWidth(120)
@@ -193,7 +195,6 @@ local function draw_chat_settings(config)
 
         ImGui.Text("Current Mode: " .. modeDescription)
 
-        -- Help Popup
         if ImGui.BeginPopup("ChatSettingsHelp") then
             ImGui.Text("Chat Mode Help & Testing")
             ImGui.Separator()
@@ -257,8 +258,318 @@ local function draw_chat_settings(config)
 
             ImGui.EndPopup()
         end
+    end
+
+    if showHeader ~= false then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 1.0, 1.0)
+        local open = ImGui.CollapsingHeader("Chat Output Settings")
+        ImGui.PopStyleColor()
+        if open then
+            ImGui.SameLine()
+            drawHelpButton()
+            drawBody()
+            ImGui.Spacing()
+        end
     else
-        ImGui.PopStyleColor() -- Pop the color even if header is closed
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.9, 1.0, 1.0)
+        ImGui.Text("Chat Output Settings")
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+        drawHelpButton()
+        drawBody()
+        ImGui.Spacing()
+    end
+end
+
+local function draw_core_performance_settings(settings, config, showHeader)
+    local function renderBody()
+        ImGui.Spacing()
+        ImGui.Columns(2, nil, false)
+        ImGui.SetColumnWidth(0, 300)
+        ImGui.SetColumnWidth(1, 300)
+
+        ImGui.AlignTextToFramePadding()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Loop Delay:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine(106)
+        ImGui.PushItemWidth(150)
+        local newLoop, changedLoop = ImGui.InputInt("##Loop Delay (ms)", settings.loopDelay)
+        if changedLoop then settings.loopDelay = newLoop end
+        if ImGui.IsItemHovered() then ImGui.SetTooltip("Delay between corpse scans (milliseconds)") end
+        ImGui.PopItemWidth()
+
+        ImGui.NextColumn()
+        ImGui.AlignTextToFramePadding()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Loot Radius:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine(125)
+        ImGui.PushItemWidth(150)
+        local newRadius, changedRadius = ImGui.InputInt("##Loot Radius", settings.lootRadius)
+        if changedRadius then settings.lootRadius = newRadius end
+        if ImGui.IsItemHovered() then ImGui.SetTooltip("Corpse search radius") end
+        ImGui.PopItemWidth()
+
+        ImGui.NextColumn()
+        ImGui.AlignTextToFramePadding()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Combat Delay:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+        ImGui.PushItemWidth(150)
+        local newCombat, changedCombat = ImGui.InputInt("##Combat Wait Delay (ms)", settings.combatWaitDelay)
+        if changedCombat then settings.combatWaitDelay = newCombat end
+        if ImGui.IsItemHovered() then ImGui.SetTooltip("Delay after combat ends (milliseconds)") end
+        ImGui.PopItemWidth()
+
+        ImGui.NextColumn()
+        ImGui.AlignTextToFramePadding()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Main Toon Name:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+        ImGui.PushItemWidth(150)
+        local newMainToonName, changedMainToonName = ImGui.InputText("##MainToonName", config.mainToonName or "", 128)
+        if changedMainToonName then
+            config.mainToonName = newMainToonName
+            if config.save then config.save() end
+        end
+        ImGui.PopItemWidth()
+
+        ImGui.Columns(1)
+        ImGui.Spacing()
+    end
+
+    if showHeader ~= false then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0)
+        local open = ImGui.CollapsingHeader("Core Performance Settings", ImGuiTreeNodeFlags.DefaultOpen)
+        ImGui.PopStyleColor()
+        if open then
+            renderBody()
+        end
+    else
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0)
+        ImGui.Text("Core Performance Settings")
+        ImGui.PopStyleColor()
+        ImGui.Separator()
+        renderBody()
+    end
+end
+
+local function draw_peer_coordination_settings(lootUI, settings, config, showHeader)
+    local function renderBody()
+        ImGui.Spacing()
+
+        ImGui.Columns(3, nil, false)
+        ImGui.SetColumnWidth(0, 200)
+        ImGui.SetColumnWidth(1, 200)
+        ImGui.SetColumnWidth(2, 200)
+
+        ImGui.AlignTextToFramePadding()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Is Main Looter:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine(150)
+        local isMain, changedIsMain = ImGui.Checkbox("##IsMain", settings.isMain)
+        if changedIsMain then settings.isMain = isMain end
+
+        ImGui.NextColumn()
+
+        ImGui.AlignTextToFramePadding()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Loot Command Type:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+
+        local commandOptions = { "DanNet", "E3", "EQBC" }
+        local commandValues = { "dannet", "e3", "bc" }
+        local commandNames = {
+            ["dannet"] = "DanNet",
+            ["e3"] = "E3",
+            ["bc"] = "EQBC"
+        }
+
+        local currentCommandType = config.lootCommandType or "dannet"
+        local isValidCommand = false
+        for _, value in ipairs(commandValues) do
+            if value == currentCommandType then
+                isValidCommand = true
+                break
+            end
+        end
+        if not isValidCommand then
+            currentCommandType = "dannet"
+            config.lootCommandType = currentCommandType
+            if config.save then config.save() end
+        end
+
+        local currentIndex = 0
+        for i, value in ipairs(commandValues) do
+            if value == currentCommandType then
+                currentIndex = i - 1
+                break
+            end
+        end
+
+        local displayName = commandNames[currentCommandType] or currentCommandType
+
+        ImGui.PushItemWidth(120)
+        if ImGui.BeginCombo("##LootCommandType", displayName) then
+            for i, option in ipairs(commandOptions) do
+                local isSelected = (currentIndex == i - 1)
+                if ImGui.Selectable(option, isSelected) then
+                    local selectedValue = commandValues[i]
+                    config.lootCommandType = selectedValue
+                    logging.log("Loot command type changed to: " .. option .. " (" .. selectedValue .. ")")
+                    if config.save then config.save() end
+                    currentCommandType = selectedValue
+                    currentIndex = i - 1
+                end
+                if isSelected then ImGui.SetItemDefaultFocus() end
+            end
+            ImGui.EndCombo()
+        end
+        ImGui.PopItemWidth()
+
+        ImGui.SameLine()
+        if ImGui.Button("Reset##ResetCommandType") then
+            config.lootCommandType = "dannet"
+            if config.save then config.save() end
+            logging.log("Command type FORCE reset to dannet")
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Force reset command type to DanNet")
+        end
+
+        ImGui.SameLine()
+        if ImGui.Button("Debug##DebugCommandType") then
+            logging.log("=== COMMAND TYPE DEBUG ===")
+            logging.log("config.lootCommandType = '" .. tostring(config.lootCommandType) .. "'")
+            logging.log("Raw type: " .. type(config.lootCommandType))
+            if config.debugPrint then config.debugPrint() end
+        end
+
+        ImGui.NextColumn()
+        ImGui.AlignTextToFramePadding()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Pause Peer Triggering:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine(150)
+        local peerTriggerPaused, changedPausePeerTrigger = ImGui.Checkbox("##PausePeerTriggering",
+            settings.peerTriggerPaused)
+        if changedPausePeerTrigger then settings.peerTriggerPaused = peerTriggerPaused end
+
+        ImGui.Columns(1)
+        ImGui.Spacing()
+
+        if (SmartLootEngine.config.peerSelectionStrategy or "items_first") ~= settings.peerSelectionStrategy then
+            settings.peerSelectionStrategy = SmartLootEngine.config.peerSelectionStrategy or settings.peerSelectionStrategy
+        end
+
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Ignored Item Assignment:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine(220)
+
+        local function updatePeerStrategy(newStrategy)
+            if newStrategy == settings.peerSelectionStrategy then return end
+
+            settings.peerSelectionStrategy = newStrategy
+            SmartLootEngine.config.peerSelectionStrategy = newStrategy
+            if SmartLootEngine.state and SmartLootEngine.state.settings then
+                SmartLootEngine.state.settings.peerSelectionStrategy = newStrategy
+            end
+            if config.setPeerSelectionStrategy then
+                config.setPeerSelectionStrategy(newStrategy)
+            else
+                config.peerSelectionStrategy = newStrategy
+                if config.save then pcall(config.save) end
+            end
+        end
+
+        local toggleOptions = {
+            { label = "Items First", value = "items_first", tooltip = "Trigger peers based on the first ignored item that matches their rules (default)." },
+            { label = "Peers First", value = "peers_first", tooltip = "Check each peer in order and trigger the first interested peer, considering all ignored items." }
+        }
+
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
+        for index, option in ipairs(toggleOptions) do
+            local isSelected = settings.peerSelectionStrategy == option.value
+
+            if isSelected then
+                ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.8, 0.9)
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.7, 0.9, 1.0)
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.5, 0.7, 1.0)
+            else
+                ImGui.PushStyleColor(ImGuiCol.Button, 0.3, 0.3, 0.3, 0.6)
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.4, 0.4, 0.4, 0.8)
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.2, 0.2, 0.2, 0.9)
+            end
+
+            if ImGui.Button(option.label .. "##PeerStrategyToggle" .. index, 120, 28) then
+                updatePeerStrategy(option.value)
+            end
+            ImGui.PopStyleColor(3)
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip(option.tooltip)
+            end
+
+            if index < #toggleOptions then
+                ImGui.SameLine(0, 6)
+            end
+        end
+        ImGui.PopStyleVar()
+
+        ImGui.Spacing()
+        ImGui.TextWrapped("Items First triggers peers based on the first ignored item that someone wants. Peers First checks each peer in loot order and assigns any remaining items they care about.")
+    end
+
+    if showHeader ~= false then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0)
+        local open = ImGui.CollapsingHeader("Peer Coordination Settings", ImGuiTreeNodeFlags.DefaultOpen)
+        ImGui.PopStyleColor()
+        if open then
+            renderBody()
+        end
+    else
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0)
+        ImGui.Text("Peer Coordination Settings")
+        ImGui.PopStyleColor()
+        ImGui.Separator()
+        renderBody()
+    end
+end
+
+local function draw_database_tools(lootUI, showHeader)
+    local function renderBody()
+        ImGui.Spacing()
+        ImGui.Text("Import/Export Tools:")
+        ImGui.Spacing()
+
+        if ImGui.Button("Legacy Import", 120, 0) then
+            lootUI.legacyImportPopup = lootUI.legacyImportPopup or {}
+            lootUI.legacyImportPopup.isOpen = true
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Import loot rules from E3 Macro INI files")
+        end
+
+        ImGui.Spacing()
+        ImGui.TextColored(0.7, 0.7, 0.7, 1, "Import legacy E3 loot rules from INI format files")
+        ImGui.Spacing()
+    end
+
+    if showHeader ~= false then
+        local open = ImGui.CollapsingHeader("Database Tools")
+        if open then
+            renderBody()
+        end
+    else
+        ImGui.Text("Database Tools")
+        ImGui.Separator()
+        renderBody()
     end
 end
 
@@ -436,10 +747,7 @@ local function draw_timing_settings()
             ImGui.BulletText("Conservative: High latency, unstable connection")
             ImGui.EndPopup()
         end
-    else
-        ImGui.PopStyleColor()
     end
-    ImGui.Spacing()
 end
 
 local function draw_speed_settings()
@@ -1313,17 +1621,15 @@ end
 
 function uiSettings.draw(lootUI, settings, config)
     if ImGui.BeginTabItem("Settings") then
-        -- Add proper spacing after tab header to prevent overlap
         ImGui.Spacing()
-        
-        -- Database info section
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0) -- Gray text
+
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0)
         ImGui.Text("DB:")
         ImGui.PopStyleColor()
         ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.9, 1.0) -- Light text
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.9, 1.0)
         local dbPath = config.filePath or "smartloot_config.json"
-        local dbName = dbPath:match("([^/\\]+)$") or dbPath     -- Extract filename from path
+        local dbName = dbPath:match("([^/\\]+)$") or dbPath
         ImGui.Text(dbName)
         ImGui.PopStyleColor()
         if ImGui.IsItemHovered() then
@@ -1333,348 +1639,110 @@ function uiSettings.draw(lootUI, settings, config)
         ImGui.SameLine()
         ImGui.Text("  |  ")
         ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0) -- Gray text
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0)
         ImGui.Text("SQLite:")
         ImGui.PopStyleColor()
         ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0) -- Light green text
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0)
         ImGui.Text("Connected")
         ImGui.PopStyleColor()
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("Database Status: SQLite database is connected and operational")
         end
-        
-        -- Add spacing before main content
-        ImGui.Spacing()
-        ImGui.Separator()
 
-        -- Core Performance Settings Section
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 0.8, 1.0, 1.0) -- Light blue header
-        if ImGui.CollapsingHeader("Core Performance Settings", ImGuiTreeNodeFlags.DefaultOpen) then
-            ImGui.PopStyleColor()
-            ImGui.Spacing()
-
-            ImGui.Columns(2, nil, false) -- Two-column layout
-            ImGui.SetColumnWidth(0, 300) -- Set a fixed width for column 1
-            ImGui.SetColumnWidth(1, 300) -- Set a fixed width for column 2
-
-            ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
-            ImGui.Text("Loop Delay:")
-            ImGui.PopStyleColor()
-            ImGui.SameLine(106)
-            ImGui.PushItemWidth(150)
-            local newLoop, changedLoop = ImGui.InputInt("##Loop Delay (ms)", settings.loopDelay)
-            if changedLoop then settings.loopDelay = newLoop end
-            if ImGui.IsItemHovered() then ImGui.SetTooltip("Delay between corpse scans (milliseconds)") end
-            ImGui.PopItemWidth()
-
-            ImGui.NextColumn()
-            ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
-            ImGui.Text("Loot Radius:")
-            ImGui.PopStyleColor()
-            ImGui.SameLine(125)
-            ImGui.PushItemWidth(150)
-            local newRadius, changedRadius = ImGui.InputInt("##Loot Radius", settings.lootRadius)
-            if changedRadius then settings.lootRadius = newRadius end
-            if ImGui.IsItemHovered() then ImGui.SetTooltip("Corpse search radius") end
-            ImGui.PopItemWidth()
-
-            ImGui.NextColumn()
-            ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
-            ImGui.Text("Combat Delay:")
-            ImGui.PopStyleColor()
-            ImGui.SameLine()
-            ImGui.PushItemWidth(150)
-            local newCombat, changedCombat = ImGui.InputInt("##Combat Wait Delay (ms)", settings.combatWaitDelay)
-            if changedCombat then settings.combatWaitDelay = newCombat end
-            if ImGui.IsItemHovered() then ImGui.SetTooltip("Delay after combat ends (milliseconds)") end
-            ImGui.PopItemWidth()
-
-            ImGui.NextColumn()
-            ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
-            ImGui.Text("Main Toon Name:")
-            ImGui.PopStyleColor()
-            ImGui.SameLine()
-            ImGui.PushItemWidth(150) -- Set input box width
-
-            local newMainToonName, changedMainToonName = ImGui.InputText("##MainToonName", config.mainToonName or "", 128)
-            if changedMainToonName then
-                config.mainToonName = newMainToonName
-                if config.save then
-                    config.save() -- Save to config file
-                end
-            end
-
-            ImGui.PopItemWidth()
-            ImGui.Columns(1) -- End columns for this section
-            ImGui.Spacing()
-        else
-            ImGui.PopStyleColor() -- Pop the color even if header is closed
-        end
-
-        -- Coordination Settings Section
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0) -- Light green header
-        if ImGui.CollapsingHeader("Peer Coordination Settings", ImGuiTreeNodeFlags.DefaultOpen) then
-            ImGui.PopStyleColor()
-            ImGui.Spacing()
-
-            ImGui.Columns(3, nil, false) -- Three-column layout
-            ImGui.SetColumnWidth(0, 200) -- Set a fixed width for column 1
-            ImGui.SetColumnWidth(1, 200) -- Set a fixed width for column 2
-            ImGui.SetColumnWidth(2, 200)
-
-            -- **Row 1: Is Main Looter & Loot Command Type**
-            ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
-            ImGui.Text("Is Main Looter:")
-            ImGui.PopStyleColor()
-            ImGui.SameLine(150) -- Ensure spacing for alignment
-            local isMain, changedIsMain = ImGui.Checkbox("##IsMain", settings.isMain)
-            if changedIsMain then settings.isMain = isMain end
-
-            ImGui.NextColumn() -- Move to the second column
-
-            ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
-            ImGui.Text("Loot Command Type:")
-            ImGui.PopStyleColor()
-            ImGui.SameLine()
-
-            local commandOptions = { "DanNet", "E3", "EQBC" }
-            local commandValues = { "dannet", "e3", "bc" } -- Internal values that match util.lua
-            local commandNames = {
-                ["dannet"] = "DanNet",
-                ["e3"] = "E3",
-                ["bc"] = "EQBC"
-            }
-
-            -- Get current mode directly from config - ensure it's valid (following ChatMode pattern)
-            local currentCommandType = config.lootCommandType or "dannet"
-
-            -- Validate that currentCommandType is in our list
-            local isValidCommand = false
-            for _, value in ipairs(commandValues) do
-                if value == currentCommandType then
-                    isValidCommand = true
-                    break
-                end
-            end
-
-            -- If invalid command, default to dannet (following ChatMode pattern)
-            if not isValidCommand then
-                currentCommandType = "dannet"
-                config.lootCommandType = currentCommandType
-                if config.save then
-                    config.save()
-                end
-            end
-
-            local currentIndex = 0 -- Use 0-based indexing like ChatMode
-
-            -- Find current command type index (following ChatMode pattern)
-            for i, value in ipairs(commandValues) do
-                if value == currentCommandType then
-                    currentIndex = i - 1 -- Convert to 0-based
-                    break
-                end
-            end
-
-            -- Display current command name (following ChatMode pattern)
-            local displayName = commandNames[currentCommandType] or currentCommandType
-
-            ImGui.PushItemWidth(120)
-            if ImGui.BeginCombo("##LootCommandType", displayName) then
-                for i, option in ipairs(commandOptions) do
-                    local isSelected = (currentIndex == i - 1) -- 0-based comparison like ChatMode
-                    if ImGui.Selectable(option, isSelected) then
-                        -- Immediately update the config when selected (following ChatMode pattern)
-                        local selectedValue = commandValues[i]
-                        config.lootCommandType = selectedValue
-
-                        logging.log("Loot command type changed to: " .. option .. " (" .. selectedValue .. ")")
-                        if config.save then
-                            config.save()
-                        end
-
-                        -- Update local variables for immediate UI feedback (following ChatMode pattern)
-                        currentCommandType = selectedValue
-                        currentIndex = i - 1
-                    end
-                    if isSelected then
-                        ImGui.SetItemDefaultFocus()
-                    end
-                end
-                ImGui.EndCombo()
-            end
-            ImGui.PopItemWidth()
-
-            -- Add a quick fix button
-            ImGui.SameLine()
-            if ImGui.Button("Reset##ResetCommandType") then
-                config.lootCommandType = "dannet"
-                if config.save then
-                    config.save()
-                end
-                logging.log("Command type FORCE reset to dannet")
-            end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Force reset command type to DanNet")
-            end
-
-            -- Debug button to see what's in memory
-            ImGui.SameLine()
-            if ImGui.Button("Debug##DebugCommandType") then
-                logging.log("=== COMMAND TYPE DEBUG ===")
-                logging.log("config.lootCommandType = '" .. tostring(config.lootCommandType) .. "'")
-                logging.log("Raw type: " .. type(config.lootCommandType))
-                if config.debugPrint then
-                    config.debugPrint()
-                end
-            end
-
-            ImGui.NextColumn()                                      -- 3rd Column
-            ImGui.AlignTextToFramePadding()
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
-            ImGui.Text("Pause Peer Triggering:")
-            ImGui.PopStyleColor()
-            ImGui.SameLine(150) -- Ensure spacing for alignment
-            local peerTriggerPaused, changedPausePeerTrigger = ImGui.Checkbox("##PausePeerTriggering",
-                settings.peerTriggerPaused)
-            if changedPausePeerTrigger then settings.peerTriggerPaused = peerTriggerPaused end
-            ImGui.Columns(1) -- End columns for coordination section
-            ImGui.Spacing()
-        else
-            ImGui.PopStyleColor() -- Pop the color even if header is closed
-        end
-
-        -- Timing Settings Section
-        draw_timing_settings()
-
-        -- Speed Settings Section
-        draw_speed_settings()
-
-        -- Decision Settings Section
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.6, 1.0, 1.0) -- Light purple header
-        if ImGui.CollapsingHeader("Decision Settings", ImGuiTreeNodeFlags.DefaultOpen) then
-            ImGui.PopStyleColor()
-            ImGui.Spacing()
-
-            -- Add checkbox for auto-resolve unknown items
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0) -- Light yellow labels
-            ImGui.Text("Auto Apply Rule:")
-            ImGui.PopStyleColor()
-            ImGui.SameLine(150)
-            local autoResolve, autoResolveChanged = ImGui.Checkbox("##Auto-resolve unknown items",
-                SmartLootEngine.config.autoResolveUnknownItems or false)
-            if autoResolveChanged then
-                SmartLootEngine.config.autoResolveUnknownItems = autoResolve
-                if autoResolve then
-                    logging.log("Auto-resolve unknown items enabled - will use default action after timeout")
-                else
-                    logging.log("Auto-resolve unknown items disabled - will ignore after timeout")
-                end
-            end
-
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip(
-                    "When enabled, items without rules will be handled according to the default action after the timeout.\nWhen disabled, items will be ignored after timeout.")
-            end
-
-            -- Only show timeout setting if auto-resolve is enabled
-            if SmartLootEngine.config.autoResolveUnknownItems then
-                ImGui.Text("Pending Decision Timeout (s):")
-                ImGui.SameLine()
-                ImGui.PushItemWidth(100)
-
-                local newTimeout, changedTimeout = ImGui.InputInt("##PendingDecisionTimeout",
-                    settings.pendingDecisionTimeout / 1000, 0, 0)
-                if changedTimeout then
-                    settings.pendingDecisionTimeout = math.max(5, newTimeout) * 1000 -- Min 5 seconds, convert to ms
-                    -- Update the engine's config
-                    SmartLootEngine.config.pendingDecisionTimeoutMs = settings.pendingDecisionTimeout
-                end
-
-                ImGui.PopItemWidth()
-
-                if ImGui.IsItemHovered() then
-                    ImGui.SetTooltip("Time before auto-resolving items with no rule (minimum 5 seconds)")
-                end
-
-                -- Default action selector
-                ImGui.Text("Default Action:")
-                ImGui.SameLine()
-                ImGui.PushItemWidth(120)
-
-                local defaultActions = { "Keep", "Ignore", "Destroy" }
-                -- Initialize settings value if not present
-                if not settings.defaultUnknownItemAction then
-                    settings.defaultUnknownItemAction = SmartLootEngine.config.defaultUnknownItemAction or "Ignore"
-                end
-
-                -- Use settings.defaultUnknownItemAction directly in BeginCombo
-                if ImGui.BeginCombo("##DefaultAction", settings.defaultUnknownItemAction) then
-                    for _, action in ipairs(defaultActions) do
-                        -- Check against settings.defaultUnknownItemAction for selection
-                        local isSelected = (settings.defaultUnknownItemAction == action)
-                        if ImGui.Selectable(action, isSelected) then
-                            -- Update both settings and engine config
-                            settings.defaultUnknownItemAction = action
-                            SmartLootEngine.config.defaultUnknownItemAction = action
-                            logging.log("Default unknown item action set to: " .. action)
-
-                            -- IMPORTANT: Save the configuration after changing a setting
-                            if config.save then
-                                config.save()
-                            end
-                        end
-                        if isSelected then
-                            ImGui.SetItemDefaultFocus()
-                        end
-                    end
-                    ImGui.EndCombo()
-                end
-
-                ImGui.PopItemWidth()
-
-                if ImGui.IsItemHovered() then
-                    ImGui.SetTooltip("Action to take for items without rules after timeout")
-                end
-            end
-
-            ImGui.Spacing()
-        else
-            ImGui.PopStyleColor() -- Pop the color even if header is closed
-        end
-
-        draw_communication_settings(config)
-        draw_inventory_settings(config)
-        draw_chase_settings(config)
-        
-        -- Database Tools Section
         ImGui.Spacing()
         ImGui.Separator()
         ImGui.Spacing()
-        
-        if ImGui.CollapsingHeader("Database Tools") then
-            ImGui.Text("Import/Export Tools:")
-            ImGui.Spacing()
-            
-            if ImGui.Button("Legacy Import", 120, 0) then
-                lootUI.legacyImportPopup = lootUI.legacyImportPopup or {}
-                lootUI.legacyImportPopup.isOpen = true
-            end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Import loot rules from E3 Macro INI files")
-            end
-            
-            ImGui.Spacing()
-            ImGui.TextColored(0.7, 0.7, 0.7, 1, "Import legacy E3 loot rules from INI format files")
+
+        local sections = {
+            { id = "core", label = "Core Performance", render = function()
+                openNextHeader()
+                draw_core_performance_settings(settings, config, true)
+            end },
+            { id = "coordination", label = "Peer Coordination", render = function()
+                openNextHeader()
+                draw_peer_coordination_settings(lootUI, settings, config, true)
+            end },
+            { id = "chat", label = "Chat Output", render = function()
+                openNextHeader()
+                draw_chat_settings(config, true)
+            end },
+            { id = "timing", label = "Timing Settings", render = function()
+                openNextHeader()
+                draw_timing_settings()
+            end },
+            { id = "speed", label = "Engine Speed", render = function()
+                openNextHeader()
+                draw_speed_settings()
+            end },
+            { id = "announcements", label = "Item Announce", render = function()
+                openNextHeader()
+                draw_item_announce_settings(config)
+            end },
+            { id = "lore", label = "Lore Checking", render = function()
+                openNextHeader()
+                draw_lore_check_settings(config)
+            end },
+            { id = "communication", label = "Communication", render = function()
+                openNextHeader()
+                draw_communication_settings(config)
+            end },
+            { id = "inventory", label = "Inventory", render = function()
+                openNextHeader()
+                draw_inventory_settings(config)
+            end },
+            { id = "chase", label = "Chase Controls", render = function()
+                openNextHeader()
+                draw_chase_settings(config)
+            end },
+            { id = "database", label = "Database Tools", render = function()
+                openNextHeader()
+                draw_database_tools(lootUI, true)
+            end }
+        }
+
+        if not lootUI.settingsActiveSection then
+            lootUI.settingsActiveSection = sections[1].id
         end
-        
+
+        local sectionFound = false
+        for _, section in ipairs(sections) do
+            if lootUI.settingsActiveSection == section.id then
+                sectionFound = true
+                break
+            end
+        end
+        if not sectionFound then
+            lootUI.settingsActiveSection = sections[1].id
+        end
+
+        ImGui.BeginChild("SettingsNav", 240, 0, true)
+        for _, section in ipairs(sections) do
+            local flags = bit32.bor(ImGuiTreeNodeFlags.Leaf, ImGuiTreeNodeFlags.NoTreePushOnOpen)
+            if TREE_SPAN_FLAG ~= 0 then
+                flags = bit32.bor(flags, TREE_SPAN_FLAG)
+            end
+            if lootUI.settingsActiveSection == section.id then
+                flags = bit32.bor(flags, ImGuiTreeNodeFlags.Selected)
+            end
+            ImGui.TreeNodeEx(section.label, flags)
+            if ImGui.IsItemClicked() then
+                lootUI.settingsActiveSection = section.id
+            end
+        end
+        ImGui.EndChild()
+
+        ImGui.SameLine()
+        ImGui.BeginChild("SettingsContent", 0, 0, false)
+        local activeSection = lootUI.settingsActiveSection
+        for _, section in ipairs(sections) do
+            if section.id == activeSection then
+                section.render()
+                break
+            end
+        end
+        ImGui.EndChild()
+
         ImGui.EndTabItem()
     end
 end

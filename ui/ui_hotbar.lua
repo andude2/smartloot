@@ -140,7 +140,14 @@ local buttonConfig = {
         color = function(lootUI) return lootUI.showPeerCommands and {0.8, 0.4, 0.2} or {0.4, 0.6, 0.8} end,
         visible = true,
         action = function(settings, toggle_ui, lootUI)
-            lootUI.showPeerCommands = not lootUI.showPeerCommands
+            local wasVisible = lootUI.showPeerCommands or false
+            lootUI.showPeerCommands = not wasVisible
+            if lootUI.showPeerCommands and not wasVisible then
+                lootUI.peerCommandsOpen = true
+                lootUI.uncollapsePeerCommandsOnNextOpen = true
+            elseif not lootUI.showPeerCommands then
+                lootUI.peerCommandsOpen = false
+            end
         end
     },
     settings = {

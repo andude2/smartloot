@@ -246,6 +246,7 @@ local lootUI = {
     resumeItemIndex = nil,
     useFloatingButton = true,
     showPeerCommands = true,
+    peerCommandsOpen = true,
     showSettingsTab = false,
     emergencyStop = false,
 
@@ -272,6 +273,8 @@ local settings = {
     peerTriggerPaused = false,
     showLogWindow = false,
     rgMainTriggered = false,
+    peerSelectionStrategy = (config.getPeerSelectionStrategy and config.getPeerSelectionStrategy())
+        or config.peerSelectionStrategy or SmartLootEngine.config.peerSelectionStrategy or "items_first",
 }
 
 local historyUI = {
@@ -1117,8 +1120,19 @@ bindings.initialize(
 -- ============================================================================
 
 mq.imgui.init("SmartLoot", function()
-    -- If we're shutting down, don't render any UI to avoid touching freed state
-    if isShuttingDown then return end
+    -- Apply SmartLoot-scoped rounded theme (local to our draw only)
+    local ROUND = 8.0
+    local _sl_pushed = 0
+    ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, ROUND) _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, ROUND)  _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, ROUND)  _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, ROUND)  _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, ROUND) _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.GrabRounding, ROUND)   _sl_pushed = _sl_pushed + 1
+    if ImGuiStyleVar.TabRounding ~= nil then
+        ImGui.PushStyleVar(ImGuiStyleVar.TabRounding, ROUND)
+        _sl_pushed = _sl_pushed + 1
+    end
     -- Main UI Window
     if lootUI.showUI then
         ImGui.SetNextWindowBgAlpha(0.75)
@@ -1497,6 +1511,9 @@ mq.imgui.init("SmartLoot", function()
     if uiHelp then
         uiHelp.render()
     end
+
+    -- Pop SmartLoot-scoped rounded theme
+    if _sl_pushed > 0 then ImGui.PopStyleVar(_sl_pushed) end
 end)
 
 -- ============================================================================

@@ -263,6 +263,9 @@ SmartLootEngine.config = {
 
     -- Feature settings
     enablePeerCoordination = true,
+    -- Peer selection strategy when processing ignored items:
+    -- "items_first" (current behavior) or "peers_first" (new option)
+    peerSelectionStrategy = "items_first",
     enableStatisticsLogging = true,
     peerTriggerDelay = 10000,
 
@@ -284,6 +287,13 @@ SmartLootEngine.config = {
     maxLootRetries = 3,
     lootRetryIntervalMs = 400,
 }
+
+-- Sync initial peer selection strategy with persistent config
+if config and config.getPeerSelectionStrategy then
+    SmartLootEngine.config.peerSelectionStrategy = config.getPeerSelectionStrategy()
+elseif config and config.peerSelectionStrategy then
+    SmartLootEngine.config.peerSelectionStrategy = config.peerSelectionStrategy
+end
 
 -- ============================================================================
 -- ENGINE STATISTICS
@@ -1835,6 +1845,122 @@ function SmartLootEngine.triggerPeerForItem(itemName, itemID)
     return true
 end
 
+-- Trigger a specific peer to begin a once pass (peers-first path)
+function SmartLootEngine.triggerPeerByName(peerName)
+    local now = mq.gettime()
+    if now - SmartLootEngine.state.lastPeerTriggerTime < SmartLootEngine.config.peerTriggerDelay then
+        return false
+    end
+
+    if not peerName or peerName == "" then return false end
+
+    -- Register with waterfall tracker BEFORE triggering
+    waterfallTracker.onPeerTriggered(peerName)
+
+    local cmdTarget = peerName
+    pcall(function()
+        actors.send(
+            { mailbox = "smartloot_command" },
+            { type = "command", command = "reload_rules", args = {}, target = cmdTarget }
+        )
+    end)
+
+    mq.delay(100)
+
+    local okStart = pcall(function()
+        actors.send(
+            { mailbox = "smartloot_command" },
+            { type = "command", command = "start_once", args = {}, target = cmdTarget }
+        )
+    end)
+
+    if not okStart then
+        logging.debug(string.format("[Engine] Failed to send start_once to %s (triggerPeerByName)", peerName))
+        return false
+    end
+
+    if config and config.sendChatMessage then
+        config.sendChatMessage(string.format("Triggering %s to loot remaining items", peerName))
+    end
+
+    SmartLootEngine.state.lastPeerTriggerTime = now
+    SmartLootEngine.stats.peersTriggered = SmartLootEngine.stats.peersTriggered + 1
+    logging.debug(string.format("[Engine] Peer triggered via peers-first selection: %s", peerName))
+    return true
+end
+
+-- Return list of candidate peers after current toon in order, connected and in-zone
+local function getCandidatePeersInZone()
+    local currentToon = util.getCurrentToon()
+    local connectedPeers = util.getConnectedPeers()
+    if not config.peerLootOrder or #config.peerLootOrder == 0 then return {} end
+
+    local myIndex = nil
+    for i, p in ipairs(config.peerLootOrder) do
+        if p:lower() == currentToon:lower() then myIndex = i break end
+    end
+    if not myIndex then return {} end
+
+    local myZoneID = mq.TLO.Zone.ID()
+    local candidates = {}
+    for i = myIndex + 1, #config.peerLootOrder do
+        local peer = config.peerLootOrder[i]
+        -- connected?
+        local isConnected = false
+        for _, cp in ipairs(connectedPeers) do
+            if cp:lower() == peer:lower() then isConnected = true break end
+        end
+        if isConnected then
+            local peerSpawn = mq.TLO.Spawn(string.format("pc =%s", peer))
+            if peerSpawn and peerSpawn() then
+                local peerZoneID = peerSpawn.Zone and peerSpawn.Zone.ID and peerSpawn.Zone.ID() or nil
+                if not peerZoneID or peerZoneID == myZoneID then
+                    table.insert(candidates, peer)
+                else
+                    logging.debug(string.format("[Engine] Peer %s in different zone (%s vs %s) - skipping",
+                        peer, peerZoneID or "unknown", myZoneID or "unknown"))
+                end
+            end
+        end
+    end
+    return candidates
+end
+
+-- Find the first peer (in order) who wants any of the ignored items
+function SmartLootEngine.findPeerForAnyIgnoredItem(ignoredItems)
+    if type(ignoredItems) ~= "table" or #ignoredItems == 0 then return nil end
+    if not SmartLootEngine.config.enablePeerCoordination then return nil end
+
+    local candidates = getCandidatePeersInZone()
+    if #candidates == 0 then return nil end
+
+    -- For each peer, check all items
+    for _, peer in ipairs(candidates) do
+        local peerRules = database.getLootRulesForPeer(peer)
+        -- Pre-check: if rules table empty, skip quickly
+        if peerRules and next(peerRules) ~= nil then
+            for _, it in ipairs(ignoredItems) do
+                local itemName = it.name
+                local itemID = it.id
+                local ruleData = nil
+                if itemID and itemID > 0 then
+                    local compositeKey = string.format("%s_%d", itemName, itemID)
+                    ruleData = peerRules[compositeKey]
+                end
+                if not ruleData then
+                    local lowerName = string.lower(itemName)
+                    ruleData = peerRules[lowerName] or peerRules[itemName]
+                end
+                if ruleData and (ruleData.rule == "Keep" or (type(ruleData.rule) == "string" and ruleData.rule:find("KeepIfFewerThan"))) then
+                    return peer
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
 -- ============================================================================
 -- PENDING DECISION HANDLING
 -- ============================================================================
@@ -2361,10 +2487,20 @@ function SmartLootEngine.processProcessingPeersState()
     if #SmartLootEngine.state.ignoredItemsThisSession > 0 then
         local triggeredAny = false
 
-        for _, item in ipairs(SmartLootEngine.state.ignoredItemsThisSession) do
-            if SmartLootEngine.triggerPeerForItem(item.name, item.id) then
-                triggeredAny = true
-                break -- Only trigger one peer per cycle
+        local strategy = (SmartLootEngine.config.peerSelectionStrategy or "items_first"):lower()
+        if strategy == "peers_first" then
+            -- Find the first peer in order with interest in any ignored item
+            local peer = SmartLootEngine.findPeerForAnyIgnoredItem(SmartLootEngine.state.ignoredItemsThisSession)
+            if peer then
+                triggeredAny = SmartLootEngine.triggerPeerByName(peer)
+            end
+        else
+            -- Default behavior: scan items and trigger based on first matching item
+            for _, item in ipairs(SmartLootEngine.state.ignoredItemsThisSession) do
+                if SmartLootEngine.triggerPeerForItem(item.name, item.id) then
+                    triggeredAny = true
+                    break -- Only trigger one peer per cycle
+                end
             end
         end
 
@@ -2372,14 +2508,12 @@ function SmartLootEngine.processProcessingPeersState()
         SmartLootEngine.state.ignoredItemsThisSession = {}
 
         if triggeredAny then
-            logging.debug("[Engine] Triggered peer for ignored item")
+            logging.debug("[Engine] Triggered peer for ignored items (" .. strategy .. ")")
         else
-            -- Check if we should send completion message
-            --SmartLootEngine.checkAndSendCompletionMessage()
+            -- no-op; completion handled below
         end
     else
-        -- No ignored items to process - check if we should send completion message
-        --SmartLootEngine.checkAndSendCompletionMessage()
+        -- No ignored items to process
     end
 
     -- Check if local looting is complete and handle waterfall
@@ -2984,6 +3118,9 @@ function SmartLootEngine.setLootUIReference(lootUI, settings)
         SmartLootEngine.config.lootRadius = settings.lootRadius or SmartLootEngine.config.lootRadius
         SmartLootEngine.config.lootRange = settings.lootRange or SmartLootEngine.config.lootRange
         SmartLootEngine.config.combatWaitDelayMs = settings.combatWaitDelay or SmartLootEngine.config.combatWaitDelayMs
+        if settings.peerSelectionStrategy then
+            SmartLootEngine.config.peerSelectionStrategy = settings.peerSelectionStrategy
+        end
     end
 
     logging.debug("[Engine] UI and settings references configured")

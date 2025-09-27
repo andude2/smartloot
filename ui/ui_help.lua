@@ -42,7 +42,7 @@ local commandCategories = {
         name = "User Interface",
         commands = {
             {cmd = "/sl_toggle_hotbar", params = "", desc = "Toggle the visibility of the SmartLoot hotbar.", hasOptionalParam = false},
-            {cmd = "/sl_peer_commands", params = "", desc = "Toggle the visibility of the Peer Commands window for controlling other SmartLoot instances.", hasOptionalParam = false},
+            {cmd = "/sl_peer_commands", params = "[on|off|reset]", desc = "Show/hide the Peer Commands window, or reset its position if it was minimized/off-screen.", hasOptionalParam = true},
             {cmd = "/sl_debug", params = "", desc = "Toggle the debug window showing detailed loot processing information.", hasOptionalParam = false},
             {cmd = "/sl_debug level", params = "[X]", desc = "Set or show debug logging level. X can be 0-5 or NONE/ERROR/WARN/INFO/DEBUG/VERBOSE.", hasOptionalParam = true},
             {cmd = "/sl_stats", params = "[show|hide|toggle|reset|compact]", desc = "Control the live statistics window. Parameters: show, hide, toggle visibility, reset position, or toggle compact mode.", hasOptionalParam = true},
@@ -63,7 +63,8 @@ local commandCategories = {
         commands = {
             {cmd = "/sl_check_peers", params = "", desc = "Check which peers are connected and their current status.", hasOptionalParam = false},
             {cmd = "/sl_refresh_mode", params = "", desc = "Refresh loot mode based on current peer connections and loot order.", hasOptionalParam = false},
-            {cmd = "/sl_peer_monitor", params = "[on|off]", desc = "Enable or disable automatic peer monitoring for mode switching.", hasOptionalParam = true}
+            {cmd = "/sl_peer_monitor", params = "[on|off]", desc = "Enable or disable automatic peer monitoring for mode switching.", hasOptionalParam = true},
+            {cmd = "/sl_peer_selector", params = "<peers|items>", desc = "Choose how to select the next peer when there are ignored items: 'peers' scans peers-first (new), 'items' scans items-first (current).", hasRequiredParam = true}
         }
     },
     {

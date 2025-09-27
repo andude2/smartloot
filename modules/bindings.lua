@@ -231,9 +231,35 @@ local function bindLiveStats()
 end
 
 local function bindPeerCommands()
-    mq.bind("/sl_peer_commands", function()
-        if lootUI then
-            lootUI.showPeerCommands = not (lootUI.showPeerCommands or false)
+    mq.bind("/sl_peer_commands", function(action)
+        if not lootUI then return end
+
+        local a = (action or ""):lower()
+        if a == "on" or a == "show" then
+            local wasVisible = lootUI.showPeerCommands or false
+            lootUI.showPeerCommands = true
+            lootUI.peerCommandsOpen = true
+            -- Ensure it uncollapses when (re)shown
+            if not wasVisible then lootUI.uncollapsePeerCommandsOnNextOpen = true end
+            util.printSmartLoot("Peer Commands window shown", "info")
+        elseif a == "off" or a == "hide" then
+            lootUI.showPeerCommands = false
+            lootUI.peerCommandsOpen = false
+            util.printSmartLoot("Peer Commands window hidden", "info")
+        elseif a == "reset" then
+            lootUI.showPeerCommands = true
+            lootUI.resetPeerCommandsWindow = true
+            lootUI.peerCommandsOpen = true
+            util.printSmartLoot("Peer Commands window reset", "success")
+        else
+            local wasVisible = lootUI.showPeerCommands or false
+            lootUI.showPeerCommands = not wasVisible
+            if lootUI.showPeerCommands and not wasVisible then
+                lootUI.peerCommandsOpen = true
+                lootUI.uncollapsePeerCommandsOnNextOpen = true
+            elseif not lootUI.showPeerCommands then
+                lootUI.peerCommandsOpen = false
+            end
             util.printSmartLoot("Peer Commands window " .. (lootUI.showPeerCommands and "shown" or "hidden"), "info")
         end
     end)
@@ -1094,6 +1120,35 @@ function bindings.registerAllBindings()
     bindPauseResume()
     bindLiveStats()
     bindPeerCommands()
+    -- New: peers-first/items-first selector binding
+    mq.bind("/sl_peer_selector", function(strategy)
+        local s = (strategy or ""):lower()
+        if s ~= "peers" and s ~= "items" and s ~= "peers_first" and s ~= "items_first" then
+            util.printSmartLoot("Usage: /sl_peer_selector <peers|items>", "info")
+            return
+        end
+        if not SmartLootEngine or not SmartLootEngine.config then
+            util.printSmartLoot("SmartLootEngine not available", "error")
+            return
+        end
+
+        local normalized = (s == "peers" or s == "peers_first") and "peers_first" or "items_first"
+
+        SmartLootEngine.config.peerSelectionStrategy = normalized
+
+        if SmartLootEngine.state and SmartLootEngine.state.settings then
+            SmartLootEngine.state.settings.peerSelectionStrategy = normalized
+        end
+
+        if config and config.setPeerSelectionStrategy then
+            config.setPeerSelectionStrategy(normalized)
+        else
+            config.peerSelectionStrategy = normalized
+            if config.save then pcall(config.save) end
+        end
+
+        util.printSmartLoot("Peer selection strategy set to: " .. normalized, "success")
+    end)
     bindStatusCommands()
     bindEngineCommands()
     bindWaterfallCommands()

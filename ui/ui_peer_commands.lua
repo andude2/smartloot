@@ -12,9 +12,31 @@ function uiPeerCommands.draw(lootUI, loot, util)
     
     -- Set consistent window properties
     ImGui.SetNextWindowBgAlpha(0.85)
-    ImGui.SetNextWindowSize(320, 450, ImGuiCond.FirstUseEver)
+    -- Reset position/size on demand to recover from off-screen states
+    if lootUI.resetPeerCommandsWindow then
+        if ImGui.SetNextWindowPos then ImGui.SetNextWindowPos(200, 200, ImGuiCond.Always) end
+        ImGui.SetNextWindowSize(320, 450, ImGuiCond.Always)
+        if ImGui.SetNextWindowCollapsed then ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always) end
+    else
+        ImGui.SetNextWindowSize(320, 450, ImGuiCond.FirstUseEver)
+    end
+    -- If requested, just uncollapse without resetting position/size
+    if lootUI.uncollapsePeerCommandsOnNextOpen and ImGui.SetNextWindowCollapsed then
+        ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always)
+    end
     
-    local open, shouldClose = ImGui.Begin("Peer Commands", true, ImGuiWindowFlags.None)
+    -- Ensure we track ImGui's notion of the open state separately
+    if lootUI.peerCommandsOpen == nil then
+        lootUI.peerCommandsOpen = lootUI.showPeerCommands ~= false
+    end
+
+    -- Drive p_open from our own visibility flag so close/minimize can't desync state
+    local pOpen = lootUI.peerCommandsOpen ~= false
+    local open, keepOpen = ImGui.Begin("Peer Commands", pOpen)
+    local isCollapsed = ImGui.IsWindowCollapsed and ImGui.IsWindowCollapsed() or false
+    -- Clear one-shot flags after creating the window
+    if lootUI.resetPeerCommandsWindow then lootUI.resetPeerCommandsWindow = false end
+    if lootUI.uncollapsePeerCommandsOnNextOpen then lootUI.uncollapsePeerCommandsOnNextOpen = false end
     if open then
         local peerList = util.getConnectedPeers()
         
@@ -234,9 +256,13 @@ function uiPeerCommands.draw(lootUI, loot, util)
     
     ImGui.End()
     
-    -- Handle window close properly - only close if user clicked X
-    if shouldClose == false then
-        lootUI.showPeerCommands = false
+    -- Persist the open state reported by ImGui (true unless user clicked X)
+    if keepOpen ~= nil then
+        lootUI.peerCommandsOpen = keepOpen and true or false
+
+        if keepOpen == false and not isCollapsed then
+            lootUI.showPeerCommands = false
+        end
     end
 end
 
