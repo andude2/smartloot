@@ -123,6 +123,176 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
     ImGui.End()
 end
 
+-- Whitelist Manager Popup (per-character)
+function uiPopups.drawWhitelistManagerPopup(lootUI, database, util)
+    if not lootUI.whitelistManagerPopup or not lootUI.whitelistManagerPopup.isOpen then return end
+
+    local state = lootUI.whitelistManagerPopup
+    ImGui.SetNextWindowSize(620, 520, ImGuiCond.FirstUseEver)
+    local open = ImGui.Begin("SmartLoot - Whitelist Manager", true)
+    if not open then
+        lootUI.whitelistManagerPopup.isOpen = false
+        ImGui.End()
+        return
+    end
+
+    local toonName = mq.TLO.Me.Name() or "unknown"
+    ImGui.Text("Character:")
+    ImGui.SameLine()
+    ImGui.TextColored(0.8, 1.0, 0.8, 1.0, toonName)
+    ImGui.SameLine()
+    ImGui.TextDisabled("(Keep/threshold rules = whitelisted)")
+
+    ImGui.Separator()
+
+    -- Add item section
+    ImGui.Text("Add Item to Whitelist:")
+    ImGui.SameLine()
+    ImGui.PushItemWidth(260)
+    local newName, nameChanged = ImGui.InputText("##WLAddItemName", state.addItemName or "", 128)
+    if nameChanged then state.addItemName = newName end
+    ImGui.PopItemWidth()
+
+    ImGui.SameLine()
+    local ruleTypes = {"Keep", "KeepIfFewerThan"}
+    local currentRule = state.addRuleType or "Keep"
+    if ImGui.BeginCombo("##WLAddRuleType", currentRule) then
+        for _, r in ipairs(ruleTypes) do
+            local selected = (currentRule == r)
+            if ImGui.Selectable(r, selected) then
+                state.addRuleType = r
+                currentRule = r
+            end
+            if selected then ImGui.SetItemDefaultFocus() end
+        end
+        ImGui.EndCombo()
+    end
+
+    if currentRule ~= "Keep" then
+        ImGui.SameLine()
+        ImGui.Text("Threshold:")
+        ImGui.SameLine()
+        ImGui.PushItemWidth(70)
+        local newThres, thChanged = ImGui.InputInt("##WLAddThreshold", state.addThreshold or 1)
+        if thChanged then state.addThreshold = math.max(1, newThres) end
+        ImGui.PopItemWidth()
+    end
+
+    ImGui.SameLine()
+    if ImGui.Button("Add") then
+        local itemName = (state.addItemName or ""):match("^%s*(.-)%s*$")
+        if itemName ~= "" then
+            local rule = currentRule
+            if rule == "KeepIfFewerThan" then
+                rule = string.format("KeepIfFewerThan:%d", state.addThreshold or 1)
+            end
+            -- Save as name-based rule so it applies even if itemID unknown yet
+            local ok = database.saveNameBasedRuleFor(toonName, itemName, rule)
+            if ok then
+                util.printSmartLoot(string.format("Whitelisted '%s' with rule %s for %s", itemName, rule, toonName), "success")
+                state.addItemName = ""
+                state.entries = nil -- force refresh
+            else
+                util.printSmartLoot("Failed to add whitelist rule (check logs)", "error")
+            end
+        end
+    end
+
+    ImGui.SameLine()
+    if ImGui.Button("Close") then
+        lootUI.whitelistManagerPopup.isOpen = false
+        ImGui.End()
+        return
+    end
+
+    ImGui.Spacing()
+    ImGui.Separator()
+
+    -- Filter/search
+    ImGui.Text("Filter:")
+    ImGui.SameLine()
+    ImGui.PushItemWidth(240)
+    local newFilter, fChanged = ImGui.InputText("##WLFilter", state.filter or "", 120)
+    if fChanged then state.filter = newFilter end
+    ImGui.PopItemWidth()
+
+    ImGui.SameLine()
+    if ImGui.Button("Refresh") then
+        state.entries = nil
+    end
+
+    ImGui.Spacing()
+
+    -- Load entries lazily
+    if not state.entries then
+        local all = database.getAllLootRules()
+        local list = {}
+        for key, data in pairs(all or {}) do
+            local rule = tostring(data.rule or "")
+            if rule == "Keep" or rule:find("KeepIfFewerThan") then
+                table.insert(list, {
+                    item_name = data.item_name or key,
+                    item_id = tonumber(data.item_id) or 0,
+                    icon_id = tonumber(data.icon_id) or 0,
+                    rule = rule,
+                    is_name_fallback = (tonumber(data.item_id) or 0) == 0,
+                })
+            end
+        end
+        table.sort(list, function(a,b) return tostring(a.item_name) < tostring(b.item_name) end)
+        state.entries = list
+    end
+
+    local flags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)
+    if ImGui.BeginTable("SL_WhitelistTable", 4, flags) then
+        ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 30)
+        ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch)
+        ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 150)
+        ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, 220)
+        ImGui.TableHeadersRow()
+
+        local filter = (state.filter or ""):lower()
+        for _, row in ipairs(state.entries or {}) do
+            if filter == "" or tostring(row.item_name):lower():find(filter, 1, true) then
+                ImGui.TableNextRow()
+                ImGui.TableSetColumnIndex(0)
+                uiUtils.drawItemIcon(row.icon_id or 0)
+                ImGui.TableSetColumnIndex(1)
+                ImGui.Text(row.item_name or "")
+                ImGui.TableSetColumnIndex(2)
+                ImGui.Text(row.rule or "")
+                ImGui.TableSetColumnIndex(3)
+                ImGui.PushID(row.item_name .. (row.item_id or 0))
+                if ImGui.Button("Set Ignore") then
+                    if row.item_id and row.item_id > 0 then
+                        database.saveLootRuleFor(toonName, row.item_name, row.item_id, "Ignore", row.icon_id or 0)
+                    else
+                        database.saveNameBasedRuleFor(toonName, row.item_name, "Ignore")
+                    end
+                    state.entries = nil
+                end
+                ImGui.SameLine()
+                if ImGui.Button("Delete Rule") then
+                    if row.item_id and row.item_id > 0 then
+                        database.deleteLootRuleFor(toonName, row.item_id)
+                    else
+                        database.deleteNameBasedRuleFor(toonName, row.item_name)
+                    end
+                    state.entries = nil
+                end
+                ImGui.PopID()
+            end
+        end
+
+        ImGui.EndTable()
+    else
+        ImGui.Text("No whitelist entries.")
+    end
+
+    ImGui.End()
+end
+
+
 -- Loot Decision Popup - REDESIGNED with better layout and consistent button sizing
 function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
     if lootUI.currentItem then

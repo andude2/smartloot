@@ -12,6 +12,25 @@ local json = require("dkjson")
 local actors = require("actors")
 local tempRules = require("modules.temp_rules")
 
+-- Helper: whether current character should avoid triggering peers (whitelist-only + flag)
+local function _preventPeerTriggers()
+    local ok = false
+    local success = false
+    -- Guarded checks in case config functions are missing
+    if config and config.isWhitelistOnly then
+        local wl = false
+        local noTrig = false
+        local ok1, v1 = pcall(function() return config.isWhitelistOnly() end)
+        if ok1 then wl = v1 == true end
+        if wl and config.isWhitelistNoTriggerPeers then
+            local ok2, v2 = pcall(function() return config.isWhitelistNoTriggerPeers() end)
+            if ok2 then noTrig = v2 == true end
+        end
+        return wl and noTrig
+    end
+    return false
+end
+
 -- ============================================================================
 -- NAVIGATION HELPER FUNCTIONS
 -- ============================================================================
@@ -1320,6 +1339,10 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
 
     -- Handle no rule case
     if not rule or rule == "" or rule == "Unset" then
+        -- If this character is in whitelist-only mode, treat unknowns as Ignore (no prompt)
+        if config and config.isWhitelistOnly and config.isWhitelistOnly() then
+            return "Ignore", itemID, iconID
+        end
         return "Unset", itemID, iconID
     end
 
@@ -1599,13 +1622,16 @@ function SmartLootEngine.recordLootAction(action, itemName, itemID, iconID, quan
     -- Send chat message if configured based on item announce settings
     if config and config.sendChatMessage and config.shouldAnnounceItem then
         if config.shouldAnnounceItem(action) then
-            local itemLink = util.createItemLink(itemName, itemID)
+            -- Get corpse slot from current item state if available
+            local corpseSlot = SmartLootEngine.state.currentItem and SmartLootEngine.state.currentItem.slot or nil
+            local itemLink = util.createItemLink(itemName, itemID, corpseSlot)
             local corpseText = corpseID and corpseID > 0 and string.format(" from corpse %d", corpseID) or ""
             config.sendChatMessage(string.format("%s %s%s", action, itemLink, corpseText))
         end
     elseif config and config.sendChatMessage and (action == "Ignored" or action == "Left Behind" or action:find("Ignored")) then
         -- Fallback to old behavior if shouldAnnounceItem function doesn't exist
-        local itemLink = util.createItemLink(itemName, itemID)
+        local corpseSlot = SmartLootEngine.state.currentItem and SmartLootEngine.state.currentItem.slot or nil
+        local itemLink = util.createItemLink(itemName, itemID, corpseSlot)
         local corpseText = corpseID and corpseID > 0 and string.format(" from corpse %d", corpseID) or ""
         config.sendChatMessage(string.format("%s %s%s", action, itemLink, corpseText))
     end
@@ -1623,7 +1649,7 @@ function SmartLootEngine.queueIgnoredItem(itemName, itemID)
 end
 
 function SmartLootEngine.findNextInterestedPeer(itemName, itemID)
-    if not SmartLootEngine.config.enablePeerCoordination then
+    if not SmartLootEngine.config.enablePeerCoordination or _preventPeerTriggers() then
         return nil
     end
     -- Check for temporary peer assignment first
@@ -1694,7 +1720,7 @@ function SmartLootEngine.findNextInterestedPeer(itemName, itemID)
 end
 
 function SmartLootEngine.findNextInterestedPeerInZone(itemName, itemID)
-    if not SmartLootEngine.config.enablePeerCoordination then
+    if not SmartLootEngine.config.enablePeerCoordination or _preventPeerTriggers() then
         return nil
     end
     
@@ -1792,6 +1818,7 @@ function SmartLootEngine.findNextInterestedPeerInZone(itemName, itemID)
 end
 
 function SmartLootEngine.triggerPeerForItem(itemName, itemID)
+    if _preventPeerTriggers() then return false end
     local now = mq.gettime()
     if now - SmartLootEngine.state.lastPeerTriggerTime < SmartLootEngine.config.peerTriggerDelay then
         return false
@@ -1847,6 +1874,7 @@ end
 
 -- Trigger a specific peer to begin a once pass (peers-first path)
 function SmartLootEngine.triggerPeerByName(peerName)
+    if _preventPeerTriggers() then return false end
     local now = mq.gettime()
     if now - SmartLootEngine.state.lastPeerTriggerTime < SmartLootEngine.config.peerTriggerDelay then
         return false
@@ -1929,7 +1957,7 @@ end
 -- Find the first peer (in order) who wants any of the ignored items
 function SmartLootEngine.findPeerForAnyIgnoredItem(ignoredItems)
     if type(ignoredItems) ~= "table" or #ignoredItems == 0 then return nil end
-    if not SmartLootEngine.config.enablePeerCoordination then return nil end
+    if not SmartLootEngine.config.enablePeerCoordination or _preventPeerTriggers() then return nil end
 
     local candidates = getCandidatePeersInZone()
     if #candidates == 0 then return nil end
@@ -1986,7 +2014,9 @@ function SmartLootEngine.createPendingDecision(itemName, itemID, iconID, quantit
 
     -- Send chat notification
     if config and config.sendChatMessage then
-        local itemLink = util.createItemLink(itemName, itemID)
+        -- Get corpse slot from current item state if available
+        local corpseSlot = SmartLootEngine.state.currentItem and SmartLootEngine.state.currentItem.slot or nil
+        local itemLink = util.createItemLink(itemName, itemID, corpseSlot)
         config.sendChatMessage(string.format('Pending loot decision required for %s by %s',
             itemLink, mq.TLO.Me.Name()))
     end

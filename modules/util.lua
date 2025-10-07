@@ -237,21 +237,46 @@ function util.sendGroupMessage(message)
     end
 end
 
--- Create an item link using mq.TLO.LinkDB for clickable item links in chat
-function util.createItemLink(itemName, itemID)
+-- Create an item link using mq.TLO.Corpse.Item.ItemLink for clickable item links in chat
+function util.createItemLink(itemName, itemID, corpseSlot)
     if not itemName or itemName == "" then
         return ""
     end
     
-    -- Try to create a proper item link using LinkDB if we have an itemID
-    if itemID and itemID > 0 and mq.TLO.LinkDB then
-        local itemLink = mq.TLO.LinkDB(itemName)()
-        if itemLink and itemLink ~= "" then
-            return itemLink
+    -- Try to create a proper item link using Corpse.Item.ItemLink if we have a corpse slot
+    -- Wrap in pcall to prevent crashes
+    if corpseSlot then
+        local success, itemLink = pcall(function()
+            local corpseItem = mq.TLO.Corpse.Item(corpseSlot)
+            if corpseItem and corpseItem.ItemLink then
+                return corpseItem.ItemLink()
+            end
+            return nil
+        end)
+        
+        if success and itemLink and itemLink ~= "" then
+            -- Format the raw link data for chat display with \x12 delimiters
+            return string.format("\x12%s\x12", itemLink)
         end
     end
     
-    -- Fallback to simple brackets if LinkDB fails or no itemID
+    -- Fallback: try using mq.TLO.Item if we have an itemID
+    if itemID and itemID > 0 then
+        local success, itemLink = pcall(function()
+            local item = mq.TLO.Item(itemID)
+            if item and item.ItemLink then
+                return item.ItemLink()
+            end
+            return nil
+        end)
+        
+        if success and itemLink and itemLink ~= "" then
+            -- Format the raw link data for chat display with \x12 delimiters
+            return string.format("\x12%s\x12", itemLink)
+        end
+    end
+    
+    -- Final fallback to simple brackets if all other methods fail
     return string.format("[%s]", itemName)
 end
 

@@ -258,6 +258,17 @@ local lootUI = {
         rows = nil,
         needsFetch = false,
     },
+
+    -- Whitelist manager popup state
+    whitelistManagerPopup = {
+        isOpen = false,
+        filter = "",
+        addItemName = "",
+        addRuleType = "Keep",
+        addThreshold = 1,
+        lastRefresh = 0,
+        entries = nil,
+    },
 }
 
 local settings = {
@@ -1468,6 +1479,7 @@ mq.imgui.init("SmartLoot", function()
         uiPopups.drawLegacyImportPopup(lootUI, database, util)
         uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
         uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
+        uiPopups.drawWhitelistManagerPopup(lootUI, database, util)
     end
 
     if lootUI.showPeerCommands and uiPeerCommands then

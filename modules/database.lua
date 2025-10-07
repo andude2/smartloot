@@ -697,6 +697,62 @@ function database.saveNameBasedRule(itemName, rule)
 end
 
 -- ============================================================================
+-- DELETE FUNCTIONS
+-- ============================================================================
+
+function database.deleteLootRuleFor(toonName, itemID)
+    if not toonName or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    itemID = tonumber(itemID) or 0
+    if itemID <= 0 then return false end
+
+    local stmt = prepareStatement([[DELETE FROM lootrules_v2 WHERE toon = ? AND item_id = ?]])
+    if not stmt then return false end
+    stmt:bind(1, toonName)
+    stmt:bind(2, itemID)
+    local result = stmt:step()
+    stmt:finalize()
+    local ok = (result == sqlite3.DONE)
+    if ok then
+        -- update cache
+        if lootRulesCache.byItemID[toonName] then
+            lootRulesCache.byItemID[toonName][itemID] = nil
+        end
+    end
+    return ok
+end
+
+function database.deleteNameBasedRuleFor(toonName, itemName)
+    if not toonName or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    if not itemName or itemName == "" then return false end
+
+    local stmt = prepareStatement([[DELETE FROM lootrules_name_fallback WHERE toon = ? AND item_name = ?]])
+    if not stmt then return false end
+    stmt:bind(1, toonName)
+    stmt:bind(2, itemName)
+    local result = stmt:step()
+    stmt:finalize()
+    local ok = (result == sqlite3.DONE)
+    if ok then
+        if lootRulesCache.byName[toonName] then
+            lootRulesCache.byName[toonName][itemName] = nil
+        end
+    end
+    return ok
+end
+
+function database.deleteLootRule(itemID)
+    return database.deleteLootRuleFor(mq.TLO.Me.Name(), itemID)
+end
+
+function database.deleteNameBasedRule(itemName)
+    return database.deleteNameBasedRuleFor(mq.TLO.Me.Name(), itemName)
+end
+
+-- ============================================================================
 -- MAINTENANCE FUNCTIONS
 -- ============================================================================
 

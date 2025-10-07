@@ -281,6 +281,70 @@ local function draw_chat_settings(config, showHeader)
     end
 end
 
+-- Character-specific settings (per-toon)
+local function draw_character_settings(lootUI, config)
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 1.0, 0.8, 1.0)
+    local open = ImGui.CollapsingHeader("Character-Specific Settings", ImGuiTreeNodeFlags.DefaultOpen)
+    ImGui.PopStyleColor()
+    if not open then return end
+
+    ImGui.Spacing()
+
+    -- Whitelist-only loot toggle (per character)
+    local toonName = mq.TLO.Me.Name() or "unknown"
+    local enabled = false
+    if config.isWhitelistOnly then
+        enabled = config.isWhitelistOnly(toonName) and true or false
+    end
+    local newEnabled, changed = ImGui.Checkbox("Whitelist-Only Loot (this character)", enabled)
+    if changed then
+        if config.setWhitelistOnly then
+            config.setWhitelistOnly(toonName, newEnabled)
+        else
+            -- Fallback: store in generic character config if available
+            local current = config.getCharacterConfig and config.getCharacterConfig(toonName) or {}
+            current.whitelistOnly = newEnabled and true or false
+            if config.save then pcall(config.save) end
+        end
+        logging.log("Whitelist-only loot " .. (newEnabled and "enabled" or "disabled") .. " for " .. toonName)
+        -- If enabling, open the manager popup to add items
+        if newEnabled then
+            lootUI.whitelistManagerPopup = lootUI.whitelistManagerPopup or {}
+            lootUI.whitelistManagerPopup.isOpen = true
+        end
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.SetTooltip("When enabled, only items with Keep/threshold rules for this toon will be looted. All unknown items are silently ignored.")
+    end
+
+    -- Secondary option: do not trigger peers when in whitelist-only mode
+    if config.isWhitelistOnly and config.isWhitelistOnly(toonName) then
+        local noTrig = false
+        if config.isWhitelistNoTriggerPeers then
+            noTrig = config.isWhitelistNoTriggerPeers(toonName) and true or false
+        end
+        local newNoTrig, changedNoTrig = ImGui.Checkbox("Do not trigger peers while whitelist-only", noTrig)
+        if changedNoTrig then
+            if config.setWhitelistNoTriggerPeers then
+                config.setWhitelistNoTriggerPeers(toonName, newNoTrig)
+            end
+            logging.log("Whitelist-only: Do not trigger peers " .. (newNoTrig and "enabled" or "disabled") .. " for " .. toonName)
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("When enabled, this character will not trigger peers for remaining items during waterfall while in whitelist-only mode.")
+        end
+    end
+
+    ImGui.SameLine()
+    if ImGui.Button("Manage Whitelist…") then
+        lootUI.whitelistManagerPopup = lootUI.whitelistManagerPopup or {}
+        lootUI.whitelistManagerPopup.isOpen = true
+    end
+
+    ImGui.Spacing()
+    ImGui.TextWrapped("Tip: Add Keep rules for items you want this character to loot (e.g., Diamonds/Blue Diamonds). With whitelist-only on, everything else will be ignored without prompting.")
+end
+
 local function draw_core_performance_settings(settings, config, showHeader)
     local function renderBody()
         ImGui.Spacing()
@@ -1658,6 +1722,10 @@ function uiSettings.draw(lootUI, settings, config)
             { id = "core", label = "Core Performance", render = function()
                 openNextHeader()
                 draw_core_performance_settings(settings, config, true)
+            end },
+            { id = "character", label = "Character Settings", render = function()
+                openNextHeader()
+                draw_character_settings(lootUI, config)
             end },
             { id = "coordination", label = "Peer Coordination", render = function()
                 openNextHeader()

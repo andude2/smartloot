@@ -165,14 +165,23 @@ local configData = {
     servers = {}
 }
 
+-- NEW: Floating Button configuration
+config.floatingButton = {
+    size = 60,
+    alpha = 0.95,
+    x = 100,
+    y = 100,
+    show = true,
+}
+
 -- Load function to read stored configuration
 function config.load()
     local file = io.open(config.filePath, "r")
     if file then
         local contents = file:read("*a")
         file:close()
-        local decoded = json.decode(contents)
-        if decoded then
+    local decoded = json.decode(contents)
+    if decoded then
             -- New format
             configData.global = decoded.global or configData.global
             configData.servers = decoded.servers or {}
@@ -220,15 +229,26 @@ function config.load()
             -- Apply per-server settings
             local serverConfig = configData.servers[sanitizedServerName] or {}
             config.peerLootOrder = serverConfig.peerLootOrder or {}
+            -- Ensure characters table exists for per-character toggles
+            serverConfig.characters = serverConfig.characters or {}
+            configData.servers[sanitizedServerName] = serverConfig
+
+            -- Apply floating button settings
+            if configData.global.floatingButton then
+                config.floatingButton = configData.global.floatingButton
+            end
         end
     else
         -- No config file exists, initialize with defaults
         configData.servers[sanitizedServerName] = {
-            peerLootOrder = {}
+            peerLootOrder = {},
+            characters = {}
         }
         -- Set default chat settings
         configData.global.chatOutputMode = config.chatOutputMode
         configData.global.customChatCommand = config.customChatCommand
+        -- Initialize floating button settings
+        configData.global.floatingButton = config.floatingButton
     end
 end
 
@@ -257,12 +277,15 @@ function config.save()
     configData.global.hotbar = config.hotbar
     -- NEW: Update live stats settings
     configData.global.liveStats = config.liveStats
-    
+
     -- NEW: Update engine timing settings
     configData.global.engineTiming = config.engineTiming
     
     -- NEW: Update engine speed settings
     configData.global.engineSpeed = config.engineSpeed
+
+    -- NEW: Update floating button settings
+    configData.global.floatingButton = config.floatingButton
     
     -- Ensure server config exists
     if not configData.servers[sanitizedServerName] then
@@ -270,7 +293,10 @@ function config.save()
     end
     
     -- Update server-specific settings
-    configData.servers[sanitizedServerName].peerLootOrder = config.peerLootOrder
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    serverConfig.peerLootOrder = config.peerLootOrder
+    serverConfig.characters = serverConfig.characters or {}
+    configData.servers[sanitizedServerName] = serverConfig
     
     local file = io.open(config.filePath, "w")
     if file then
@@ -304,6 +330,69 @@ function config.setChatMode(mode)
     config.chatOutputMode = mode
     config.save()
     return true
+end
+
+-- ============================================================================
+-- Per-character settings (server-scoped)
+-- ============================================================================
+
+local function ensureCharacterConfig(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    if not configData.servers[sanitizedServerName] then
+        configData.servers[sanitizedServerName] = { peerLootOrder = {}, characters = {} }
+    end
+    local serverConfig = configData.servers[sanitizedServerName]
+    serverConfig.characters = serverConfig.characters or {}
+    serverConfig.characters[toonName] = serverConfig.characters[toonName] or {}
+    return serverConfig.characters[toonName], toonName
+end
+
+function config.setWhitelistOnly(toonName, value)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.whitelistOnly = value and true or false
+    config.save()
+    return charCfg.whitelistOnly
+end
+
+function config.isWhitelistOnly(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName]
+    return charCfg and charCfg.whitelistOnly == true
+end
+
+function config.getCharacterConfig(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    return chars[toonName] or {}
+end
+
+-- Optional: When in whitelist-only mode, prevent this toon from triggering peers
+function config.setWhitelistNoTriggerPeers(toonName, value)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.whitelistNoTriggerPeers = value and true or false
+    config.save()
+    return charCfg.whitelistNoTriggerPeers
+end
+
+function config.isWhitelistNoTriggerPeers(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName]
+    return charCfg and charCfg.whitelistNoTriggerPeers == true
 end
 
 function config.setPeerSelectionStrategy(strategy)
@@ -638,6 +727,36 @@ end
 
 function config.getHotbarButtonVisible(buttonId)
     return config.hotbar.buttonVisibility[buttonId] or false
+end
+
+-- Floating Button helpers
+function config.getFloatingButtonSettings()
+    return config.floatingButton
+end
+
+function config.setFloatingButtonSize(size)
+    size = math.max(40, math.min(120, tonumber(size) or 60))
+    config.floatingButton.size = size
+    config.save()
+    return size
+end
+
+function config.setFloatingButtonAlpha(alpha)
+    alpha = math.max(0.1, math.min(1.0, tonumber(alpha) or 0.95))
+    config.floatingButton.alpha = alpha
+    config.save()
+    return alpha
+end
+
+function config.setFloatingButtonPosition(x, y)
+    config.floatingButton.x = tonumber(x) or config.floatingButton.x
+    config.floatingButton.y = tonumber(y) or config.floatingButton.y
+    config.save()
+end
+
+function config.setFloatingButtonVisible(show)
+    config.floatingButton.show = show and true or false
+    config.save()
 end
 
 function config.setHotbarUseTextLabels(useText)

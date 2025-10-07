@@ -399,6 +399,40 @@ local function bindPeerCommands()
     end)
 end
 
+local function bindWhitelistOnly()
+    mq.bind("/sl_whitelistonly", function(arg)
+        local a = (arg or ""):lower()
+        if a == "on" or a == "1" or a == "true" then
+            local ok = config.setWhitelistOnly(mq.TLO.Me.Name(), true)
+            util.printSmartLoot("Whitelist-only loot: enabled", "success")
+        elseif a == "off" or a == "0" or a == "false" then
+            local ok = config.setWhitelistOnly(mq.TLO.Me.Name(), false)
+            util.printSmartLoot("Whitelist-only loot: disabled", "warning")
+        else
+            local state = false
+            if config.isWhitelistOnly then
+                state = config.isWhitelistOnly(mq.TLO.Me.Name())
+            end
+            util.printSmartLoot("Whitelist-only loot is " .. (state and "ENABLED" or "DISABLED") .. 
+                ". Usage: /sl_whitelistonly <on|off>", "info")
+        end
+    end)
+
+    -- Open Whitelist Manager popup
+    mq.bind("/sl_whitelist", function(action)
+        if not lootUI then return end
+        lootUI.whitelistManagerPopup = lootUI.whitelistManagerPopup or {}
+        local a = (action or ""):lower()
+        if a == "off" or a == "hide" or a == "close" then
+            lootUI.whitelistManagerPopup.isOpen = false
+            util.printSmartLoot("Whitelist Manager closed", "info")
+        else
+            lootUI.whitelistManagerPopup.isOpen = true
+            util.printSmartLoot("Whitelist Manager opened", "info")
+        end
+    end)
+end
+
 local function bindStatusCommands()
     mq.bind("/sl_mode_status", function()
         if not modeHandler then
@@ -1120,6 +1154,7 @@ function bindings.registerAllBindings()
     bindPauseResume()
     bindLiveStats()
     bindPeerCommands()
+    bindWhitelistOnly()
     -- New: peers-first/items-first selector binding
     mq.bind("/sl_peer_selector", function(strategy)
         local s = (strategy or ""):lower()

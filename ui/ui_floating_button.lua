@@ -18,6 +18,8 @@ local floatingButtonState = {
     SmartLootEngine = nil, -- Store reference to SmartLootEngine
 }
 
+local settingsLoadedFromConfig = false
+
 -- Helper function to calculate distance between two points
 local function distance(x1, y1, x2, y2)
     return math.sqrt((x2 - x1)^2 + (y2 - y1)^2)
@@ -33,6 +35,22 @@ local function colorToU32(r, g, b, a)
 end
 
 function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLootEngine)
+    -- One-time load from persistent config
+    if not settingsLoadedFromConfig then
+        local ok, cfg = pcall(function()
+            local config = require("modules.config")
+            return config.getFloatingButtonSettings and config.getFloatingButtonSettings() or nil
+        end)
+        if ok and cfg then
+            floatingButtonState.buttonSize = cfg.size or floatingButtonState.buttonSize
+            floatingButtonState.alpha = cfg.alpha or floatingButtonState.alpha
+            floatingButtonState.position.x = cfg.x or floatingButtonState.position.x
+            floatingButtonState.position.y = cfg.y or floatingButtonState.position.y
+            floatingButtonState.show = (cfg.show ~= false)
+        end
+        settingsLoadedFromConfig = true
+    end
+
     if not floatingButtonState.show then return end
     
     -- Store SmartLootEngine reference for mode switching
@@ -336,14 +354,21 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
             end
             
             if ImGui.BeginMenu("Button Size") then
+                local function setSizePersist(size)
+                    floatingButtonState.buttonSize = size
+                    pcall(function()
+                        local config = require("modules.config")
+                        if config.setFloatingButtonSize then config.setFloatingButtonSize(size) end
+                    end)
+                end
                 if ImGui.MenuItem("Small", nil, floatingButtonState.buttonSize == 50) then
-                    floatingButtonState.buttonSize = 50
+                    setSizePersist(50)
                 end
                 if ImGui.MenuItem("Medium", nil, floatingButtonState.buttonSize == 60) then
-                    floatingButtonState.buttonSize = 60
+                    setSizePersist(60)
                 end
                 if ImGui.MenuItem("Large", nil, floatingButtonState.buttonSize == 80) then
-                    floatingButtonState.buttonSize = 80
+                    setSizePersist(80)
                 end
                 ImGui.EndMenu()
             end
@@ -375,6 +400,10 @@ end
 
 function uiFloatingButton.toggle()
     floatingButtonState.show = not floatingButtonState.show
+    pcall(function()
+        local config = require("modules.config")
+        if config.setFloatingButtonVisible then config.setFloatingButtonVisible(floatingButtonState.show) end
+    end)
 end
 
 function uiFloatingButton.isVisible()
@@ -384,6 +413,10 @@ end
 function uiFloatingButton.setPosition(x, y)
     floatingButtonState.position.x = x
     floatingButtonState.position.y = y
+    pcall(function()
+        local config = require("modules.config")
+        if config.setFloatingButtonPosition then config.setFloatingButtonPosition(x, y) end
+    end)
 end
 
 function uiFloatingButton.getPosition()
@@ -392,6 +425,10 @@ end
 
 function uiFloatingButton.setAlpha(alpha)
     floatingButtonState.alpha = math.max(0.1, math.min(1.0, alpha))
+    pcall(function()
+        local config = require("modules.config")
+        if config.setFloatingButtonAlpha then config.setFloatingButtonAlpha(floatingButtonState.alpha) end
+    end)
 end
 
 function uiFloatingButton.getAlpha()
@@ -400,6 +437,10 @@ end
 
 function uiFloatingButton.setButtonSize(size)
     floatingButtonState.buttonSize = math.max(40, math.min(120, size))
+    pcall(function()
+        local config = require("modules.config")
+        if config.setFloatingButtonSize then config.setFloatingButtonSize(floatingButtonState.buttonSize) end
+    end)
 end
 
 function uiFloatingButton.getButtonSize()

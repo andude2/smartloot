@@ -85,3 +85,16 @@ What's this AFK Rules tab?!  Good question!  The system is designed around savin
 
   
 
+## Whitelist-Only Loot (per character)
+
+- Enable a character to only loot items you’ve explicitly set to Keep, and silently ignore everything else (no prompts).
+- Toggle it on the character you want:
+  - `/sl_whitelistonly on` to enable
+  - `/sl_whitelistonly off` to disable
+- Or enable it from Settings → Character Settings → “Whitelist-Only Loot (this character)”.
+- Manage whitelist items:
+  - Open UI: Settings → Character Settings → Manage Whitelist…
+  - Or command: `/sl_whitelist` to open, `/sl_whitelist off` to close.
+- Optional: “Do not trigger peers”
+  - In Settings → Character Settings, enable “Do not trigger peers while whitelist-only” if you don’t want this toon to start waterfall triggers for others while running in whitelist-only mode.
+- How to “whitelist” items: add normal rules for those items (e.g., set Diamonds/Blue Diamonds to Keep for that toon via the UI or commands). With whitelist-only enabled, only those Kept items will be looted; all other items are auto-ignored without asking.
