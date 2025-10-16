@@ -164,8 +164,10 @@ function util.broadcastCommand(command)
     local lootType = (config.lootCommandType or ""):lower()
     
     if lootType == "dannet" then
-        -- Broadcast via DanNet to all connected peers using /dgga
-        mq.cmdf("/dgga %s", command)
+        -- Broadcast via DanNet using the selected group or raid channel
+        local channel = (config.dannetBroadcastChannel or "group")
+        local prefix = channel == "raid" and "/dgra" or "/dgga"
+        mq.cmdf("%s %s", prefix, command)
         return true
         
     elseif lootType == "e3" then

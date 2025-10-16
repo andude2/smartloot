@@ -514,6 +514,28 @@ local function draw_peer_coordination_settings(lootUI, settings, config, showHea
             if config.debugPrint then config.debugPrint() end
         end
 
+        if currentCommandType == "dannet" then
+            ImGui.Spacing()
+            ImGui.Text("DanNet Broadcast:")
+            local broadcastChannel = config.dannetBroadcastChannel or "group"
+            local groupSelected = broadcastChannel ~= "raid"
+            if ImGui.RadioButton("Group (/dgga)", groupSelected) then
+                config.dannetBroadcastChannel = "group"
+                if config.save then config.save() end
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Broadcast DanNet commands to the group channel (/dgga)")
+            end
+            local raidSelected = broadcastChannel == "raid"
+            if ImGui.RadioButton("Raid (/dgra)", raidSelected) then
+                config.dannetBroadcastChannel = "raid"
+                if config.save then config.save() end
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Broadcast DanNet commands to the raid channel (/dgra)")
+            end
+        end
+
         ImGui.NextColumn()
         ImGui.AlignTextToFramePadding()
         ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)

@@ -11,6 +11,7 @@ config.filePath = mq.TLO.MacroQuest.Path("config")() .. "/smartloot_config.json"
 
 -- Default settings (global, not per-server) - Added chat output settings
 config.lootCommandType = "dannet"  -- Default to "dannet" instead of "e3"
+config.dannetBroadcastChannel = "group" -- Options: group (dgga), raid (dgra)
 config.mainToonName = mq.TLO.Me.Name() or "MainToon"  -- Default to current character name
 config.lootDelay = 5      -- Delay in seconds before background bots try to loot
 config.retryCount = 3     -- Number of retry attempts for background bots
@@ -139,6 +140,7 @@ config.peerLootOrder = {}  -- This will be per-server
 local configData = {
     global = {
         lootCommandType = config.lootCommandType,
+        dannetBroadcastChannel = config.dannetBroadcastChannel,
         mainToonName = config.mainToonName,
         lootDelay = config.lootDelay,
         retryCount = config.retryCount,
@@ -196,6 +198,7 @@ function config.load()
             -- NEW: Apply chat settings
             config.chatOutputMode = configData.global.chatOutputMode or config.chatOutputMode
             config.customChatCommand = configData.global.customChatCommand or config.customChatCommand
+            config.dannetBroadcastChannel = configData.global.dannetBroadcastChannel or config.dannetBroadcastChannel
             -- NEW: Apply item announce settings
             config.itemAnnounceMode = configData.global.itemAnnounceMode or config.itemAnnounceMode
             -- NEW: Apply farming mode settings
@@ -247,6 +250,7 @@ function config.load()
         -- Set default chat settings
         configData.global.chatOutputMode = config.chatOutputMode
         configData.global.customChatCommand = config.customChatCommand
+        configData.global.dannetBroadcastChannel = config.dannetBroadcastChannel
         -- Initialize floating button settings
         configData.global.floatingButton = config.floatingButton
     end
@@ -256,6 +260,7 @@ end
 function config.save()
     -- Update internal structure with current values
     configData.global.lootCommandType = config.lootCommandType
+    configData.global.dannetBroadcastChannel = config.dannetBroadcastChannel
     configData.global.mainToonName = config.mainToonName
     configData.global.lootDelay = config.lootDelay
     configData.global.retryCount = config.retryCount
