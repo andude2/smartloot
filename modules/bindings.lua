@@ -433,6 +433,83 @@ local function bindWhitelistOnly()
     end)
 end
 
+local function bindDefaultActionCommands()
+    -- Set default action for new items
+    mq.bind("/sl_defaultaction", function(action)
+        if not action or action == "" then
+            local toonName = mq.TLO.Me.Name() or "unknown"
+            local current = "Prompt"
+            if config.getDefaultNewItemAction then
+                current = config.getDefaultNewItemAction(toonName)
+            end
+            util.printSmartLoot("Default action for new items: " .. current, "info")
+            util.printSmartLoot("Usage: /sl_defaultaction <Prompt|Keep|Ignore|Destroy>", "info")
+            return
+        end
+        
+        local a = action:lower()
+        local validActions = {"prompt", "keep", "ignore", "destroy"}
+        local normalized = nil
+        
+        -- Normalize action
+        for _, valid in ipairs(validActions) do
+            if a == valid then
+                normalized = valid:sub(1,1):upper() .. valid:sub(2)
+                break
+            end
+        end
+        
+        if not normalized then
+            util.printSmartLoot("Invalid action. Valid options: Prompt, Keep, Ignore, Destroy", "error")
+            return
+        end
+        
+        local toonName = mq.TLO.Me.Name() or "unknown"
+        if config.setDefaultNewItemAction then
+            local success, err = config.setDefaultNewItemAction(toonName, normalized)
+            if success then
+                util.printSmartLoot("Default action for new items set to: " .. normalized, "success")
+            else
+                util.printSmartLoot("Error: " .. tostring(err), "error")
+            end
+        else
+            util.printSmartLoot("Config functions not available", "error")
+        end
+    end)
+    
+    -- Set decision timeout for new items
+    mq.bind("/sl_decisiontimeout", function(seconds)
+        if not seconds or seconds == "" then
+            local toonName = mq.TLO.Me.Name() or "unknown"
+            local currentMs = 30000
+            if config.getDecisionTimeout then
+                currentMs = config.getDecisionTimeout(toonName)
+            end
+            util.printSmartLoot("Decision timeout: " .. math.floor(currentMs / 1000) .. " seconds", "info")
+            util.printSmartLoot("Usage: /sl_decisiontimeout <seconds> (5-300 seconds)", "info")
+            return
+        end
+        
+        local timeoutSec = tonumber(seconds)
+        if not timeoutSec then
+            util.printSmartLoot("Invalid timeout. Must be a number between 5 and 300 seconds", "error")
+            return
+        end
+        
+        -- Clamp to valid range
+        timeoutSec = math.max(5, math.min(300, timeoutSec))
+        local timeoutMs = timeoutSec * 1000
+        
+        local toonName = mq.TLO.Me.Name() or "unknown"
+        if config.setDecisionTimeout then
+            local actualMs = config.setDecisionTimeout(toonName, timeoutMs)
+            util.printSmartLoot("Decision timeout set to " .. math.floor(actualMs / 1000) .. " seconds", "success")
+        else
+            util.printSmartLoot("Config functions not available", "error")
+        end
+    end)
+end
+
 local function bindStatusCommands()
     mq.bind("/sl_mode_status", function()
         if not modeHandler then
@@ -1155,6 +1232,7 @@ function bindings.registerAllBindings()
     bindLiveStats()
     bindPeerCommands()
     bindWhitelistOnly()
+    bindDefaultActionCommands()
     -- New: peers-first/items-first selector binding
     mq.bind("/sl_peer_selector", function(strategy)
         local s = (strategy or ""):lower()

@@ -289,9 +289,106 @@ local function draw_character_settings(lootUI, config)
     if not open then return end
 
     ImGui.Spacing()
-
-    -- Whitelist-only loot toggle (per character)
     local toonName = mq.TLO.Me.Name() or "unknown"
+
+    -- ===== DEFAULT ACTION FOR NEW ITEMS SECTION =====
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+    ImGui.Text("Default Action for New Items")
+    ImGui.PopStyleColor()
+    
+    local currentAction = "Prompt"
+    if config.getDefaultNewItemAction then
+        currentAction = config.getDefaultNewItemAction(toonName) or "Prompt"
+    end
+    
+    local actionOptions = {"Prompt", "Keep", "Ignore", "Destroy"}
+    local displayLabel = currentAction
+
+    ImGui.PushItemWidth(150)
+    if ImGui.BeginCombo("##DefaultAction", displayLabel) then
+        for _, option in ipairs(actionOptions) do
+            local isSelected = (option == currentAction)
+            if ImGui.Selectable(option, isSelected) then
+                if config.setDefaultNewItemAction then
+                    local success, err = config.setDefaultNewItemAction(toonName, option)
+                    if success then
+                        logging.log("Default action for new items set to: " .. option .. " for " .. toonName)
+                    else
+                        logging.log("Error setting default action: " .. tostring(err))
+                    end
+                end
+                currentAction = option
+            end
+            if isSelected then ImGui.SetItemDefaultFocus() end
+        end
+        ImGui.EndCombo()
+    end
+    ImGui.PopItemWidth()
+
+    -- Re-fetch from config to ensure we reflect the persisted value
+    if config.getDefaultNewItemAction then
+        currentAction = config.getDefaultNewItemAction(toonName) or currentAction
+    end
+    
+    if ImGui.IsItemHovered() then
+        ImGui.SetTooltip("Choose the default action for new items without existing rules:\n\n" ..
+                        "• Prompt: Ask for decision (default behavior)\n" ..
+                        "• Keep: Automatically loot all new items\n" ..
+                        "• Ignore: Automatically ignore all new items\n" ..
+                        "• Destroy: Automatically destroy all new items")
+    end
+
+    -- Decision Timeout (render only when Prompt is selected)
+    if (currentAction == "Prompt") then
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Decision Timeout (seconds):")
+        ImGui.PopStyleColor()
+
+        local currentTimeoutMs = 30000
+        if config.getDecisionTimeout then
+            currentTimeoutMs = config.getDecisionTimeout(toonName) or 30000
+        end
+        local currentTimeoutSec = math.floor(currentTimeoutMs / 1000)
+
+        ImGui.PushItemWidth(100)
+        local newTimeoutSec, timeoutChanged = ImGui.InputInt("##DecisionTimeout", currentTimeoutSec)
+        ImGui.PopItemWidth()
+
+        if timeoutChanged then
+            newTimeoutSec = math.max(5, math.min(300, newTimeoutSec))
+            local newTimeoutMs = newTimeoutSec * 1000
+            if config.setDecisionTimeout then
+                local actualTimeout = config.setDecisionTimeout(toonName, newTimeoutMs)
+                logging.log(string.format("Decision timeout set to %d seconds for %s", math.floor(actualTimeout / 1000), toonName))
+            end
+        end
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("How long to wait for a decision before applying the timeout action.\nRange: 5-300 seconds")
+        end
+    end
+
+    -- Auto-broadcast option
+    local autoBroadcast = false
+    if config.isAutoBroadcastNewRules then
+        autoBroadcast = config.isAutoBroadcastNewRules(toonName)
+    end
+    local newAutoBroadcast, abChanged = ImGui.Checkbox("Auto-Update Peers with this rule?", autoBroadcast)
+    if abChanged then
+        if config.setAutoBroadcastNewRules then
+            config.setAutoBroadcastNewRules(toonName, newAutoBroadcast)
+        end
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.SetTooltip("When Default Action auto-creates a Keep/Ignore rule for a new item, automatically copy that rule to connected peers and refresh their caches.")
+    end
+
+    ImGui.Spacing()
+    ImGui.Separator()
+    ImGui.Spacing()
+
+    -- ===== WHITELIST SECTION =====
     local enabled = false
     if config.isWhitelistOnly then
         enabled = config.isWhitelistOnly(toonName) and true or false
@@ -342,7 +439,7 @@ local function draw_character_settings(lootUI, config)
     end
 
     ImGui.Spacing()
-    ImGui.TextWrapped("Tip: Add Keep rules for items you want this character to loot (e.g., Diamonds/Blue Diamonds). With whitelist-only on, everything else will be ignored without prompting.")
+    ImGui.TextWrapped("Tip: With Default Action set to 'Prompt' or 'Keep', you can add additional Keep rules to prioritize specific items. Use Whitelist-Only mode to loot ONLY whitelisted items.")
 end
 
 local function draw_core_performance_settings(settings, config, showHeader)

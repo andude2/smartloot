@@ -400,6 +400,82 @@ function config.isWhitelistNoTriggerPeers(toonName)
     return charCfg and charCfg.whitelistNoTriggerPeers == true
 end
 
+-- Default action for new items (per character)
+function config.setDefaultNewItemAction(toonName, action)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    
+    -- Validate action
+    local validActions = {"Prompt", "Keep", "Ignore", "Destroy"}
+    local isValid = false
+    for _, validAction in ipairs(validActions) do
+        if action == validAction then
+            isValid = true
+            break
+        end
+    end
+    
+    if not isValid then
+        return false, "Invalid action. Valid actions: " .. table.concat(validActions, ", ")
+    end
+    
+    charCfg.defaultNewItemAction = action
+    config.save()
+    return charCfg.defaultNewItemAction
+end
+
+function config.getDefaultNewItemAction(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName]
+    return charCfg and charCfg.defaultNewItemAction or "Prompt"
+end
+
+-- Decision timeout for new items (per character)
+function config.setDecisionTimeout(toonName, timeoutMs)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    
+    -- Validate timeout (minimum 5 seconds, maximum 5 minutes)
+    timeoutMs = math.max(5000, math.min(300000, tonumber(timeoutMs) or 30000))
+    
+    charCfg.decisionTimeoutMs = timeoutMs
+    config.save()
+    return charCfg.decisionTimeoutMs
+end
+
+function config.getDecisionTimeout(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName]
+    return charCfg and charCfg.decisionTimeoutMs or 30000
+end
+
+-- Auto-broadcast new rules created by Default Action (per character)
+function config.setAutoBroadcastNewRules(toonName, enabled)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.autoBroadcastNewRules = enabled and true or false
+    config.save()
+    return charCfg.autoBroadcastNewRules
+end
+
+function config.isAutoBroadcastNewRules(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName]
+    return charCfg and charCfg.autoBroadcastNewRules == true
+end
+
 function config.setPeerSelectionStrategy(strategy)
     local normalized = "items_first"
     if type(strategy) == "string" then

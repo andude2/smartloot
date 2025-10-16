@@ -1547,6 +1547,49 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
     end
 end
 
+-- Broadcast New Rule Popup
+function uiPopups.drawBroadcastNewRulePopup(lootUI, database, util)
+    local pop = lootUI and lootUI.broadcastNewRulePopup
+    if not pop or not pop.isOpen then return end
+
+    ImGui.SetNextWindowSize(420, 170, ImGuiCond.Appearing)
+    local keepOpen = true
+    if ImGui.Begin("Broadcast New Rule?", keepOpen, ImGuiWindowFlags.NoCollapse + ImGuiWindowFlags.AlwaysAutoResize) then
+        ImGui.Text("A new rule was created:")
+        ImGui.BulletText(string.format("%s -> %s", pop.itemName or "?", pop.rule or "?"))
+        ImGui.Spacing()
+        ImGui.Text("Broadcast this rule to all connected peers?")
+        ImGui.Spacing()
+
+        if ImGui.Button("Broadcast", 120, 0) then
+            local peers = util.getConnectedPeers()
+            for _, peer in ipairs(peers) do
+                if peer ~= (mq.TLO.Me.Name() or "") then
+                    pcall(function()
+                        database.saveLootRuleFor(peer, pop.itemName, pop.itemID or 0, pop.rule, pop.iconID or 0)
+                    end)
+                end
+            end
+            -- Ask peers to refresh rules
+            pcall(function() util.broadcastCommand("/sl_rulescache") end)
+            util.printSmartLoot(string.format("Broadcasted rule %s -> %s to %d peer(s)", pop.itemName, pop.rule, math.max(0, #peers-1)), "success")
+            pop.isOpen = false
+        end
+        
+        ImGui.SameLine()
+        if ImGui.Button("Don't Broadcast", 160, 0) then
+            pop.isOpen = false
+        end
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Keeps the rule only on this character")
+        end
+
+        ImGui.End()
+    end
+    if not keepOpen then pop.isOpen = false end
+end
+
 -- KeepIfFewerThan Threshold Popup
 function uiPopups.drawThresholdPopup(lootUI, database)
     if lootUI.editingThresholdForPeer then

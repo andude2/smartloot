@@ -1343,6 +1343,48 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
         if config and config.isWhitelistOnly and config.isWhitelistOnly() then
             return "Ignore", itemID, iconID
         end
+        
+        -- Check for character-specific default action for new items
+        local toonName = mq.TLO.Me.Name() or "unknown"
+        local defaultAction = "Prompt"
+        if config and config.getDefaultNewItemAction then
+            defaultAction = config.getDefaultNewItemAction(toonName)
+        end
+        
+        -- If default action is not "Prompt", apply it directly
+        if defaultAction ~= "Prompt" then
+            logging.debug(string.format("[Engine] Applying default action '%s' for new item: %s", defaultAction, itemName))
+            
+            -- Auto-save a local rule so future encounters don't need default handling
+            pcall(function()
+                local db = require("modules.database")
+                db.saveLootRule(itemName, itemID or 0, defaultAction, iconID or 0)
+                db.refreshLootRuleCache()
+            end)
+            
+            -- Optional auto-broadcast to peers (per-character setting)
+            local toonName = mq.TLO.Me.Name() or "unknown"
+            local shouldBroadcast = false
+            if config and config.isAutoBroadcastNewRules then
+                shouldBroadcast = config.isAutoBroadcastNewRules(toonName)
+            end
+            if shouldBroadcast then
+                pcall(function()
+                    local util = require("modules.util")
+                    local db = require("modules.database")
+                    local peers = util.getConnectedPeers()
+                    for _, peer in ipairs(peers) do
+                        if peer ~= toonName then
+                            db.saveLootRuleFor(peer, itemName, itemID or 0, defaultAction, iconID or 0)
+                        end
+                    end
+                    util.broadcastCommand("/sl_rulescache")
+                end)
+            end
+            
+            return defaultAction, itemID, iconID
+        end
+        
         return "Unset", itemID, iconID
     end
 
@@ -2030,9 +2072,16 @@ function SmartLootEngine.checkPendingDecisionTimeout()
         return false
     end
 
+    -- Get character-specific timeout setting
+    local toonName = mq.TLO.Me.Name() or "unknown"
+    local timeoutMs = SmartLootEngine.config.pendingDecisionTimeoutMs
+    if config and config.getDecisionTimeout then
+        timeoutMs = config.getDecisionTimeout(toonName)
+    end
+
     local elapsed = mq.gettime() - SmartLootEngine.state.pendingDecisionStartTime
-    if elapsed > SmartLootEngine.config.pendingDecisionTimeoutMs then
-        logging.debug(string.format("[Engine] Pending decision timed out after %dms", elapsed))
+    if elapsed > timeoutMs then
+        logging.debug(string.format("[Engine] Pending decision timed out after %dms (timeout: %dms)", elapsed, timeoutMs))
 
         if SmartLootEngine.config.autoResolveUnknownItems then
             local defaultAction = SmartLootEngine.config.defaultUnknownItemAction
