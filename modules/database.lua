@@ -1,8 +1,7 @@
 -- modules/database.lua - SQLite Database Module
-local database = {}
-local mq       = require("mq")
-local logging  = require("modules.logging")
-local sqlite3  = require("lsqlite3")
+local database            = {}
+local mq                  = require("mq")
+local logging             = require("modules.logging")
 
 local currentServerName = mq.TLO.EverQuest.Server()
 local sanitizedServerName = currentServerName:lower():gsub(" ", "_")
