@@ -273,9 +273,11 @@ function WaterfallChainTracker.notifyWaterfallComplete()
             util.sendGroupMessage(string.format("Waterfall loot chain completed - %d peers participated", sessionData.completedPeers))
         end]]
         
-        -- Send to RGMercs if available
-        local SmartLootEngine = require("modules.SmartLootEngine")
-        SmartLootEngine.notifyRGMercsComplete()
+        -- Send to RGMercs if available without creating a require-loop
+        local SLE = package.loaded["modules.SmartLootEngine"]
+        if type(SLE) == "table" and SLE.notifyRGMercsComplete then
+            SLE.notifyRGMercsComplete()
+        end
         
     else
         -- I'm a background looter - notify the main looter that my waterfall is complete

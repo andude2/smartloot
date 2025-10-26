@@ -3,6 +3,10 @@ local database            = {}
 local mq                  = require("mq")
 local logging             = require("modules.logging")
 
+-- Ensure SQLite is available in this module too (database.lua uses `sqlite3` directly)
+local PackageMan = require('mq.PackageMan')
+local sqlite3   = PackageMan.Require('lsqlite3')
+
 local currentServerName = mq.TLO.EverQuest.Server()
 local sanitizedServerName = currentServerName:lower():gsub(" ", "_")
 

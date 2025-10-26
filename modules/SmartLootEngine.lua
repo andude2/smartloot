@@ -7,10 +7,18 @@ local lootHistory = require("modules.loot_history")
 local lootStats = require("modules.loot_stats")
 local config = require("modules.config")
 local util = require("modules.util")
-local waterfallTracker = require("modules.waterfall_chain_tracker")
 local json = require("dkjson")
 local actors = require("actors")
 local tempRules = require("modules.temp_rules")
+
+-- Lazy load waterfallTracker to break circular dependency
+local waterfallTracker = nil
+local function getWaterfallTracker()
+    if not waterfallTracker then
+        waterfallTracker = require("modules.waterfall_chain_tracker")
+    end
+    return waterfallTracker
+end
 
 -- Helper: whether current character should avoid triggering peers (whitelist-only + flag)
 local function _preventPeerTriggers()
@@ -80,7 +88,7 @@ local function stopMovement()
     else
         logging.debug("[Engine] Skipping nav stop - navigation not initiated by SmartLoot")
     end
-    
+
     -- Clear the flag regardless
     SmartLootEngine.state.smartLootNavigationActive = false
     -- Note: /moveto doesn't have a stop command, it completes automatically
@@ -149,7 +157,7 @@ SmartLootEngine.state = {
     currentState = SmartLootEngine.LootState.Idle,
     mode = SmartLootEngine.LootMode.Background,
     nextActionTime = 0,
-    
+
     -- CombatLoot mode state
     preCombatLootMode = nil,
 
@@ -220,12 +228,12 @@ SmartLootEngine.state = {
 
     -- Directed Mode (main looter collection and peer task processing)
     directed = {
-        enabled = false,                    -- true when mode is Directed
-        candidates = {},                    -- items left/ignored to assign later
-        showAssignmentUI = false            -- UI should present assignment window
+        enabled = false,         -- true when mode is Directed
+        candidates = {},         -- items left/ignored to assign later
+        showAssignmentUI = false -- UI should present assignment window
     },
-    directedTasksQueue = {},               -- queue of tasks for this character
-    directedProcessing = {                 -- lightweight processor state
+    directedTasksQueue = {},     -- queue of tasks for this character
+    directedProcessing = {       -- lightweight processor state
         active = false,
         step = "idle",
         currentTask = nil,
@@ -385,12 +393,12 @@ function SmartLootEngine.setDirectedAssignmentVisible(visible)
 end
 
 function SmartLootEngine.enqueueDirectedTasks(tasks)
-    if type(tasks) ~= "table" then 
+    if type(tasks) ~= "table" then
         logging.debug("[Directed] Invalid tasks parameter - not a table")
         util.printSmartLoot("Directed: invalid tasks payload", "error")
-        return 
+        return
     end
-    
+
     local validTasks = 0
     for _, t in ipairs(tasks) do
         if type(t) == "table" and t.itemName and t.itemName ~= "" then
@@ -406,7 +414,7 @@ function SmartLootEngine.enqueueDirectedTasks(tasks)
             logging.debug("[Directed] Skipped invalid task: " .. tostring(t and t.itemName or "unknown"))
         end
     end
-    
+
     if validTasks > 0 then
         SmartLootEngine.state.directedProcessing.active = true
         SmartLootEngine.state.directedProcessing.step = "idle"
@@ -427,7 +435,8 @@ end
 
 local function _beginNextDirectedTask()
     SmartLootEngine.state.directedProcessing.currentTask = table.remove(SmartLootEngine.state.directedTasksQueue, 1)
-    SmartLootEngine.state.directedProcessing.step = SmartLootEngine.state.directedProcessing.currentTask and "navigating" or "idle"
+    SmartLootEngine.state.directedProcessing.step = SmartLootEngine.state.directedProcessing.currentTask and "navigating" or
+    "idle"
     if SmartLootEngine.state.directedProcessing.currentTask then
         local t = SmartLootEngine.state.directedProcessing.currentTask
         -- Initialize attempts and baseline inventory count for verification
@@ -439,7 +448,9 @@ local function _beginNextDirectedTask()
         if okBase and type(val) == "number" then baseCount = val end
         t.baseCount = baseCount
 
-        util.printSmartLoot(string.format("Directed: starting task for %s at corpse %d (have=%d)", t.itemName or "?", t.corpseSpawnID or 0, baseCount), "info")
+        util.printSmartLoot(
+        string.format("Directed: starting task for %s at corpse %d (have=%d)", t.itemName or "?", t.corpseSpawnID or 0,
+            baseCount), "info")
         SmartLootEngine.state.navStartTime = mq.gettime()
         SmartLootEngine.state.directedProcessing.navStartTime = SmartLootEngine.state.navStartTime
         SmartLootEngine.state.directedProcessing.navMethod = smartNavigate(t.corpseSpawnID, "directed task")
@@ -449,8 +460,8 @@ local function _beginNextDirectedTask()
 end
 
 function SmartLootEngine.processDirectedTasksTick()
-    if not SmartLootEngine.state.directedProcessing or not SmartLootEngine.state.directedProcessing.active then 
-        return false 
+    if not SmartLootEngine.state.directedProcessing or not SmartLootEngine.state.directedProcessing.active then
+        return false
     end
 
     -- Safety check for task queue
@@ -480,21 +491,22 @@ function SmartLootEngine.processDirectedTasksTick()
         SmartLootEngine.state.directedProcessing.active = false
         return false
     end
-    
+
     -- Safely check corpse
     local corpse = nil
     local corpseExists = false
-    
+
     local ok, result = pcall(function()
         corpse = mq.TLO.Spawn(task.corpseSpawnID)
         return corpse and corpse()
     end)
-    
+
     corpseExists = ok and result
-    
+
     -- If corpse disappeared or can't be accessed, skip task
     if not corpseExists then
-        logging.debug(string.format("[Directed] Corpse %d not found - skipping task for %s", task.corpseSpawnID or 0, task.itemName or "unknown"))
+        logging.debug(string.format("[Directed] Corpse %d not found - skipping task for %s", task.corpseSpawnID or 0,
+            task.itemName or "unknown"))
         SmartLootEngine.state.directedProcessing.currentTask = nil
         _beginNextDirectedTask()
         _dirScheduleNextTick(50)
@@ -517,9 +529,11 @@ function SmartLootEngine.processDirectedTasksTick()
         local navActive = false
         local okNav, active = pcall(function() return mq.TLO.Navigation.Active() end)
         if okNav then navActive = active end
-        local openRadius = (SmartLootEngine.config.lootRange or 15) + (SmartLootEngine.config.lootRangeTolerance or 2) + 20 -- generous buffer
+        local openRadius = (SmartLootEngine.config.lootRange or 15) + (SmartLootEngine.config.lootRangeTolerance or 2) +
+        20                                                                                                                  -- generous buffer
         if (not navActive) and distance <= openRadius then
-            util.printSmartLoot(string.format("Directed: nav complete at distance %.1f - attempting to open loot", distance), "info")
+            util.printSmartLoot(
+            string.format("Directed: nav complete at distance %.1f - attempting to open loot", distance), "info")
             SmartLootEngine.state.directedProcessing.step = "opening"
             _dirScheduleNextTick(150)
             return true
@@ -542,7 +556,7 @@ function SmartLootEngine.processDirectedTasksTick()
     if SmartLootEngine.state.directedProcessing.step == "opening" then
         -- Target then open loot window
         mq.cmdf("/target id %d", task.corpseSpawnID)
-        
+
         -- If window not open, try to open explicitly
         if not SmartLootEngine.isLootWindowOpen() then
             mq.cmd("/loot")
@@ -550,7 +564,7 @@ function SmartLootEngine.processDirectedTasksTick()
             -- After a short delay, loop will re-check
             return true
         end
-        
+
         if SmartLootEngine.isLootWindowOpen() then
             -- Prepare engine corpse context for logging/history
             SmartLootEngine.state.currentCorpseID = task.corpseSpawnID
@@ -575,7 +589,9 @@ function SmartLootEngine.processDirectedTasksTick()
             end
 
             if not targetSlot then
-                util.printSmartLoot(string.format("Directed: item '%s' not found on corpse %d - skipping", task.itemName or "?", task.corpseSpawnID or 0), "warning")
+                util.printSmartLoot(
+                string.format("Directed: item '%s' not found on corpse %d - skipping", task.itemName or "?",
+                    task.corpseSpawnID or 0), "warning")
                 SmartLootEngine.state.directedProcessing.currentTask = nil
                 _beginNextDirectedTask()
                 _dirScheduleNextTick(50)
@@ -591,7 +607,8 @@ function SmartLootEngine.processDirectedTasksTick()
             SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Loot
 
             SmartLootEngine.state.directedProcessing.step = "looting"
-            util.printSmartLoot(string.format("Directed: looting '%s' from slot %d", foundItemInfo.name or "?", targetSlot), "info")
+            util.printSmartLoot(
+            string.format("Directed: looting '%s' from slot %d", foundItemInfo.name or "?", targetSlot), "info")
             if SmartLootEngine.executeLootAction(SmartLootEngine.LootAction.Loot, targetSlot, foundItemInfo.name, foundItemInfo.itemID, foundItemInfo.iconID, foundItemInfo.quantity) then
                 _dirScheduleNextTick(SmartLootEngine.config.lootActionDelayMs)
             else
@@ -696,8 +713,8 @@ local function isCorpseSlotCleared(slot, originalName)
     if not SmartLootEngine.isLootWindowOpen() then return true end
 
     local item = SmartLootEngine.getCorpseItem(slot)
-    if not item then return true end                    -- slot empty now
-    if item.name ~= originalName then return true end   -- corpse collapsed/shuffled
+    if not item then return true end                  -- slot empty now
+    if item.name ~= originalName then return true end -- corpse collapsed/shuffled
     return false
 end
 
@@ -1033,7 +1050,7 @@ function SmartLootEngine.canStackItem(itemName, itemID)
     if not itemName then
         return false
     end
-    
+
     -- Try to find the item in inventory by name first, then by ID
     local existingItem = mq.TLO.FindItem(itemName)
     if not existingItem or not existingItem.ID() or existingItem.ID() <= 0 then
@@ -1042,24 +1059,24 @@ function SmartLootEngine.canStackItem(itemName, itemID)
             existingItem = mq.TLO.FindItem(itemID)
         end
     end
-    
+
     -- If item not found in inventory, it can't be stacked
     if not existingItem or not existingItem.ID() or existingItem.ID() <= 0 then
         return false
     end
-    
+
     -- Check if the item is stackable
     if not existingItem.Stackable() then
         return false
     end
-    
+
     -- Check if there's available stack space
     local freeStackSpace = existingItem.FreeStack() or 0
     if freeStackSpace > 0 then
         logging.debug(string.format("[Engine] Item %s can be stacked (%d space available)", itemName, freeStackSpace))
         return true
     end
-    
+
     return false
 end
 
@@ -1069,12 +1086,12 @@ function SmartLootEngine.canLootItem(itemName, itemID)
     if not SmartLootEngine.config.enableInventorySpaceCheck then
         return true
     end
-    
+
     -- Check if we have regular inventory space
     if SmartLootEngine.hasInventorySpace() then
         return true
     end
-    
+
     -- If no free slots, check if item can be stacked
     return SmartLootEngine.canStackItem(itemName, itemID)
 end
@@ -1278,12 +1295,12 @@ function SmartLootEngine.checkLoreConflict(itemName, itemSlot)
     if currentCount > 0 then
         local message = string.format("Already have Lore item: %s (count: %d)", itemName, currentCount)
         logging.debug(string.format("[Engine] Lore conflict detected: %s", message))
-        
+
         -- Announce Lore conflict if configured
         if config.loreCheckAnnounce and config.sendChatMessage then
             config.sendChatMessage(string.format("Skipping Lore item %s (already have %d)", itemName, currentCount))
         end
-        
+
         return true, message
     end
 
@@ -1307,16 +1324,17 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
                 return "Ignore", itemID, iconID
             end
         end
-        
+
         -- Check for Lore conflict before applying temp rule
         if tempRule == "Keep" then
-            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName, SmartLootEngine.state.currentItem.slot)
+            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName,
+                SmartLootEngine.state.currentItem.slot)
             if hasLoreConflict then
                 logging.debug(string.format("[Engine] Temp rule %s overridden by Lore check: %s", tempRule, loreReason))
                 return "Ignore", itemID, iconID
             end
         end
-        
+
         logging.log(string.format("[DEBUG] Temp rule hit for %s -> %s (assigned to: %s)", itemName, tempRule,
             assignedPeer))
         return tempRule, itemID, iconID
@@ -1343,25 +1361,25 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
         if config and config.isWhitelistOnly and config.isWhitelistOnly() then
             return "Ignore", itemID, iconID
         end
-        
+
         -- Check for character-specific default action for new items
         local toonName = mq.TLO.Me.Name() or "unknown"
         local defaultAction = "Prompt"
         if config and config.getDefaultNewItemAction then
             defaultAction = config.getDefaultNewItemAction(toonName)
         end
-        
+
         -- If default action is not "Prompt", apply it directly
         if defaultAction ~= "Prompt" then
             logging.debug(string.format("[Engine] Applying default action '%s' for new item: %s", defaultAction, itemName))
-            
+
             -- Auto-save a local rule so future encounters don't need default handling
             pcall(function()
                 local db = require("modules.database")
                 db.saveLootRule(itemName, itemID or 0, defaultAction, iconID or 0)
                 db.refreshLootRuleCache()
             end)
-            
+
             -- Optional auto-broadcast to peers (per-character setting)
             local toonName = mq.TLO.Me.Name() or "unknown"
             local shouldBroadcast = false
@@ -1381,16 +1399,17 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
                     util.broadcastCommand("/sl_rulescache")
                 end)
             end
-            
+
             return defaultAction, itemID, iconID
         end
-        
+
         return "Unset", itemID, iconID
     end
 
     -- Check for Lore conflict before applying Keep rules
     if rule == "Keep" then
-        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName, SmartLootEngine.state.currentItem.slot)
+        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName,
+            SmartLootEngine.state.currentItem.slot)
         if hasLoreConflict then
             logging.debug(string.format("[Engine] Keep rule overridden by Lore check: %s", loreReason))
             return "Ignore", itemID, iconID
@@ -1406,7 +1425,8 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
 
         if currentCount < threshold then
             -- Check for Lore conflict before keeping
-            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName, SmartLootEngine.state.currentItem.slot)
+            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName,
+                SmartLootEngine.state.currentItem.slot)
             if hasLoreConflict then
                 logging.debug(string.format("[Engine] KeepIfFewerThan rule overridden by Lore check: %s", loreReason))
                 return "Ignore", itemID, iconID
@@ -1427,7 +1447,8 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
                 if not ok then
                     logging.debug("[Engine] Failed to auto-set rule to Ignore at threshold: " .. tostring(err))
                 else
-                    logging.log(string.format("[Engine] Auto-set rule to Ignore for '%s' (threshold %d reached)", itemName, threshold))
+                    logging.log(string.format("[Engine] Auto-set rule to Ignore for '%s' (threshold %d reached)",
+                        itemName, threshold))
                 end
                 return "Ignore", itemID, iconID
             end
@@ -1512,9 +1533,9 @@ function SmartLootEngine.recordCorpseEncounter(corpseID, corpseName, zoneName)
 
     -- Check if we've seen this corpse recently (within 15 minutes)
     -- BUT skip this check if farming mode is active
-    local isFarmingMode = (tempRules and tempRules.isAFKFarmingActive and tempRules.isAFKFarmingActive()) or 
-                         (config and config.isFarmingModeActive and config.isFarmingModeActive())
-    
+    local isFarmingMode = (tempRules and tempRules.isAFKFarmingActive and tempRules.isAFKFarmingActive()) or
+        (config and config.isFarmingModeActive and config.isFarmingModeActive())
+
     if not isFarmingMode and wasCorpseSeenRecently(corpseID, zoneName, 15) then
         logging.debug(string.format("[Engine] Skipping recently seen corpse %d (not in farming mode)", corpseID))
         return true -- Skip, but treat as success
@@ -1580,14 +1601,14 @@ function SmartLootEngine.checkLootActionCompletion()
         return false
     end
 
-    local now      = mq.gettime()
-    local elapsed  = now - SmartLootEngine.state.lootActionStartTime
-    local action   = SmartLootEngine.state.lootActionType
-    local item     = SmartLootEngine.state.currentItem
-    local itemSlot = item.slot
+    local now          = mq.gettime()
+    local elapsed      = now - SmartLootEngine.state.lootActionStartTime
+    local action       = SmartLootEngine.state.lootActionType
+    local item         = SmartLootEngine.state.currentItem
+    local itemSlot     = item.slot
 
-    local slotCleared    = isCorpseSlotCleared(itemSlot, item.name)
-    local itemOnCursor   = SmartLootEngine.isItemOnCursor()
+    local slotCleared  = isCorpseSlotCleared(itemSlot, item.name)
+    local itemOnCursor = SmartLootEngine.isItemOnCursor()
 
     -- SUCCESS: item left corpse (slot cleared or shuffled), or it is on cursor
     if slotCleared or itemOnCursor then
@@ -1597,7 +1618,6 @@ function SmartLootEngine.checkLootActionCompletion()
             mq.cmd("/destroy")
             SmartLootEngine.recordLootAction("Destroyed", item.name, item.itemID, item.iconID, item.quantity)
             SmartLootEngine.stats.itemsDestroyed = SmartLootEngine.stats.itemsDestroyed + 1
-
         elseif action == SmartLootEngine.LootAction.Loot then
             if SmartLootEngine.config.autoInventoryOnLoot then
                 for i = 1, 3 do
@@ -1765,9 +1785,9 @@ function SmartLootEngine.findNextInterestedPeerInZone(itemName, itemID)
     if not SmartLootEngine.config.enablePeerCoordination or _preventPeerTriggers() then
         return nil
     end
-    
+
     local myZoneID = mq.TLO.Zone.ID()
-    
+
     -- Check for temporary peer assignment first
     local assignedPeer = tempRules.getPeerAssignment(itemName)
     if assignedPeer then
@@ -1782,8 +1802,8 @@ function SmartLootEngine.findNextInterestedPeerInZone(itemName, itemID)
                     if myZoneID == peerZoneID then
                         return assignedPeer
                     else
-                        logging.debug(string.format("[Engine] Assigned peer %s in different zone (%s vs %s) - skipping", 
-                                     assignedPeer, peerZoneID or "unknown", myZoneID or "unknown"))
+                        logging.debug(string.format("[Engine] Assigned peer %s in different zone (%s vs %s) - skipping",
+                            assignedPeer, peerZoneID or "unknown", myZoneID or "unknown"))
                     end
                 end
                 break
@@ -1847,8 +1867,8 @@ function SmartLootEngine.findNextInterestedPeerInZone(itemName, itemID)
                         return peer
                     end
                 else
-                    logging.debug(string.format("[Engine] Peer %s in different zone (%s vs %s) - skipping", 
-                                 peer, peerZoneID or "unknown", myZoneID or "unknown"))
+                    logging.debug(string.format("[Engine] Peer %s in different zone (%s vs %s) - skipping",
+                        peer, peerZoneID or "unknown", myZoneID or "unknown"))
                 end
             else
                 logging.debug(string.format("[Engine] Peer %s not found in zone - skipping", peer))
@@ -1874,7 +1894,7 @@ function SmartLootEngine.triggerPeerForItem(itemName, itemID)
     logging.debug(string.format("[Engine] Triggering peer %s for item %s", interestedPeer, itemName))
 
     -- Register with waterfall tracker BEFORE triggering
-    local peerRegistered = waterfallTracker.onPeerTriggered(interestedPeer)
+    local peerRegistered = getWaterfallTracker().onPeerTriggered(interestedPeer)
 
     -- Request peer to refresh rules then start once via targeted command mailbox
     local cmdTarget = interestedPeer
@@ -1925,7 +1945,7 @@ function SmartLootEngine.triggerPeerByName(peerName)
     if not peerName or peerName == "" then return false end
 
     -- Register with waterfall tracker BEFORE triggering
-    waterfallTracker.onPeerTriggered(peerName)
+    getWaterfallTracker().onPeerTriggered(peerName)
 
     local cmdTarget = peerName
     pcall(function()
@@ -1967,7 +1987,10 @@ local function getCandidatePeersInZone()
 
     local myIndex = nil
     for i, p in ipairs(config.peerLootOrder) do
-        if p:lower() == currentToon:lower() then myIndex = i break end
+        if p:lower() == currentToon:lower() then
+            myIndex = i
+            break
+        end
     end
     if not myIndex then return {} end
 
@@ -1978,7 +2001,10 @@ local function getCandidatePeersInZone()
         -- connected?
         local isConnected = false
         for _, cp in ipairs(connectedPeers) do
-            if cp:lower() == peer:lower() then isConnected = true break end
+            if cp:lower() == peer:lower() then
+                isConnected = true
+                break
+            end
         end
         if isConnected then
             local peerSpawn = mq.TLO.Spawn(string.format("pc =%s", peer))
@@ -2125,7 +2151,7 @@ function SmartLootEngine.processFindingCorpseState()
     -- Start waterfall session if this is the beginning of loot processing
     if not SmartLootEngine.state.waterfallSessionActive then
         SmartLootEngine.state.waterfallSessionActive = true
-        waterfallTracker.onLootSessionStart(SmartLootEngine.state.mode)
+        getWaterfallTracker().onLootSessionStart(SmartLootEngine.state.mode)
         SmartLootEngine.notifyRGMercsProcessing()
     end
 
@@ -2395,21 +2421,23 @@ function SmartLootEngine.processProcessingItemsState()
         return
     elseif rule == "Keep" then
         -- Final Lore check before executing loot action
-        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemInfo.name, SmartLootEngine.state.currentItemIndex)
+        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemInfo.name,
+            SmartLootEngine.state.currentItemIndex)
         if hasLoreConflict then
             logging.debug(string.format("[Engine] Final Keep rule overridden by Lore check: %s", loreReason))
             SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
             SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
-            
+
             -- In Directed mode, collect for assignment
             if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Directed then
                 SmartLootEngine.addDirectedCandidate(itemInfo.name, finalItemID, finalIconID, itemInfo.quantity,
                     SmartLootEngine.state.currentCorpseSpawnID, SmartLootEngine.state.currentCorpseName)
             end
 
-            SmartLootEngine.recordLootAction("Ignored (Lore Conflict)", itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
+            SmartLootEngine.recordLootAction("Ignored (Lore Conflict)", itemInfo.name, finalItemID, finalIconID,
+                itemInfo.quantity)
             SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
-            
+
             -- Move to next item
             SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
             scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
@@ -2418,12 +2446,14 @@ function SmartLootEngine.processProcessingItemsState()
             local canLootNow = SmartLootEngine.canLootItem(itemInfo.name, finalItemID)
             if not canLootNow then
                 local mode = SmartLootEngine.state.mode
-                local isPeerRunner = (mode == SmartLootEngine.LootMode.Once) or (mode == SmartLootEngine.LootMode.RGOnce) or (mode == SmartLootEngine.LootMode.Background)
+                local isPeerRunner = (mode == SmartLootEngine.LootMode.Once) or (mode == SmartLootEngine.LootMode.RGOnce) or
+                (mode == SmartLootEngine.LootMode.Background)
                 if isPeerRunner then
                     -- Background/peer: hand off immediately and revert (same behavior as earlier)
                     if SmartLootEngine.isLootWindowOpen() then mq.cmd("/notify LootWnd DoneButton leftmouseup") end
                     local handed = SmartLootEngine.triggerPeerForItem(itemInfo.name, finalItemID)
-                    if waterfallTracker and waterfallTracker.onLootSessionEnd then waterfallTracker.onLootSessionEnd() end
+                    local wf = getWaterfallTracker()
+                    if wf and wf.onLootSessionEnd then wf.onLootSessionEnd() end
                     if SmartLootEngine.notifyRGMainComplete then SmartLootEngine.notifyRGMainComplete() end
                     setState(SmartLootEngine.LootState.Idle, "Out of space - peer revert")
                     scheduleNextTick(150)
@@ -2432,7 +2462,8 @@ function SmartLootEngine.processProcessingItemsState()
                     -- Main/RGMain: record rule, leave item behind, and continue scanning
                     SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
                     SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
-                    SmartLootEngine.recordLootAction("Left Behind (No Space)", itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
+                    SmartLootEngine.recordLootAction("Left Behind (No Space)", itemInfo.name, finalItemID, finalIconID,
+                        itemInfo.quantity)
                     SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
                     SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
                     scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
@@ -2451,7 +2482,7 @@ function SmartLootEngine.processProcessingItemsState()
     elseif rule == "Ignore" or rule == "LeftBehind" then
         SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
         SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
-        
+
         -- In Directed mode, collect for assignment instead of automatic triggering later
         if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Directed then
             SmartLootEngine.addDirectedCandidate(itemInfo.name, finalItemID, finalIconID, itemInfo.quantity,
@@ -2597,7 +2628,7 @@ function SmartLootEngine.processProcessingPeersState()
 
     -- Check if local looting is complete and handle waterfall
     if SmartLootEngine.state.waterfallSessionActive then
-        local waterfallComplete = waterfallTracker.onLootSessionEnd()
+        local waterfallComplete = getWaterfallTracker().onLootSessionEnd()
 
         if waterfallComplete then
             -- Waterfall is complete - we can finish
@@ -2679,15 +2710,15 @@ function SmartLootEngine.processOnceModeCompletionState()
     -- Handle CombatLoot mode completion differently
     if SmartLootEngine.state.mode == SmartLootEngine.LootMode.CombatLoot then
         logging.debug("[Engine] CombatLoot mode completion")
-        
+
         -- Revert to original mode stored before CombatLoot
         local originalMode = SmartLootEngine.state.preCombatLootMode or SmartLootEngine.LootMode.Background
         SmartLootEngine.state.preCombatLootMode = nil -- Clear the stored mode
-        
+
         logging.debug(string.format("[Engine] Reverting from CombatLoot to original mode: %s", originalMode))
         SmartLootEngine.setLootMode(originalMode, "CombatLoot mode complete")
         setState(SmartLootEngine.LootState.Idle, "CombatLoot mode complete")
-        
+
         scheduleNextTick(100)
         return
     end
@@ -2792,7 +2823,7 @@ end
 
 function SmartLootEngine.processWaitingForWaterfallCompletionState()
     -- Check if waterfall chain has completed
-    local waterfallComplete = waterfallTracker.checkWaterfallProgress()
+    local waterfallComplete = getWaterfallTracker().checkWaterfallProgress()
 
     if waterfallComplete then
         SmartLootEngine.state.waterfallSessionActive = false
@@ -2827,7 +2858,7 @@ function SmartLootEngine.processWaitingForWaterfallCompletionState()
         scheduleNextTick(100)
     else
         -- Check for timeout
-        local waterfallStatus = waterfallTracker.getStatus()
+        local waterfallStatus = getWaterfallTracker().getStatus()
         if waterfallStatus.sessionDuration > SmartLootEngine.config.maxLootWaitTime then
             logging.debug("[Engine] Waterfall timeout - proceeding anyway")
             SmartLootEngine.state.waterfallSessionActive = false
@@ -2866,8 +2897,9 @@ function SmartLootEngine.processWaitingForInventorySpaceState()
         -- Still no space - continue waiting
         local freeSlots = mq.TLO.Me.FreeInventory() or 0
         local minRequired = SmartLootEngine.config.minFreeInventorySlots or 5
-        logging.debug(string.format("[Engine] Still waiting for inventory space: %d free / %d required", freeSlots, minRequired))
-        
+        logging.debug(string.format("[Engine] Still waiting for inventory space: %d free / %d required", freeSlots,
+            minRequired))
+
         -- Check every 5 seconds to avoid spam
         scheduleNextTick(5000)
     end
@@ -3001,7 +3033,7 @@ function SmartLootEngine.setLootMode(newMode, reason)
     end
 
     logging.debug(string.format("[Engine] Mode changed: %s -> %s (%s)", oldMode, newMode, reason or ""))
-    
+
     -- Clear stored mode if we're changing away from CombatLoot manually or to a different mode
     if oldMode == SmartLootEngine.LootMode.CombatLoot and newMode ~= SmartLootEngine.LootMode.CombatLoot then
         SmartLootEngine.state.preCombatLootMode = nil
@@ -3065,7 +3097,8 @@ function SmartLootEngine.resolvePendingDecision(itemName, itemID, selectedRule, 
 
     -- Check for Lore conflict if user selected Keep
     if selectedRule == "Keep" then
-        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName, SmartLootEngine.state.currentItemIndex)
+        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName,
+            SmartLootEngine.state.currentItemIndex)
         if hasLoreConflict then
             logging.debug(string.format("[Engine] Manual Keep decision overridden by Lore check: %s", loreReason))
             selectedRule = "Ignore"
@@ -3102,7 +3135,7 @@ function SmartLootEngine.resolvePendingDecision(itemName, itemID, selectedRule, 
 end
 
 function SmartLootEngine.getState()
-    local waterfallStatus = waterfallTracker.getStatus()
+    local waterfallStatus = getWaterfallTracker().getStatus()
 
     return {
         currentState = SmartLootEngine.state.currentState,
@@ -3158,7 +3191,7 @@ function SmartLootEngine.emergencyStop(reason)
 
     -- End waterfall session if active
     if SmartLootEngine.state.waterfallSessionActive then
-        waterfallTracker.endSession()
+        getWaterfallTracker().endSession()
         SmartLootEngine.state.waterfallSessionActive = false
         SmartLootEngine.state.waitingForWaterfallCompletion = false
     end
@@ -3221,18 +3254,18 @@ end
 function SmartLootEngine.cleanup()
     -- Emergency stop to halt any ongoing processing
     SmartLootEngine.emergencyStop("Cleanup shutdown")
-    
+
     -- Clear all state
     SmartLootEngine.state.currentCorpseID = 0
     SmartLootEngine.state.currentItemIndex = 0
     SmartLootEngine.state.needsPendingDecision = false
     SmartLootEngine.state.lootActionInProgress = false
     SmartLootEngine.state.waitingForLootAction = false
-    
+
     -- Clear UI references to prevent dangling pointers
     SmartLootEngine.state.lootUI = nil
     SmartLootEngine.state.settings = nil
-    
+
     -- Clear caches
     SmartLootEngine.state.processedCorpsesThisSession = {}
     SmartLootEngine.state.directedTasksQueue = {}
@@ -3241,13 +3274,13 @@ function SmartLootEngine.cleanup()
         currentTask = nil,
         step = "idle"
     }
-    
+
     logging.debug("[SmartLootEngine] Cleanup completed")
 end
 
 -- Live setters for distances (sync with UI settings if present)
 function SmartLootEngine.setLootRadius(radius)
-    radius = math.max(10, math.min(1000, tonumber(radius) or (SmartLootEngine.config.lootRadius or 200)))
+    radius = tonumber(radius) or (SmartLootEngine.config.lootRadius or 200)
     SmartLootEngine.config.lootRadius = radius
     if SmartLootEngine.state and SmartLootEngine.state.settings then
         SmartLootEngine.state.settings.lootRadius = radius
@@ -3256,7 +3289,7 @@ function SmartLootEngine.setLootRadius(radius)
 end
 
 function SmartLootEngine.setLootRange(range)
-    range = math.max(5, math.min(100, tonumber(range) or (SmartLootEngine.config.lootRange or 15)))
+    range = tonumber(range) or (SmartLootEngine.config.lootRange or 15)
     SmartLootEngine.config.lootRange = range
     if SmartLootEngine.state and SmartLootEngine.state.settings then
         SmartLootEngine.state.settings.lootRange = range

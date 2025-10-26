@@ -316,8 +316,8 @@ function config.save()
 
     -- NEW: Update inventory settings from engine if available, else from config
     do
-        local ok, Engine = pcall(function() return require("modules.SmartLootEngine") end)
-        if ok and Engine and Engine.config then
+        local Engine = package.loaded["modules.SmartLootEngine"]
+        if Engine and Engine.config then
             config.inventory.enableInventorySpaceCheck = Engine.config.enableInventorySpaceCheck and true or false
             config.inventory.minFreeInventorySlots = tonumber(Engine.config.minFreeInventorySlots) or config.inventory.minFreeInventorySlots
             config.inventory.autoInventoryOnLoot = Engine.config.autoInventoryOnLoot and true or false
@@ -355,7 +355,7 @@ function config.setLootRadius(radius)
     config.lootRadius = radius
     config.save()
     -- Also push to engine live
-    local Engine = require('modules.SmartLootEngine')
+    local Engine = package.loaded["modules.SmartLootEngine"]
     if Engine and Engine.setLootRadius then Engine.setLootRadius(radius) end
     return radius
 end
@@ -364,7 +364,7 @@ function config.setLootRange(range)
     range = math.max(5, math.min(100, tonumber(range) or config.lootRange))
     config.lootRange = range
     config.save()
-    local Engine = require('modules.SmartLootEngine')
+    local Engine = package.loaded["modules.SmartLootEngine"]
     if Engine and Engine.setLootRange then Engine.setLootRange(range) end
     return range
 end
@@ -1061,7 +1061,7 @@ end
 
 -- Sync engine timing settings to SmartLootEngine
 function config.syncTimingToEngine()
-    local SmartLootEngine = require("modules.SmartLootEngine")
+    local SmartLootEngine = package.loaded["modules.SmartLootEngine"]
     if SmartLootEngine and SmartLootEngine.config then
         -- Sync timing settings from persistent config to engine config
         SmartLootEngine.config.tickIntervalMs = config.engineTiming.tickIntervalMs
@@ -1084,8 +1084,8 @@ end
 
 -- NEW: Inventory sync and setters
 function config.syncInventoryToEngine()
-    local ok, Engine = pcall(function() return require("modules.SmartLootEngine") end)
-    if not ok or not Engine or not Engine.config then return false end
+    local Engine = package.loaded["modules.SmartLootEngine"]
+    if not Engine or not Engine.config then return false end
     Engine.config.enableInventorySpaceCheck = config.inventory.enableInventorySpaceCheck and true or false
     Engine.config.minFreeInventorySlots = tonumber(config.inventory.minFreeInventorySlots) or 5
     Engine.config.autoInventoryOnLoot = config.inventory.autoInventoryOnLoot and true or false
