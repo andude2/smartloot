@@ -1092,6 +1092,227 @@ local function bindTempRuleCommands()
 end
 
 local function bindUtilityCommands()
+    -- /sl_radius <number>
+    mq.bind("/sl_radius", function(value)
+        local n = tonumber(value)
+        if not n then
+            util.printSmartLoot("Usage: /sl_radius <number>", "error")
+            return
+        end
+        local config = require("modules.config")
+        local newv = config.setLootRadius(n)
+        util.printSmartLoot(string.format("Loot radius set to %d", newv), "success")
+    end)
+
+    -- /sl_range <number>
+    mq.bind("/sl_range", function(value)
+        local n = tonumber(value)
+        if not n then
+            util.printSmartLoot("Usage: /sl_range <number>", "error")
+            return
+        end
+        local config = require("modules.config")
+        local newv = config.setLootRange(n)
+        util.printSmartLoot(string.format("Loot range set to %d", newv), "success")
+    end)
+    
+    -- /sl_inventory <on|off|slots|autoinv>
+    mq.bind("/sl_inventory", function(action, value)
+        local SmartLootEngine = SmartLootEngine or require("modules.SmartLootEngine")
+        local config = require("modules.config")
+        
+        if not action or action == "" then
+            -- Show current settings
+            local enabled = SmartLootEngine.config.enableInventorySpaceCheck or false
+            local minSlots = SmartLootEngine.config.minFreeInventorySlots or 5
+            local autoInv = SmartLootEngine.config.autoInventoryOnLoot or false
+            
+            util.printSmartLoot("=== Inventory Settings ===", "info")
+            util.printSmartLoot("Inventory Check: " .. (enabled and "ON" or "OFF"), enabled and "success" or "warning")
+            if enabled then
+                util.printSmartLoot("Min Free Slots: " .. minSlots, "info")
+                util.printSmartLoot("Auto-Inventory: " .. (autoInv and "ON" or "OFF"), "info")
+            end
+            util.printSmartLoot("Usage: /sl_inventory <on|off|slots <n>|autoinv <on|off>>", "info")
+            return
+        end
+        
+        action = action:lower()
+        
+        if action == "on" then
+            SmartLootEngine.config.enableInventorySpaceCheck = true
+            if config.save then config.save() end
+            util.printSmartLoot("Inventory space checking enabled", "success")
+        elseif action == "off" then
+            SmartLootEngine.config.enableInventorySpaceCheck = false
+            if config.save then config.save() end
+            util.printSmartLoot("Inventory space checking disabled", "warning")
+        elseif action == "slots" then
+            local slots = tonumber(value)
+            if not slots then
+                util.printSmartLoot("Usage: /sl_inventory slots <number>", "error")
+                util.printSmartLoot("Current min free slots: " .. (SmartLootEngine.config.minFreeInventorySlots or 5), "info")
+                return
+            end
+            slots = math.max(1, math.min(30, slots))
+            SmartLootEngine.config.minFreeInventorySlots = slots
+            if config.save then config.save() end
+            util.printSmartLoot(string.format("Minimum free inventory slots set to %d", slots), "success")
+        elseif action == "autoinv" then
+            if not value or value == "" then
+                local current = SmartLootEngine.config.autoInventoryOnLoot or false
+                util.printSmartLoot("Auto-inventory on loot: " .. (current and "ON" or "OFF"), "info")
+                util.printSmartLoot("Usage: /sl_inventory autoinv <on|off>", "info")
+                return
+            end
+            
+            local autoInv = (value:lower() == "on" or value:lower() == "true")
+            SmartLootEngine.config.autoInventoryOnLoot = autoInv
+            if config.save then config.save() end
+            util.printSmartLoot("Auto-inventory on loot " .. (autoInv and "enabled" or "disabled"), autoInv and "success" or "warning")
+        else
+            util.printSmartLoot("Invalid action. Valid actions: on, off, slots, autoinv", "error")
+        end
+    end)
+    
+    -- /sl_itemannounce <all|ignored|none>
+    mq.bind("/sl_itemannounce", function(mode)
+        local config = require("modules.config")
+        
+        if not mode or mode == "" then
+            local current = config.getItemAnnounceMode and config.getItemAnnounceMode() or "all"
+            local description = config.getItemAnnounceModeDescription and config.getItemAnnounceModeDescription() or current
+            util.printSmartLoot("Current item announce mode: " .. description, "info")
+            util.printSmartLoot("Usage: /sl_itemannounce <all|ignored|none>", "info")
+            return
+        end
+        
+        mode = mode:lower()
+        local validModes = {"all", "ignored", "none"}
+        local isValid = false
+        for _, validMode in ipairs(validModes) do
+            if mode == validMode then
+                isValid = true
+                break
+            end
+        end
+        
+        if not isValid then
+            util.printSmartLoot("Invalid mode. Valid modes: all, ignored, none", "error")
+            return
+        end
+        
+        if config.setItemAnnounceMode then
+            local success, errorMsg = config.setItemAnnounceMode(mode)
+            if success then
+                local description = config.getItemAnnounceModeDescription and config.getItemAnnounceModeDescription() or mode
+                util.printSmartLoot("Item announce mode set to: " .. description, "success")
+            else
+                util.printSmartLoot("Failed to set item announce mode: " .. tostring(errorMsg), "error")
+            end
+        else
+            config.itemAnnounceMode = mode
+            if config.save then config.save() end
+            util.printSmartLoot("Item announce mode set to: " .. mode, "success")
+        end
+    end)
+    
+    -- /sl_loreannounce <on|off>
+    mq.bind("/sl_loreannounce", function(action)
+        local config = require("modules.config")
+        
+        if not action or action == "" then
+            local enabled = config.loreCheckAnnounce
+            if enabled == nil then enabled = true end
+            util.printSmartLoot("Lore conflict announcements: " .. (enabled and "ON" or "OFF"), enabled and "success" or "warning")
+            util.printSmartLoot("Usage: /sl_loreannounce <on|off>", "info")
+            return
+        end
+        
+        action = action:lower()
+        
+        if action == "on" or action == "true" or action == "1" then
+            config.loreCheckAnnounce = true
+            if config.save then config.save() end
+            util.printSmartLoot("Lore conflict announcements enabled", "success")
+        elseif action == "off" or action == "false" or action == "0" then
+            config.loreCheckAnnounce = false
+            if config.save then config.save() end
+            util.printSmartLoot("Lore conflict announcements disabled", "warning")
+        else
+            util.printSmartLoot("Invalid action. Use 'on' or 'off'", "error")
+        end
+    end)
+    
+    -- /sl_lootcommand <dannet|e3|bc>
+    mq.bind("/sl_lootcommand", function(type)
+        local config = require("modules.config")
+        
+        if not type or type == "" then
+            local current = config.lootCommandType or "dannet"
+            local displayNames = {
+                dannet = "DanNet",
+                e3 = "E3",
+                bc = "EQBC"
+            }
+            util.printSmartLoot("Current loot command type: " .. (displayNames[current] or current), "info")
+            if current == "dannet" then
+                local channel = config.dannetBroadcastChannel or "group"
+                util.printSmartLoot("DanNet broadcast channel: " .. channel, "info")
+            end
+            util.printSmartLoot("Usage: /sl_lootcommand <dannet|e3|bc>", "info")
+            return
+        end
+        
+        type = type:lower()
+        local validTypes = {"dannet", "e3", "bc"}
+        local isValid = false
+        for _, validType in ipairs(validTypes) do
+            if type == validType then
+                isValid = true
+                break
+            end
+        end
+        
+        if not isValid then
+            util.printSmartLoot("Invalid type. Valid types: dannet, e3, bc", "error")
+            return
+        end
+        
+        config.lootCommandType = type
+        if config.save then config.save() end
+        
+        local displayNames = {
+            dannet = "DanNet",
+            e3 = "E3",
+            bc = "EQBC"
+        }
+        util.printSmartLoot("Loot command type set to: " .. displayNames[type], "success")
+    end)
+    
+    -- /sl_dannet_channel <group|raid>
+    mq.bind("/sl_dannet_channel", function(channel)
+        local config = require("modules.config")
+        
+        if not channel or channel == "" then
+            local current = config.dannetBroadcastChannel or "group"
+            util.printSmartLoot("Current DanNet broadcast channel: " .. current, "info")
+            util.printSmartLoot("Usage: /sl_dannet_channel <group|raid>", "info")
+            return
+        end
+        
+        channel = channel:lower()
+        if channel ~= "group" and channel ~= "raid" then
+            util.printSmartLoot("Invalid channel. Valid channels: group, raid", "error")
+            return
+        end
+        
+        config.dannetBroadcastChannel = channel
+        if config.save then config.save() end
+        
+        local channelDisplay = channel == "group" and "Group (/dgga)" or "Raid (/dgra)"
+        util.printSmartLoot("DanNet broadcast channel set to: " .. channelDisplay, "success")
+    end)
     mq.bind("/sl_help", function()
         if uiHelp then
             uiHelp.toggle()
@@ -1139,6 +1360,12 @@ local function bindUtilityCommands()
             util.printSmartLoot("  /sl_chase <on|off|pause|resume> - Control chase commands", "info")
             util.printSmartLoot("  /sl_chase_on - Enable chase commands", "info")
             util.printSmartLoot("  /sl_chase_off - Disable chase commands", "info")
+            util.printSmartLoot("Inventory & Announce & Loot Command:", "info")
+            util.printSmartLoot("  /sl_inventory <on|off|slots <n>|autoinv <on|off>>", "info")
+            util.printSmartLoot("  /sl_itemannounce <all|ignored|none>", "info")
+            util.printSmartLoot("  /sl_loreannounce <on|off>", "info")
+            util.printSmartLoot("  /sl_lootcommand <dannet|e3|bc>", "info")
+            util.printSmartLoot("  /sl_dannet_channel <group|raid>", "info")
             util.printSmartLoot("AFK Farming:", "info")
             util.printSmartLoot("  /sl_addtemp <item> <rule> [threshold] - Add temporary rule", "info")
             util.printSmartLoot("  /sl_listtemp - List all temporary rules", "info")
@@ -1306,7 +1533,10 @@ function bindings.listBindings()
         "/sl_chat", "/sl_chase", "/sl_chase_on", "/sl_chase_off",
         "/sl_addtemp", "/sl_removetemp", "/sl_cleartemp", "/sl_afkfarm",
         "/sl_clearcache", "/sl_rulescache", "/sl_cleanup", "/sl_help", "/sl_getstarted", "/sl_version",
-        "/sl_report"
+        "/sl_report",
+        -- New CLI settings
+        "/sl_inventory", "/sl_itemannounce", "/sl_loreannounce", "/sl_lootcommand", "/sl_dannet_channel",
+        "/sl_radius", "/sl_range"
     }
 
     util.printSmartLoot("=== Registered SmartLoot Commands ===", "system")

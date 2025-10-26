@@ -2356,32 +2356,6 @@ function SmartLootEngine.processProcessingItemsState()
     -- Reset empty slot streak since we found an item
     SmartLootEngine.state.emptySlotStreak = 0
 
-    if not SmartLootEngine.canLootItem(itemInfo.name, itemInfo.itemID) then
-        logging.debug("[Engine] Cannot loot item (insufficient space or no stackable space) - closing loot window and attempting to trigger next peer")
-        
-        -- Close loot window before triggering peer
-        if SmartLootEngine.isLootWindowOpen() then
-            mq.cmd("/notify LootWnd DoneButton leftmouseup")
-            logging.debug("[Engine] Closed loot window due to inability to loot item")
-        end
-        
-        -- Try to trigger the next peer in loot order for this corpse
-        local corpseTriggered = false
-        if itemInfo and itemInfo.name then
-            corpseTriggered = SmartLootEngine.triggerPeerForItem(itemInfo.name, itemInfo.itemID)
-        end
-        
-        if corpseTriggered then
-            logging.debug("[Engine] Triggered next peer due to inability to loot item - waiting for peer completion")
-            setState(SmartLootEngine.LootState.WaitingForWaterfallCompletion, "Cannot loot item - peer triggered")
-        else
-            logging.debug("[Engine] No peer available - waiting for inventory space to become available")
-            setState(SmartLootEngine.LootState.WaitingForInventorySpace, "Cannot loot item - waiting for space")
-        end
-        
-        scheduleNextTick(1000) -- Check inventory space every second
-        return
-    end
 
     -- Update current item state
     SmartLootEngine.state.currentItem.name = itemInfo.name
@@ -2440,6 +2414,32 @@ function SmartLootEngine.processProcessingItemsState()
             SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
             scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
         else
+            -- Before attempting to loot, check inventory space; still allow rule setting even if no space
+            local canLootNow = SmartLootEngine.canLootItem(itemInfo.name, finalItemID)
+            if not canLootNow then
+                local mode = SmartLootEngine.state.mode
+                local isPeerRunner = (mode == SmartLootEngine.LootMode.Once) or (mode == SmartLootEngine.LootMode.RGOnce) or (mode == SmartLootEngine.LootMode.Background)
+                if isPeerRunner then
+                    -- Background/peer: hand off immediately and revert (same behavior as earlier)
+                    if SmartLootEngine.isLootWindowOpen() then mq.cmd("/notify LootWnd DoneButton leftmouseup") end
+                    local handed = SmartLootEngine.triggerPeerForItem(itemInfo.name, finalItemID)
+                    if waterfallTracker and waterfallTracker.onLootSessionEnd then waterfallTracker.onLootSessionEnd() end
+                    if SmartLootEngine.notifyRGMainComplete then SmartLootEngine.notifyRGMainComplete() end
+                    setState(SmartLootEngine.LootState.Idle, "Out of space - peer revert")
+                    scheduleNextTick(150)
+                    return
+                else
+                    -- Main/RGMain: record rule, leave item behind, and continue scanning
+                    SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
+                    SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
+                    SmartLootEngine.recordLootAction("Left Behind (No Space)", itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
+                    SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
+                    SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
+                    scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
+                    return
+                end
+            end
+            -- We have space; proceed to loot
             SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Loot
             setState(SmartLootEngine.LootState.ExecutingLootAction, "Keep rule")
             scheduleNextTick(50)
@@ -3243,6 +3243,25 @@ function SmartLootEngine.cleanup()
     }
     
     logging.debug("[SmartLootEngine] Cleanup completed")
+end
+
+-- Live setters for distances (sync with UI settings if present)
+function SmartLootEngine.setLootRadius(radius)
+    radius = math.max(10, math.min(1000, tonumber(radius) or (SmartLootEngine.config.lootRadius or 200)))
+    SmartLootEngine.config.lootRadius = radius
+    if SmartLootEngine.state and SmartLootEngine.state.settings then
+        SmartLootEngine.state.settings.lootRadius = radius
+    end
+    return radius
+end
+
+function SmartLootEngine.setLootRange(range)
+    range = math.max(5, math.min(100, tonumber(range) or (SmartLootEngine.config.lootRange or 15)))
+    SmartLootEngine.config.lootRange = range
+    if SmartLootEngine.state and SmartLootEngine.state.settings then
+        SmartLootEngine.state.settings.lootRange = range
+    end
+    return range
 end
 
 return SmartLootEngine

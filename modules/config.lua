@@ -16,6 +16,9 @@ config.mainToonName = mq.TLO.Me.Name() or "MainToon"  -- Default to current char
 config.lootDelay = 5      -- Delay in seconds before background bots try to loot
 config.retryCount = 3     -- Number of retry attempts for background bots
 config.retryDelay = 5     -- Delay between retry attempts in seconds
+-- New: corpse detection and loot interaction distances (match UI defaults)
+config.lootRadius = 200   -- search radius for corpses
+config.lootRange = 15     -- interaction distance to open loot
 
 -- NEW: Chat output configuration
 config.chatOutputMode = "group"  -- Default to group chat
@@ -60,6 +63,13 @@ config.hotbar = {
         peerCommands = true,
         settings = true
     }
+}
+
+-- NEW: Inventory settings (persisted)
+config.inventory = {
+    enableInventorySpaceCheck = true,
+    minFreeInventorySlots = 5,
+    autoInventoryOnLoot = true,
 }
 
 -- NEW: Live Stats window configuration
@@ -163,6 +173,8 @@ local configData = {
         engineTiming = config.engineTiming,
         -- NEW: Engine speed configuration in global settings
         engineSpeed = config.engineSpeed,
+        -- NEW: Inventory configuration in global settings
+        inventory = config.inventory,
     },
     servers = {}
 }
@@ -218,6 +230,9 @@ function config.load()
             end
 
             config.peerSelectionStrategy = configData.global.peerSelectionStrategy or config.peerSelectionStrategy
+            -- Apply loot distances if present
+            if configData.global.lootRadius then config.lootRadius = tonumber(configData.global.lootRadius) or config.lootRadius end
+            if configData.global.lootRange then config.lootRange = tonumber(configData.global.lootRange) or config.lootRange end
             
             -- NEW: Apply engine timing settings
             if configData.global.engineTiming then
@@ -227,6 +242,13 @@ function config.load()
             -- NEW: Apply engine speed settings
             if configData.global.engineSpeed then
                 config.engineSpeed = configData.global.engineSpeed
+            end
+            
+            -- NEW: Apply inventory settings
+            if configData.global.inventory then
+                config.inventory = configData.global.inventory
+                -- Push to engine if available
+                if config.syncInventoryToEngine then pcall(config.syncInventoryToEngine) end
             end
             
             -- Apply per-server settings
@@ -266,6 +288,9 @@ function config.save()
     configData.global.retryCount = config.retryCount
     configData.global.retryDelay = config.retryDelay
     configData.global.peerSelectionStrategy = config.peerSelectionStrategy
+    -- Persist loot distances
+    configData.global.lootRadius = config.lootRadius
+    configData.global.lootRange = config.lootRange
     
     -- NEW: Update chat settings
     configData.global.chatOutputMode = config.chatOutputMode
@@ -289,6 +314,17 @@ function config.save()
     -- NEW: Update engine speed settings
     configData.global.engineSpeed = config.engineSpeed
 
+    -- NEW: Update inventory settings from engine if available, else from config
+    do
+        local ok, Engine = pcall(function() return require("modules.SmartLootEngine") end)
+        if ok and Engine and Engine.config then
+            config.inventory.enableInventorySpaceCheck = Engine.config.enableInventorySpaceCheck and true or false
+            config.inventory.minFreeInventorySlots = tonumber(Engine.config.minFreeInventorySlots) or config.inventory.minFreeInventorySlots
+            config.inventory.autoInventoryOnLoot = Engine.config.autoInventoryOnLoot and true or false
+        end
+    end
+    configData.global.inventory = config.inventory
+
     -- NEW: Update floating button settings
     configData.global.floatingButton = config.floatingButton
     
@@ -311,6 +347,26 @@ function config.save()
     else
         return false
     end
+end
+
+-- NEW: Quick setters for commonly tuned distances
+function config.setLootRadius(radius)
+    radius = math.max(10, math.min(1000, tonumber(radius) or config.lootRadius))
+    config.lootRadius = radius
+    config.save()
+    -- Also push to engine live
+    local Engine = require('modules.SmartLootEngine')
+    if Engine and Engine.setLootRadius then Engine.setLootRadius(radius) end
+    return radius
+end
+
+function config.setLootRange(range)
+    range = math.max(5, math.min(100, tonumber(range) or config.lootRange))
+    config.lootRange = range
+    config.save()
+    local Engine = require('modules.SmartLootEngine')
+    if Engine and Engine.setLootRange then Engine.setLootRange(range) end
+    return range
 end
 
 -- NEW: Chat output helper functions
@@ -1023,7 +1079,48 @@ function config.syncTimingToEngine()
         SmartLootEngine.config.peerTriggerDelay = config.engineTiming.peerTriggerDelay
         return true
     end
-    return false
+return false
+end
+
+-- NEW: Inventory sync and setters
+function config.syncInventoryToEngine()
+    local ok, Engine = pcall(function() return require("modules.SmartLootEngine") end)
+    if not ok or not Engine or not Engine.config then return false end
+    Engine.config.enableInventorySpaceCheck = config.inventory.enableInventorySpaceCheck and true or false
+    Engine.config.minFreeInventorySlots = tonumber(config.inventory.minFreeInventorySlots) or 5
+    Engine.config.autoInventoryOnLoot = config.inventory.autoInventoryOnLoot and true or false
+    return true
+end
+
+function config.getInventorySettings()
+    return {
+        enableInventorySpaceCheck = config.inventory.enableInventorySpaceCheck and true or false,
+        minFreeInventorySlots = tonumber(config.inventory.minFreeInventorySlots) or 5,
+        autoInventoryOnLoot = config.inventory.autoInventoryOnLoot and true or false,
+    }
+end
+
+function config.setInventoryCheck(enabled)
+    config.inventory.enableInventorySpaceCheck = enabled and true or false
+    config.syncInventoryToEngine()
+    config.save()
+    return config.inventory.enableInventorySpaceCheck
+end
+
+function config.setMinFreeInventorySlots(slots)
+    slots = tonumber(slots) or config.inventory.minFreeInventorySlots or 5
+    slots = math.max(1, math.min(30, slots))
+    config.inventory.minFreeInventorySlots = slots
+    config.syncInventoryToEngine()
+    config.save()
+    return slots
+end
+
+function config.setAutoInventoryOnLoot(enabled)
+    config.inventory.autoInventoryOnLoot = enabled and true or false
+    config.syncInventoryToEngine()
+    config.save()
+    return config.inventory.autoInventoryOnLoot
 end
 
 -- NEW: Speed Multiplier Functions
@@ -1109,6 +1206,11 @@ function config.debugPrint()
     print("  Vertical: " .. tostring(config.hotbar.vertical))
     print("  Use Text Labels: " .. tostring(config.hotbar.useTextLabels))
     print("  Show: " .. tostring(config.hotbar.show))
+    print("Inventory Settings:")
+    local inv = config.getInventorySettings()
+    print("  Inventory Check: " .. tostring(inv.enableInventorySpaceCheck))
+    print("  Min Free Slots: " .. tostring(inv.minFreeInventorySlots))
+    print("  Auto-Inventory: " .. tostring(inv.autoInventoryOnLoot))
     print("Per-Server Settings:")
     print("  Peer Loot Order: " .. (#config.peerLootOrder > 0 and table.concat(config.peerLootOrder, ", ") or "(empty)"))
     print("All Configured Servers:")

@@ -39,6 +39,18 @@ local commandCategories = {
         }
     },
     {
+        name = "Configuration",
+        commands = {
+            {cmd = "/sl_inventory", params = "[on|off|slots <n>|autoinv <on|off>]", desc = "Configure inventory space checks: enable/disable, set minimum free slots, and toggle auto-inventory on loot.", hasOptionalParam = true},
+            {cmd = "/sl_itemannounce", params = "<all|ignored|none>", desc = "Set item announcement mode: announce all, only ignored, or none (silent).", hasRequiredParam = true},
+            {cmd = "/sl_loreannounce", params = "<on|off>", desc = "Enable or disable chat announcements when Lore-item conflicts are detected.", hasRequiredParam = true},
+            {cmd = "/sl_lootcommand", params = "<dannet|e3|bc>", desc = "Select command backend for peer communication: DanNet, E3, or EQBC.", hasRequiredParam = true},
+            {cmd = "/sl_dannet_channel", params = "<group|raid>", desc = "When using DanNet, select broadcast channel: group (/dgga) or raid (/dgra).", hasRequiredParam = true},
+            {cmd = "/sl_radius", params = "<number>", desc = "Set corpse search radius (units).", hasRequiredParam = true},
+            {cmd = "/sl_range", params = "<number>", desc = "Set loot interaction range (units).", hasRequiredParam = true}
+        }
+    },
+    {
         name = "User Interface",
         commands = {
             {cmd = "/sl_toggle_hotbar", params = "", desc = "Toggle the visibility of the SmartLoot hotbar.", hasOptionalParam = false},
