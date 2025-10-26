@@ -173,9 +173,9 @@ local lootUI = {
     applyToAllPeers = false,
     editingThresholdForPeer = nil,
     remoteDecisions = {},
-    showHotbar = true,
-    showUI = false,
-    showDebugWindow = false, -- Add debug window flag
+    showHotbar = config.uiVisibility.showHotbar,
+    showUI = config.uiVisibility.showUI,
+    showDebugWindow = config.uiVisibility.showDebugWindow, -- Add debug window flag
     windowLocked = false,    -- Lock window feature
     selectedItemForPopup = nil,
 
@@ -219,8 +219,8 @@ local lootUI = {
     lootStatsMode = "stats",
     resumeItemIndex = nil,
     useFloatingButton = true,
-    showPeerCommands = true,
-    peerCommandsOpen = true,
+    showPeerCommands = config.uiVisibility.showPeerCommands,
+    peerCommandsOpen = config.uiVisibility.showPeerCommands,
     showSettingsTab = false,
     emergencyStop = false,
 
@@ -261,6 +261,12 @@ local settings = {
     peerSelectionStrategy = (config.getPeerSelectionStrategy and config.getPeerSelectionStrategy())
         or config.peerSelectionStrategy or SmartLootEngine.config.peerSelectionStrategy or "items_first",
 }
+
+-- Sync settings from loaded config
+settings.lootRadius = config.lootRadius or settings.lootRadius
+settings.lootRange = config.lootRange or settings.lootRange
+settings.combatWaitDelay = config.engineTiming and config.engineTiming.combatWaitDelayMs or settings.combatWaitDelay
+settings.pendingDecisionTimeout = config.engineTiming and config.engineTiming.pendingDecisionTimeoutMs or settings.pendingDecisionTimeout
 
 local historyUI = {
     show = true,
@@ -738,7 +744,9 @@ local smartLootType = mq.DataType.new('SmartLoot', {
         end,
 
         CorpseCount = function(_, self)
-            local corpseCount = mq.TLO.SpawnCount(string.format("npccorpse radius %d", settings.lootRadius))() or 0
+            local center = SmartLootEngine.getEffectiveCenter()
+            local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", settings.lootRadius, center.x, center.y, center.z)
+            local corpseCount = mq.TLO.SpawnCount(query)() or 0
             return 'string', tostring(corpseCount)
         end,
 
@@ -912,10 +920,12 @@ local smartLootType = mq.DataType.new('SmartLoot', {
             local processedCorpses = SmartLootEngine.state.processedCorpsesThisSession or {}
 
             -- Check for unprocessed NPC corpses
-            local corpseCount = mq.TLO.SpawnCount(string.format("npccorpse radius %d", settings.lootRadius))()
+            local center = SmartLootEngine.getEffectiveCenter()
+            local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", settings.lootRadius, center.x, center.y, center.z)
+            local corpseCount = mq.TLO.SpawnCount(query)()
             if corpseCount and corpseCount > 0 then
                 for i = 1, corpseCount do
-                    local corpse = mq.TLO.NearestSpawn(i, string.format("npccorpse radius %d", settings.lootRadius))
+                    local corpse = mq.TLO.NearestSpawn(i, query)
                     if corpse and corpse.ID() then
                         local corpseID = corpse.ID()
                         -- Check if corpse is processed using the SmartLootEngine's helper function
@@ -1363,87 +1373,6 @@ mq.imgui.init("SmartLoot", function()
                     uiPeerLootOrder.draw(lootUI, config, util)
                 end
 
-                --[[Engine Stats Tab
-                if ImGui.BeginTabItem("Engine Stats") then
-                    local state = SmartLootEngine.getState()
-                    local perf = SmartLootEngine.getPerformanceMetrics()
-
-                    ImGui.Text("Performance Metrics:")
-                    ImGui.Indent()
-                    ImGui.Text("Average Tick Time: " .. string.format("%.2fms", perf.averageTickTime))
-                    ImGui.Text("Last Tick Time: " .. string.format("%.2fms", perf.lastTickTime))
-                    ImGui.Text("Total Ticks: " .. perf.tickCount)
-                    ImGui.Text("Corpses/Minute: " .. string.format("%.1f", perf.corpsesPerMinute))
-                    ImGui.Text("Items/Minute: " .. string.format("%.1f", perf.itemsPerMinute))
-                    ImGui.Unindent()
-
-                    ImGui.Separator()
-
-                    ImGui.Text("Session Statistics:")
-                    ImGui.Indent()
-                    ImGui.Text("Corpses Processed: " .. state.stats.corpsesProcessed)
-                    ImGui.Text("Items Looted: " .. state.stats.itemsLooted)
-                    ImGui.Text("Items Ignored: " .. state.stats.itemsIgnored)
-                    ImGui.Text("Items Destroyed: " .. state.stats.itemsDestroyed)
-                    ImGui.Text("Peers Triggered: " .. state.stats.peersTriggered)
-                    ImGui.Text("Decisions Required: " .. state.stats.decisionsRequired)
-                    ImGui.Text("Emergency Stops: " .. state.stats.emergencyStops)
-                    ImGui.Unindent()
-
-                    ImGui.Separator()
-
-                    if ImGui.Button("Reset Processed Corpses") then
-                        SmartLootEngine.resetProcessedCorpses()
-                    end
-                    ImGui.SameLine()
-                    if ImGui.Button("Emergency Stop") then
-                        SmartLootEngine.emergencyStop("UI Button")
-                    end
-                    ImGui.SameLine()
-                    if ImGui.Button("Resume") then
-                        SmartLootEngine.resume()
-                    end
-
-                    ImGui.Separator()
-
-                    if ImGui.Button("Open Debug Window") then
-                        lootUI.showDebugWindow = true
-                        lootUI.forceDebugWindowVisible = true
-                    end
-
-                    ImGui.Separator()
-
-                    if ImGui.Button("Open Live Stats") then
-                        if uiLiveStats then
-                            uiLiveStats.setVisible(true)
-                        end
-                    end
-                    ImGui.SameLine()
-                    if ImGui.Button("Toggle Live Stats") then
-                        if uiLiveStats then
-                            uiLiveStats.toggle()
-                        end
-                    end
-
-                    ImGui.Separator()
-
-                    -- NEW: Add bindings information to Engine Stats tab
-                    ImGui.Text("Command Bindings:")
-                    if ImGui.Button("List All Commands") then
-                        bindings.listBindings()
-                    end
-                    ImGui.SameLine()
-                    if ImGui.Button("Show Help") then
-                        if uiHelp then
-                            uiHelp.show()
-                        else
-                            mq.cmd("/sl_help")
-                        end
-                    end
-
-                    ImGui.EndTabItem()
-                end]]
-
                 ImGui.EndTabBar()
             end
         end
@@ -1451,6 +1380,8 @@ mq.imgui.init("SmartLoot", function()
 
         if not open and lootUI.showUI then
             lootUI.showUI = false
+            config.uiVisibility.showUI = false
+            if config.save then config.save() end
         end
     end
 
@@ -1459,6 +1390,8 @@ mq.imgui.init("SmartLoot", function()
         if uiFloatingButton and uiFloatingButton.draw then
             uiFloatingButton.draw(lootUI, settings, function()
                 lootUI.showUI = not lootUI.showUI
+                config.uiVisibility.showUI = lootUI.showUI
+                if config.save then config.save() end
                 if lootUI.showUI then
                     lootUI.forceWindowVisible = true
                     lootUI.forceWindowUncollapsed = true
@@ -1470,6 +1403,8 @@ mq.imgui.init("SmartLoot", function()
     if uiHotbar and uiHotbar.draw then
         uiHotbar.draw(lootUI, settings, function()
             lootUI.showUI = not lootUI.showUI
+            config.uiVisibility.showUI = lootUI.showUI
+            if config.save then config.save() end
             if lootUI.showUI then
                 lootUI.forceWindowVisible = true
                 lootUI.forceWindowUncollapsed = true

@@ -177,10 +177,14 @@ end
 
 function liveStatsWindow.toggle()
     liveStatsWindow.show = not liveStatsWindow.show
+    configModule.liveStats.show = liveStatsWindow.show
+    if configModule.save then configModule.save() end
 end
 
 function liveStatsWindow.setVisible(visible)
     liveStatsWindow.show = visible
+    configModule.liveStats.show = visible
+    if configModule.save then configModule.save() end
 end
 
 function liveStatsWindow.isVisible()
@@ -228,6 +232,10 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.SetWindowPos(liveStatsWindow.position.x, liveStatsWindow.position.y)
             else
                 liveStatsWindow.isDragging = false
+                -- Save position after dragging completes
+                configModule.liveStats.position.x = liveStatsWindow.position.x
+                configModule.liveStats.position.y = liveStatsWindow.position.y
+                if configModule.save then configModule.save() end
             end
         end
 
@@ -506,25 +514,35 @@ function liveStatsWindow.draw(SmartLootEngine, config)
 
             if ImGui.MenuItem("Toggle Compact Mode", nil, liveStatsWindow.compactMode) then
                 liveStatsWindow.compactMode = not liveStatsWindow.compactMode
+                configModule.liveStats.compactMode = liveStatsWindow.compactMode
+                if configModule.save then configModule.save() end
             end
 
             if ImGui.MenuItem("Show Detailed States", nil, liveStatsWindow.stateDisplay.showDetailedState) then
                 liveStatsWindow.stateDisplay.showDetailedState = not liveStatsWindow.stateDisplay.showDetailedState
                 -- Reset state display
                 liveStatsWindow.stateDisplay.lastUpdateTime = 0
+                configModule.liveStats.stateDisplay.showDetailedState = liveStatsWindow.stateDisplay.showDetailedState
+                if configModule.save then configModule.save() end
             end
 
             ImGui.Separator()
 
             ImGui.Text("State Update Speed:")
-            if ImGui.SliderInt("Min Display Time (ms)", liveStatsWindow.stateDisplay.minDisplayTime, 100, 2000) then
-                -- Value updated in real-time
+            local newMinDisplayTime = ImGui.SliderInt("Min Display Time (ms)", liveStatsWindow.stateDisplay.minDisplayTime, 100, 2000)
+            if newMinDisplayTime ~= liveStatsWindow.stateDisplay.minDisplayTime then
+                liveStatsWindow.stateDisplay.minDisplayTime = newMinDisplayTime
+                configModule.liveStats.stateDisplay.minDisplayTime = newMinDisplayTime
+                if configModule.save then configModule.save() end
             end
 
             ImGui.Separator()
 
-            if ImGui.SliderFloat("Transparency", liveStatsWindow.alpha, 0.1, 1.0, "%.1f") then
-                -- Alpha updated in real-time
+            local newAlpha = ImGui.SliderFloat("Transparency", liveStatsWindow.alpha, 0.1, 1.0, "%.1f")
+            if newAlpha ~= liveStatsWindow.alpha then
+                liveStatsWindow.alpha = newAlpha
+                configModule.liveStats.alpha = newAlpha
+                if configModule.save then configModule.save() end
             end
 
             ImGui.Separator()
@@ -533,6 +551,9 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 liveStatsWindow.position.x = 200
                 liveStatsWindow.position.y = 200
                 ImGui.SetWindowPos(liveStatsWindow.position.x, liveStatsWindow.position.y)
+                configModule.liveStats.position.x = 200
+                configModule.liveStats.position.y = 200
+                if configModule.save then configModule.save() end
             end
 
             if ImGui.MenuItem("Reset Stats") then
@@ -545,6 +566,8 @@ function liveStatsWindow.draw(SmartLootEngine, config)
 
             if ImGui.MenuItem("Hide Window") then
                 liveStatsWindow.show = false
+                configModule.liveStats.show = false
+                if configModule.save then configModule.save() end
             end
 
             ImGui.EndPopup()
@@ -602,15 +625,22 @@ end
 -- Configuration functions
 function liveStatsWindow.setCompactMode(compact)
     liveStatsWindow.compactMode = compact
+    configModule.liveStats.compactMode = compact
+    if configModule.save then configModule.save() end
 end
 
 function liveStatsWindow.setAlpha(alpha)
     liveStatsWindow.alpha = math.max(0.1, math.min(1.0, alpha))
+    configModule.liveStats.alpha = liveStatsWindow.alpha
+    if configModule.save then configModule.save() end
 end
 
 function liveStatsWindow.setPosition(x, y)
     liveStatsWindow.position.x = x
     liveStatsWindow.position.y = y
+    configModule.liveStats.position.x = x
+    configModule.liveStats.position.y = y
+    if configModule.save then configModule.save() end
 end
 
 function liveStatsWindow.getConfig()

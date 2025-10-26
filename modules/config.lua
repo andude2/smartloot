@@ -16,24 +16,24 @@ config.mainToonName = mq.TLO.Me.Name() or "MainToon"  -- Default to current char
 config.lootDelay = 5      -- Delay in seconds before background bots try to loot
 config.retryCount = 3     -- Number of retry attempts for background bots
 config.retryDelay = 5     -- Delay between retry attempts in seconds
--- New: corpse detection and loot interaction distances (match UI defaults)
+-- corpse detection and loot interaction distances (match UI defaults)
 config.lootRadius = 200   -- search radius for corpses
 config.lootRange = 15     -- interaction distance to open loot
 
--- NEW: Chat output configuration
+-- Chat output configuration
 config.chatOutputMode = "group"  -- Default to group chat
 config.customChatCommand = "/say"  -- Default custom command if mode is "custom"
 
--- NEW: Item announce configuration
+-- Item announce configuration
 config.itemAnnounceMode = "all"  -- Options: "all", "ignored", "none"
 
--- NEW: Farming mode configuration
+-- Farming mode configuration
 config.farmingMode = false  -- Whether farming mode is active (bypasses corpse deduplication)
 
--- NEW: Peer selection strategy for ignored items
+-- Peer selection strategy for ignored items
 config.peerSelectionStrategy = "items_first" -- Options: items_first, peers_first
 
--- NEW: Lore item checking configuration (always enabled to prevent getting stuck)
+-- Lore item checking configuration (always enabled to prevent getting stuck)
 config.loreCheckAnnounce = true  -- Whether to announce when Lore conflicts are detected
 
 -- Default settings additions (add to existing defaults)
@@ -41,7 +41,7 @@ config.useChaseCommands = false  -- Whether to use chase commands at all
 config.chasePauseCommand = "/luachase pause on"  -- Command to pause chase
 config.chaseResumeCommand = "/luachase pause off"  -- Command to resume chase
 
--- NEW: Hotbar configuration
+-- Hotbar configuration
 config.hotbar = {
     position = { x = 100, y = 300 },
     buttonSize = 50,
@@ -65,14 +65,14 @@ config.hotbar = {
     }
 }
 
--- NEW: Inventory settings (persisted)
+-- Inventory settings (persisted)
 config.inventory = {
     enableInventorySpaceCheck = true,
     minFreeInventorySlots = 5,
     autoInventoryOnLoot = true,
 }
 
--- NEW: Live Stats window configuration
+-- Live Stats window configuration
 config.liveStats = {
     show = false,
     compactMode = false,
@@ -84,7 +84,15 @@ config.liveStats = {
     },
 }
 
--- NEW: SmartLoot Engine Speed Configuration
+-- UI Visibility Configuration
+config.uiVisibility = {
+    showPeerCommands = true,
+    showDebugWindow = false,
+    showHotbar = true,
+    showUI = false,
+}
+
+-- SmartLoot Engine Speed Configuration
 config.engineSpeed = {
     -- Speed multiplier: 1.0 = normal, 0.75 = 25% faster, 1.25 = 25% slower
     -- Lower values = faster processing, higher values = slower processing
@@ -112,7 +120,7 @@ config.engineSpeed = {
     }
 }
 
--- NEW: SmartLoot Engine Timing configuration (computed from speed settings)
+-- : SmartLoot Engine Timing configuration (computed from speed settings)
 config.engineTiming = {
     -- These will be computed based on speed multiplier
     tickIntervalMs = 25,
@@ -156,30 +164,30 @@ local configData = {
         retryCount = config.retryCount,
         retryDelay = config.retryDelay,
         peerSelectionStrategy = config.peerSelectionStrategy,
-        -- NEW: Chat configuration in global settings
+        -- Chat configuration in global settings
         chatOutputMode = config.chatOutputMode,
         customChatCommand = config.customChatCommand,
-        -- NEW: Item announce configuration in global settings
+        -- Item announce configuration in global settings
         itemAnnounceMode = config.itemAnnounceMode,
-        -- NEW: Farming mode configuration in global settings
+        -- Farming mode configuration in global settings
         farmingMode = config.farmingMode,
-        -- NEW: Chase command configuration
+        -- Chase command configuration
         useChaseCommands = config.useChaseCommands,
         chasePauseCommand = config.chasePauseCommand,
         chaseResumeCommand = config.chaseResumeCommand,
-        -- NEW: Hotbar configuration in global settings
+        -- Hotbar configuration in global settings
         hotbar = config.hotbar,
-        -- NEW: Engine timing configuration in global settings
+        -- Engine timing configuration in global settings
         engineTiming = config.engineTiming,
-        -- NEW: Engine speed configuration in global settings
+        -- Engine speed configuration in global settings
         engineSpeed = config.engineSpeed,
-        -- NEW: Inventory configuration in global settings
+        -- Inventory configuration in global settings
         inventory = config.inventory,
     },
     servers = {}
 }
 
--- NEW: Floating Button configuration
+-- Floating Button configuration
 config.floatingButton = {
     size = 60,
     alpha = 0.95,
@@ -194,8 +202,8 @@ function config.load()
     if file then
         local contents = file:read("*a")
         file:close()
-    local decoded = json.decode(contents)
-    if decoded then
+        local decoded = json.decode(contents)
+        if decoded then
             -- New format
             configData.global = decoded.global or configData.global
             configData.servers = decoded.servers or {}
@@ -207,24 +215,24 @@ function config.load()
             config.retryCount = configData.global.retryCount or config.retryCount
             config.retryDelay = configData.global.retryDelay or config.retryDelay
             
-            -- NEW: Apply chat settings
+            -- Apply chat settings
             config.chatOutputMode = configData.global.chatOutputMode or config.chatOutputMode
             config.customChatCommand = configData.global.customChatCommand or config.customChatCommand
             config.dannetBroadcastChannel = configData.global.dannetBroadcastChannel or config.dannetBroadcastChannel
-            -- NEW: Apply item announce settings
+            -- Apply item announce settings
             config.itemAnnounceMode = configData.global.itemAnnounceMode or config.itemAnnounceMode
-            -- NEW: Apply farming mode settings
+            -- Apply farming mode settings
             config.farmingMode = configData.global.farmingMode or config.farmingMode
             config.useChaseCommands = configData.global.useChaseCommands or config.useChaseCommands
             config.chasePauseCommand = configData.global.chasePauseCommand or config.chasePauseCommand
             config.chaseResumeCommand = configData.global.chaseResumeCommand or config.chaseResumeCommand
 
-            -- NEW: Apply hotbar settings
+            -- Apply hotbar settings
             if configData.global.hotbar then
                 config.hotbar = configData.global.hotbar
             end
 
-            -- NEW: Apply live stats settings
+            -- Apply live stats settings
             if configData.global.liveStats then
                 config.liveStats = configData.global.liveStats
             end
@@ -234,21 +242,26 @@ function config.load()
             if configData.global.lootRadius then config.lootRadius = tonumber(configData.global.lootRadius) or config.lootRadius end
             if configData.global.lootRange then config.lootRange = tonumber(configData.global.lootRange) or config.lootRange end
             
-            -- NEW: Apply engine timing settings
+            -- Apply engine timing settings
             if configData.global.engineTiming then
                 config.engineTiming = configData.global.engineTiming
             end
             
-            -- NEW: Apply engine speed settings
+            -- Apply engine speed settings
             if configData.global.engineSpeed then
                 config.engineSpeed = configData.global.engineSpeed
             end
             
-            -- NEW: Apply inventory settings
+            -- Apply inventory settings
             if configData.global.inventory then
                 config.inventory = configData.global.inventory
                 -- Push to engine if available
                 if config.syncInventoryToEngine then pcall(config.syncInventoryToEngine) end
+            end
+
+            -- Apply UI visibility settings
+            if configData.global.uiVisibility then
+                config.uiVisibility = configData.global.uiVisibility
             end
             
             -- Apply per-server settings
@@ -292,29 +305,29 @@ function config.save()
     configData.global.lootRadius = config.lootRadius
     configData.global.lootRange = config.lootRange
     
-    -- NEW: Update chat settings
+    -- Update chat settings
     configData.global.chatOutputMode = config.chatOutputMode
     configData.global.customChatCommand = config.customChatCommand
-    -- NEW: Update item announce settings
+    -- Update item announce settings
     configData.global.itemAnnounceMode = config.itemAnnounceMode
-    -- NEW: Update farming mode settings
+    -- Update farming mode settings
     configData.global.farmingMode = config.farmingMode
     configData.global.useChaseCommands = config.useChaseCommands
     configData.global.chasePauseCommand = config.chasePauseCommand
     configData.global.chaseResumeCommand = config.chaseResumeCommand
     
-    -- NEW: Update hotbar settings
+    -- Update hotbar settings
     configData.global.hotbar = config.hotbar
-    -- NEW: Update live stats settings
+    -- Update live stats settings
     configData.global.liveStats = config.liveStats
 
-    -- NEW: Update engine timing settings
+    -- Update engine timing settings
     configData.global.engineTiming = config.engineTiming
     
-    -- NEW: Update engine speed settings
+    -- Update engine speed settings
     configData.global.engineSpeed = config.engineSpeed
 
-    -- NEW: Update inventory settings from engine if available, else from config
+    -- Update inventory settings from engine if available, else from config
     do
         local Engine = package.loaded["modules.SmartLootEngine"]
         if Engine and Engine.config then
@@ -325,7 +338,10 @@ function config.save()
     end
     configData.global.inventory = config.inventory
 
-    -- NEW: Update floating button settings
+    -- Update UI visibility settings
+    configData.global.uiVisibility = config.uiVisibility
+
+    -- Update floating button settings
     configData.global.floatingButton = config.floatingButton
     
     -- Ensure server config exists
@@ -349,7 +365,7 @@ function config.save()
     end
 end
 
--- NEW: Quick setters for commonly tuned distances
+-- Quick setters for commonly tuned distances
 function config.setLootRadius(radius)
     radius = math.max(10, math.min(1000, tonumber(radius) or config.lootRadius))
     config.lootRadius = radius
@@ -369,7 +385,7 @@ function config.setLootRange(range)
     return range
 end
 
--- NEW: Chat output helper functions
+-- Chat output helper functions
 function config.setChatMode(mode)
     if not mode then return false end
     
@@ -625,7 +641,7 @@ function config.debugChatConfig()
     end
 end
 
--- NEW: Item announce helper functions
+-- Item announce helper functions
 function config.setItemAnnounceMode(mode)
     if not mode then return false end
     
@@ -682,7 +698,7 @@ function config.shouldAnnounceItem(action)
     end
 end
 
--- NEW: Farming mode helper functions
+-- Farming mode helper functions
 function config.setFarmingMode(enabled)
     config.farmingMode = enabled or false
     config.save()
@@ -833,7 +849,7 @@ function config.getConfiguredServers()
     return servers
 end
 
--- NEW: Hotbar configuration helper functions
+-- Hotbar configuration helper functions
 function config.saveHotbarSettings(hotbarSettings)
     if hotbarSettings then
         config.hotbar = hotbarSettings
@@ -957,7 +973,7 @@ function config.resetHotbarToDefaults()
     config.save()
 end
 
--- NEW: Engine Timing configuration helper functions
+-- Engine Timing configuration helper functions
 function config.getEngineTiming()
     return config.engineTiming
 end
@@ -1082,7 +1098,7 @@ function config.syncTimingToEngine()
 return false
 end
 
--- NEW: Inventory sync and setters
+-- Inventory sync and setters
 function config.syncInventoryToEngine()
     local Engine = package.loaded["modules.SmartLootEngine"]
     if not Engine or not Engine.config then return false end
@@ -1123,7 +1139,7 @@ function config.setAutoInventoryOnLoot(enabled)
     return config.inventory.autoInventoryOnLoot
 end
 
--- NEW: Speed Multiplier Functions
+-- Speed Multiplier Functions
 -- Function to apply speed multiplier to all timing settings
 function config.applySpeedMultiplier(multiplier)
     -- Validate multiplier (prevent negative or extreme values)

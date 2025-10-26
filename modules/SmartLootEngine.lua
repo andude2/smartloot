@@ -158,6 +158,9 @@ SmartLootEngine.state = {
     mode = SmartLootEngine.LootMode.Background,
     nextActionTime = 0,
 
+    -- Location tracking for once mode
+    startingLocation = nil,  -- {x, y, z} when entering once mode
+
     -- CombatLoot mode state
     preCombatLootMode = nil,
 
@@ -1106,7 +1109,9 @@ function SmartLootEngine.findNearestCorpse()
     end
 
     local radius = SmartLootEngine.config.lootRadius
-    local corpseCount = mq.TLO.SpawnCount(string.format("npccorpse radius %d", radius))() or 0
+    local center = SmartLootEngine.getEffectiveCenter()
+    local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", radius, center.x, center.y, center.z)
+    local corpseCount = mq.TLO.SpawnCount(query)() or 0
 
     if corpseCount == 0 then
         return nil
@@ -1116,7 +1121,7 @@ function SmartLootEngine.findNearestCorpse()
     local closestDistance = radius
 
     for i = 1, corpseCount do
-        local corpse = mq.TLO.NearestSpawn(i, string.format("npccorpse radius %d", radius))
+        local corpse = mq.TLO.NearestSpawn(i, query)
         if corpse() then
             local corpseID = corpse.ID()
             local distance = corpse.Distance() or 999
@@ -3062,6 +3067,13 @@ function SmartLootEngine.setLootMode(newMode, reason)
     local oldMode = SmartLootEngine.state.mode
     SmartLootEngine.state.mode = newMode
 
+    -- Clear starting location when leaving once modes
+    if (oldMode == SmartLootEngine.LootMode.Once or oldMode == SmartLootEngine.LootMode.RGOnce) and
+       (newMode ~= SmartLootEngine.LootMode.Once and newMode ~= SmartLootEngine.LootMode.RGOnce) then
+        SmartLootEngine.state.startingLocation = nil
+        logging.debug("[Engine] Cleared starting location (exiting once mode)")
+    end
+
     -- Directed flag handling
     if newMode == SmartLootEngine.LootMode.Directed then
         SmartLootEngine.state.directed.enabled = true
@@ -3081,7 +3093,18 @@ function SmartLootEngine.setLootMode(newMode, reason)
     if newMode == SmartLootEngine.LootMode.RGMain then
         SmartLootEngine.state.rgMainTriggered = false
     elseif newMode == SmartLootEngine.LootMode.Once or newMode == SmartLootEngine.LootMode.RGOnce then
-        -- Once-style modes: nothing special here
+        -- Once-style modes: record starting location for fixed radius scanning
+        if not SmartLootEngine.state.startingLocation then
+            SmartLootEngine.state.startingLocation = {
+                x = mq.TLO.Me.X(),
+                y = mq.TLO.Me.Y(),
+                z = mq.TLO.Me.Z()
+            }
+            logging.debug(string.format("[Engine] Recorded starting location for once mode: %.1f, %.1f, %.1f",
+                SmartLootEngine.state.startingLocation.x,
+                SmartLootEngine.state.startingLocation.y,
+                SmartLootEngine.state.startingLocation.z))
+        end
     elseif newMode == SmartLootEngine.LootMode.CombatLoot then
         -- CombatLoot mode - store original mode to revert to later
         SmartLootEngine.state.preCombatLootMode = oldMode
@@ -3103,6 +3126,14 @@ end
 
 function SmartLootEngine.getLootMode()
     return SmartLootEngine.state.mode
+end
+
+function SmartLootEngine.getEffectiveCenter()
+    if SmartLootEngine.state.startingLocation then
+        return SmartLootEngine.state.startingLocation
+    else
+        return { x = mq.TLO.Me.X(), y = mq.TLO.Me.Y(), z = mq.TLO.Me.Z() }
+    end
 end
 
 function SmartLootEngine.triggerRGMain()

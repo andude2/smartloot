@@ -274,6 +274,8 @@ function uiPeerCommands.draw(lootUI, loot, util)
 
         if keepOpen == false and not isCollapsed then
             lootUI.showPeerCommands = false
+            config.uiVisibility.showPeerCommands = false
+            if config.save then config.save() end
         end
     end
 end

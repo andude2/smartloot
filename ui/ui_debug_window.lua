@@ -183,19 +183,22 @@ function debugWindow.draw(SmartLootEngine, lootUI)
             ImGui.Indent()
             
             local radius = config.lootRadius
-            local corpseCount = mq.TLO.SpawnCount(string.format("npccorpse radius %d", radius))() or 0
+            local center = SmartLootEngine.getEffectiveCenter()
+            local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", radius, center.x, center.y, center.z)
+            local corpseCount = mq.TLO.SpawnCount(query)() or 0
             local totalCorpses = mq.TLO.SpawnCount("npccorpse")() or 0
-            
+
             ImGui.Text("Search Radius: " .. radius)
+            ImGui.Text(string.format("Search Center: %.1f, %.1f, %.1f", center.x, center.y, center.z))
             ImGui.Text("Corpses in Radius: " .. corpseCount)
             ImGui.Text("Total Zone Corpses: " .. totalCorpses)
             ImGui.Text("Processed This Session: " .. (engineState.sessionCorpseCount or 0))
-            
+
             if corpseCount > 0 then
                 ImGui.Separator()
                 ImGui.Text("Nearby Corpses:")
                 for i = 1, math.min(corpseCount, 5) do
-                    local corpse = mq.TLO.NearestSpawn(i, string.format("npccorpse radius %d", radius))
+                    local corpse = mq.TLO.NearestSpawn(i, query)
                     if corpse() then
                         local corpseID = corpse.ID()
                         local distance = corpse.Distance() or 999
@@ -336,6 +339,8 @@ function debugWindow.draw(SmartLootEngine, lootUI)
     
     if not open then
         lootUI.showDebugWindow = false
+        config.uiVisibility.showDebugWindow = false
+        if config.save then config.save() end
     end
 end
 

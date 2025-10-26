@@ -456,7 +456,11 @@ local function draw_core_performance_settings(settings, config, showHeader)
         ImGui.SameLine(106)
         ImGui.PushItemWidth(150)
         local newLoop, changedLoop = ImGui.InputInt("##Loop Delay (ms)", settings.loopDelay)
-        if changedLoop then settings.loopDelay = newLoop end
+        if changedLoop then 
+            settings.loopDelay = newLoop 
+            -- Note: loopDelay is a UI-only setting, not persisted to config
+            -- If persistence is desired, add: if config.save then config.save() end
+        end
         if ImGui.IsItemHovered() then ImGui.SetTooltip("Delay between corpse scans (milliseconds)") end
         ImGui.PopItemWidth()
 
@@ -468,7 +472,11 @@ local function draw_core_performance_settings(settings, config, showHeader)
         ImGui.SameLine(125)
         ImGui.PushItemWidth(150)
         local newRadius, changedRadius = ImGui.InputInt("##Loot Radius", settings.lootRadius)
-        if changedRadius then settings.lootRadius = newRadius end
+        if changedRadius then 
+            settings.lootRadius = newRadius 
+            config.lootRadius = newRadius
+            if config.save then config.save() end
+        end
         if ImGui.IsItemHovered() then ImGui.SetTooltip("Corpse search radius") end
         ImGui.PopItemWidth()
 
@@ -480,7 +488,14 @@ local function draw_core_performance_settings(settings, config, showHeader)
         ImGui.SameLine()
         ImGui.PushItemWidth(150)
         local newCombat, changedCombat = ImGui.InputInt("##Combat Wait Delay (ms)", settings.combatWaitDelay)
-        if changedCombat then settings.combatWaitDelay = newCombat end
+        if changedCombat then 
+            settings.combatWaitDelay = newCombat 
+            -- Sync to engine timing config
+            if config.engineTiming then
+                config.engineTiming.combatWaitDelayMs = newCombat
+                if config.save then config.save() end
+            end
+        end
         if ImGui.IsItemHovered() then ImGui.SetTooltip("Delay after combat ends (milliseconds)") end
         ImGui.PopItemWidth()
 

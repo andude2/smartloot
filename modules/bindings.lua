@@ -40,6 +40,8 @@ local function bindHotbarToggle()
     mq.bind("/sl_toggle_hotbar", function()
         if lootUI then
             lootUI.showHotbar = not lootUI.showHotbar
+            config.uiVisibility.showHotbar = lootUI.showHotbar
+            if config.save then config.save() end
             util.printSmartLoot("Hotbar " .. (lootUI.showHotbar and "shown" or "hidden"), "info")
         end
     end)
@@ -239,21 +241,29 @@ local function bindPeerCommands()
             local wasVisible = lootUI.showPeerCommands or false
             lootUI.showPeerCommands = true
             lootUI.peerCommandsOpen = true
+            config.uiVisibility.showPeerCommands = true
+            if config.save then config.save() end
             -- Ensure it uncollapses when (re)shown
             if not wasVisible then lootUI.uncollapsePeerCommandsOnNextOpen = true end
             util.printSmartLoot("Peer Commands window shown", "info")
         elseif a == "off" or a == "hide" then
             lootUI.showPeerCommands = false
             lootUI.peerCommandsOpen = false
+            config.uiVisibility.showPeerCommands = false
+            if config.save then config.save() end
             util.printSmartLoot("Peer Commands window hidden", "info")
         elseif a == "reset" then
             lootUI.showPeerCommands = true
             lootUI.resetPeerCommandsWindow = true
             lootUI.peerCommandsOpen = true
+            config.uiVisibility.showPeerCommands = true
+            if config.save then config.save() end
             util.printSmartLoot("Peer Commands window reset", "success")
         else
             local wasVisible = lootUI.showPeerCommands or false
             lootUI.showPeerCommands = not wasVisible
+            config.uiVisibility.showPeerCommands = lootUI.showPeerCommands
+            if config.save then config.save() end
             if lootUI.showPeerCommands and not wasVisible then
                 lootUI.peerCommandsOpen = true
                 lootUI.uncollapsePeerCommandsOnNextOpen = true
@@ -733,6 +743,8 @@ local function bindDebugCommands()
             end
 
             lootUI.showDebugWindow = not lootUI.showDebugWindow
+            config.uiVisibility.showDebugWindow = lootUI.showDebugWindow
+            if config.save then config.save() end
             if lootUI.showDebugWindow then
                 lootUI.forceDebugWindowVisible = true
                 util.printSmartLoot("Debug window opened", "info")
