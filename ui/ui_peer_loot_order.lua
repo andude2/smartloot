@@ -18,58 +18,63 @@ function uiPeerLootOrder.draw(lootUI, config, util)
         local showDebugByDefault = (#connectedPeers == 0)
         
         if ImGui.CollapsingHeader("Peer Discovery Debug", showDebugByDefault and ImGuiTreeNodeFlags.DefaultOpen or 0) then
-            ImGui.TextColored(0.9, 0.9, 0.0, 1.0, "Current Loot Command Type: " .. tostring(config.lootCommandType))
+            ImGui.TextColored(0.0, 1.0, 1.0, 1.0, "Peer Discovery Method: Actor Mailbox (Heartbeat-based)")
+            ImGui.TextWrapped("SmartLoot now uses an actor-based presence system. Peers broadcast heartbeats every 5 seconds.")
+            ImGui.Separator()
             
-            -- Show plugin status based on command type
-            if config.lootCommandType == "dannet" then
-                local dannetLoaded = mq.TLO.Plugin("MQ2DanNet").IsLoaded()
-                if dannetLoaded then
-                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "MQ2DanNet Plugin: Loaded")
-                    local rawPeers = mq.TLO.DanNet.Peers()
-                    ImGui.Text("Raw DanNet Peers: " .. tostring(rawPeers or "nil"))
-                else
-                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "MQ2DanNet Plugin: NOT LOADED")
-                    ImGui.TextWrapped("Load MQ2DanNet plugin to use DanNet peer discovery")
+            -- Show actor presence status
+            local presence = _G.SMARTLOOT_PRESENCE
+            if presence then
+                ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "Actor Presence System: Active")
+                ImGui.Text("Heartbeat Interval: " .. tostring(presence.heartbeatInterval) .. " seconds")
+                ImGui.Text("Stale Threshold: " .. tostring(presence.staleAfter) .. " seconds")
+                
+                -- Show raw peer data
+                if presence.peers then
+                    local peerCount = 0
+                    for _ in pairs(presence.peers) do peerCount = peerCount + 1 end
+                    ImGui.Text("Active Peer Entries: " .. tostring(peerCount))
+                    
+                    if peerCount > 0 then
+                        ImGui.Spacing()
+                        ImGui.Text("Raw Peer Data:")
+                        local now = os.time()
+                        for peerName, entry in pairs(presence.peers) do
+                            local age = now - (entry.lastSeen or 0)
+                            local color = age <= presence.staleAfter and {0, 1, 0, 1} or {1, 0.5, 0, 1}
+                            ImGui.TextColored(color[1], color[2], color[3], color[4], 
+                                string.format("  %s (last seen: %ds ago, mode: %s)", 
+                                    peerName, age, entry.mode or "unknown"))
+                        end
+                    end
                 end
-            elseif config.lootCommandType == "e3" then
-                local monoLoaded = mq.TLO.Plugin("MQ2Mono").IsLoaded()
-                if monoLoaded then
-                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "MQ2Mono Plugin: Loaded")
-                    local rawPeers = mq.TLO.MQ2Mono.Query("e3,E3Bots.ConnectedClients")()
-                    ImGui.Text("Raw E3 Peers: " .. tostring(rawPeers or "nil"))
-                else
-                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "MQ2Mono Plugin: NOT LOADED")
-                    ImGui.TextWrapped("Load MQ2Mono plugin or switch to DanNet for peer discovery")
-                end
-            elseif config.lootCommandType == "bc" then
-                local eqbcLoaded = mq.TLO.Plugin("MQ2EQBC").IsLoaded()
-                if eqbcLoaded then
-                    ImGui.TextColored(0.0, 1.0, 0.0, 1.0, "MQ2EQBC Plugin: Loaded")
-                    local rawPeers = mq.TLO.EQBC.Names()
-                    ImGui.Text("Raw EQBC Peers: " .. tostring(rawPeers or "nil"))
-                else
-                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "MQ2EQBC Plugin: NOT LOADED")
-                    ImGui.TextWrapped("Load MQ2EQBC plugin or switch to DanNet for peer discovery")
-                end
+            else
+                ImGui.TextColored(1.0, 0.0, 0.0, 1.0, "Actor Presence System: Not Available")
             end
             
+            ImGui.Separator()
             ImGui.Text("Discovered Peers Count: " .. tostring(#connectedPeers))
             if #connectedPeers > 0 then
                 ImGui.Text("Discovered Peers: " .. table.concat(connectedPeers, ", "))
             else
                 ImGui.TextColored(1.0, 0.5, 0.0, 1.0, "No peers discovered!")
                 ImGui.TextWrapped("If you expect to see peers here:")
-                ImGui.BulletText("Ensure the correct plugin is loaded for your command type")
-                ImGui.BulletText("Verify other characters are connected via the same method")
-                ImGui.BulletText("Try switching command types in the Settings tab")
+                ImGui.BulletText("Ensure other SmartLoot instances are running")
+                ImGui.BulletText("Wait up to 5 seconds for heartbeats to be received")
+                ImGui.BulletText("Check that the actor system is working correctly")
             end
             
-            if ImGui.Button("Refresh Peer Discovery") then
-                -- Force a refresh by calling the debug function
-                util.debugPeerDiscovery()
+            ImGui.Spacing()
+            if ImGui.Button("Show Legacy Discovery (DanNet/EQBC/E3)") then
+                local legacyPeers = util.getConnectedPeersLegacy()
+                if #legacyPeers > 0 then
+                    util.printSmartLoot("Legacy Discovery Found: " .. table.concat(legacyPeers, ", "), "info")
+                else
+                    util.printSmartLoot("No peers found via legacy discovery", "warning")
+                end
             end
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Print detailed peer discovery debug info to console")
+                ImGui.SetTooltip("Test legacy DanNet/EQBC/E3 peer discovery (for debugging)")
             end
         end
         

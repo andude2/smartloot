@@ -91,7 +91,7 @@ end
 
 -- Helper function to send reload message to peer
 local function sendReloadMessageToPeer(peer)
-    util.sendPeerCommand(peer, "/sl_rulescache")
+    util.sendPeerCommandViaActor(peer, "reload_rules", {})
 end
 
 -- Helper function to update rule and handle all the database operations

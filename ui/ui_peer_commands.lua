@@ -85,7 +85,7 @@ function uiPeerCommands.draw(lootUI, loot, util)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.7, 0.9, 0.9)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.5, 0.7, 0.9)
             if ImGui.Button("Peer Loot", buttonWidth, 30) then
-                if util.sendPeerCommand(lootUI.selectedPeer, "/sl_doloot") then
+                if util.sendPeerCommandViaActor(lootUI.selectedPeer, "start_once") then
                     logging.log("Sent loot command to peer: " .. lootUI.selectedPeer)
                     util.printSmartLoot("Sent loot command to " .. lootUI.selectedPeer, "success")
                 else
@@ -95,7 +95,7 @@ function uiPeerCommands.draw(lootUI, loot, util)
             end
             ImGui.PopStyleColor(3)
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Trigger a the selected peer to loot corpses")
+                ImGui.SetTooltip("Trigger the selected peer to loot corpses")
             end
             
             ImGui.SameLine()
@@ -117,14 +117,20 @@ function uiPeerCommands.draw(lootUI, loot, util)
             end
 
             if ImGui.Button(buttonText, buttonWidth, 30) then
-                lootUI.peerTriggerPaused = not (lootUI.peerTriggerPaused or false)
-                local status = lootUI.peerTriggerPaused and "paused" or "resumed"
-                logging.log("Peer triggering " .. status)
-                util.printSmartLoot("Peer triggering " .. status, lootUI.peerTriggerPaused and "warning" or "info")
+                local action = isPaused and "off" or "on"
+                if util.sendPeerCommandViaActor(lootUI.selectedPeer, "pause", { action = action }) then
+                    lootUI.peerTriggerPaused = not isPaused
+                    local status = lootUI.peerTriggerPaused and "paused" or "resumed"
+                    logging.log("Sent pause command to peer: " .. lootUI.selectedPeer .. " (" .. status .. ")")
+                    util.printSmartLoot("Peer " .. lootUI.selectedPeer .. " " .. status, lootUI.peerTriggerPaused and "warning" or "info")
+                else
+                    logging.log("Failed to send pause command to peer: " .. lootUI.selectedPeer)
+                    util.printSmartLoot("Failed to send pause command to " .. lootUI.selectedPeer, "error")
+                end
             end
             ImGui.PopStyleColor(3)
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Pause SmartLoot on the selected peer")
+                ImGui.SetTooltip("Pause/Resume SmartLoot on the selected peer")
             end
             
             ImGui.Spacing()
@@ -173,7 +179,13 @@ function uiPeerCommands.draw(lootUI, loot, util)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.7, 0.9, 0.9)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.5, 0.7, 0.9)
             if ImGui.Button("Clear Cache", buttonWidth, 30) then
-                mq.cmd('/sl_clearcache')
+                if util.sendPeerCommandViaActor(lootUI.selectedPeer, "clear_cache") then
+                    logging.log("Sent cache clear command to peer: " .. lootUI.selectedPeer)
+                    util.printSmartLoot("Cleared cache on " .. lootUI.selectedPeer, "success")
+                else
+                    logging.log("Failed to send cache clear command to peer: " .. lootUI.selectedPeer)
+                    util.printSmartLoot("Failed to clear cache on " .. lootUI.selectedPeer, "error")
+                end
             end
             ImGui.PopStyleColor(3)
             if ImGui.IsItemHovered() then
@@ -210,11 +222,11 @@ function uiPeerCommands.draw(lootUI, loot, util)
                     ImGui.Text("This will halt all SmartLoot activity immediately.")
                     ImGui.Spacing()
                     if ImGui.Button("Yes, Stop All", 120, 0) then
-                        if util.broadcastCommand("/sl_emergency_stop") then
-                            logging.log("Broadcasted emergency stop to all peers")
+                        if util.broadcastCommandViaActor("emergency_stop") then
+                            logging.log("Broadcasted emergency stop to all peers via actor")
                             util.printSmartLoot("Emergency stop sent to all peers", "error")
                         else
-                            logging.log("Failed to broadcast emergency stop")
+                            logging.log("Failed to broadcast emergency stop via actor")
                             util.printSmartLoot("Failed to emergency stop all peers", "error")
                         end
                         ImGui.CloseCurrentPopup()

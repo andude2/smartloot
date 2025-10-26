@@ -427,8 +427,8 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                             local success = database.saveLootRuleFor(peer, itemName, itemID_from_current, rule, iconID_from_current)
                             if success then
                                 appliedCount = appliedCount + 1
-                                -- Send reload command to peer
-                                util.sendPeerCommand(peer, "/sl_rulescache")
+                                -- Send reload command to peer via actor
+                                util.sendPeerCommandViaActor(peer, "reload_rules")
                             end
                         end
                     end
@@ -679,7 +679,7 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                     end
                     
                     if connectedPeerSet[peer] then
-                        util.sendPeerCommand(peer, "/sl_rulescache")
+                        util.sendPeerCommandViaActor(peer, "reload_rules")
                     end
                 end
                 logging.log(string.format("Set all %d peers to 'Keep' for %s", updateCount, itemName))
@@ -722,7 +722,7 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                     end
                     
                     if connectedPeerSet[peer] then
-                        util.sendPeerCommand(peer, "/sl_rulescache")
+                        util.sendPeerCommandViaActor(peer, "reload_rules")
                     end
                 end
                 logging.log(string.format("Set all %d peers to 'Ignore' for %s", updateCount, itemName))
@@ -889,10 +889,6 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                             database.refreshLootRuleCacheForPeer(peer)
                                         end
                                         
-                                        -- Send command only for connected peers after change
-                                        if peer ~= currentCharacter and connectedPeerSet[peer] then
-                                            util.sendPeerCommand(peer, "/sl_rulescache")
-                                        end
                                         
                                         -- Debug: Check if rule is in cache after refresh
                                         local testRules = database.getLootRulesForPeer(peer)
@@ -961,10 +957,6 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                         database.refreshLootRuleCacheForPeer(peer)
                                     end
                                     
-                                    -- Send command only for connected peers after change
-                                    if peer ~= currentCharacter and connectedPeerSet[peer] then
-                                        util.sendPeerCommand(peer, "/sl_rulescache")
-                                    end
                                 else
                                     logging.debug(string.format("[PeerRules] Failed to update threshold to %d for %s -> %s", newThreshold, peer, itemName))
                                 end
@@ -1008,10 +1000,6 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                     database.refreshLootRuleCacheForPeer(peer)
                                 end
                                 
-                                -- Send command only for connected peers after change
-                                if peer ~= currentCharacter and connectedPeerSet[peer] then
-                                    util.sendPeerCommand(peer, "/sl_rulescache")
-                                end
                             else
                                 logging.debug(string.format("[PeerRules] Failed to unset rule for %s -> %s", peer, itemName))
                             end
@@ -1299,7 +1287,7 @@ function uiPopups.drawUpdateIDsPopup(lootUI, database, util)
                         local connectedPeers = util.getConnectedPeers()
                         for _, connectedPeer in ipairs(connectedPeers) do
                             if connectedPeer == character then
-                                util.sendPeerCommand(peer, "/sl_rulescache")
+                                util.sendPeerCommandViaActor(character, "reload_rules", {})
                                 break
                             end
                         end
@@ -1489,9 +1477,6 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
                                         local itemID = ruleData.item_id or 0
                                         local iconID = ruleData.icon_id or 0
                                         database.saveLootRule(lootUI.selectedItemForPopup, itemID, newRule, iconID)
-                                    else
-                                        database.saveLootRuleFor(peer, lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
-                                        util.sendPeerCommand(peer, "/sl_rulescache")
                                     end
                                 end
                                 currentRule = newRule
@@ -1520,9 +1505,6 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
                                 -- Use itemID-based saving for regular items
                                 if peer == (mq.TLO.Me.Name() or "Local") then
                                     database.saveLootRule(lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
-                                else
-                                    database.saveLootRuleFor(peer, lootUI.selectedItemForPopup, ruleData.item_id, newRule, ruleData.icon_id)
-                                    util.sendPeerCommand(peer, "/sl_rulescache")
                                 end
                             end
                             currentRule = newRule
@@ -1570,8 +1552,8 @@ function uiPopups.drawBroadcastNewRulePopup(lootUI, database, util)
                     end)
                 end
             end
-            -- Ask peers to refresh rules
-            pcall(function() util.broadcastCommand("/sl_rulescache") end)
+            -- Ask peers to refresh rules via actor mailbox
+            pcall(function() util.broadcastRulesReload() end)
             util.printSmartLoot(string.format("Broadcasted rule %s -> %s to %d peer(s)", pop.itemName, pop.rule, math.max(0, #peers-1)), "success")
             pop.isOpen = false
         end
@@ -1773,14 +1755,6 @@ function uiPopups.drawAddNewRulePopup(lootUI, database, util)
                     database.saveLootRule(popup.itemName, 0, finalRule, 0)
                 else
                     database.saveLootRuleFor(popup.selectedCharacter, popup.itemName, 0, finalRule, 0)
-                    -- Send reload command to peer if connected
-                    local connectedPeers = util.getConnectedPeers()
-                    for _, peer in ipairs(connectedPeers) do
-                        if peer == popup.selectedCharacter then
-                            util.sendPeerCommand(peer, "/sl_rulescache")
-                            break
-                        end
-                    end
                 end
 
                 logging.log(string.format("Added new loot rule: %s -> %s for character %s", 
@@ -2969,14 +2943,6 @@ function uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
                     database.refreshLootRuleCacheForPeer(popup.targetCharacter)
                 end
                 
-                -- Send reload command to connected peer if needed
-                local connectedPeers = util.getConnectedPeers()
-                for _, peer in ipairs(connectedPeers) do
-                    if peer == popup.targetCharacter then
-                        util.sendPeerCommand(peer, "/sl_rulescache")
-                        break
-                    end
-                end
             else
                 popup.importResult = {
                     success = false,
@@ -3003,6 +2969,227 @@ function uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
         popup.showConfirmation = false
         popup.confirmationItems = nil
     end
+end
+
+-- Remote Pending Decision Popup - for foreground character to handle decisions from background peers
+function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
+    local remoteDecisions = _G.SMARTLOOT_REMOTE_DECISIONS or {}
+    
+    -- Debug: check remote decision queue
+    if #remoteDecisions > 0 then
+        local logging = require("modules.logging")
+        local isForeground = util.isForeground()
+        logging.debug(string.format("[RemotePopup] Have %d remote decisions, isForeground=%s", #remoteDecisions, tostring(isForeground)))
+    end
+    
+    -- Only show on foreground character
+    if not util.isForeground() then return end
+    if #remoteDecisions == 0 then return end
+    
+    -- Initialize assignment state per decision
+    lootUI.remotePendingAssignments = lootUI.remotePendingAssignments or {}
+    for i, decision in ipairs(remoteDecisions) do
+        if not lootUI.remotePendingAssignments[i] then
+            lootUI.remotePendingAssignments[i] = {
+                rule = "Keep",
+                threshold = 1
+            }
+        end
+    end
+    
+    ImGui.SetNextWindowSize(850, 450, ImGuiCond.FirstUseEver)
+    local keepOpen, shown = ImGui.Begin("SmartLoot - Remote Pending Decisions", true)
+    
+    if shown then
+        -- Header
+        ImGui.TextColored(1, 0.5, 0, 1, string.format("Pending requests from peers (%d items)", #remoteDecisions))
+        ImGui.Separator()
+        ImGui.Spacing()
+        
+        -- Scrollable table
+        if ImGui.BeginChild("RemotePendingList", 0, -50) then
+            local tableFlags = ImGuiTableFlags.Borders + ImGuiTableFlags.RowBg + ImGuiTableFlags.ScrollY
+            if ImGui.BeginTable("RemotePendingTable", 6, tableFlags) then
+                ImGui.TableSetupColumn("Peer", ImGuiTableColumnFlags.WidthFixed, 100)
+                ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 35)
+                ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+                ImGui.TableSetupColumn("Item ID", ImGuiTableColumnFlags.WidthFixed, 80)
+                ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 180)
+                ImGui.TableSetupColumn("Threshold", ImGuiTableColumnFlags.WidthFixed, 90)
+                ImGui.TableHeadersRow()
+                
+                local uiUtils = require("smartloot.ui.ui_utils")
+                
+                for i, decision in ipairs(remoteDecisions) do
+                    ImGui.TableNextRow()
+                    
+                    local assignment = lootUI.remotePendingAssignments[i]
+                    
+                    -- Column 1: Peer/Requester
+                    ImGui.TableSetColumnIndex(0)
+                    ImGui.TextColored(1, 0.5, 0, 1, decision.requester)
+                    
+                    -- Column 2: Icon
+                    ImGui.TableSetColumnIndex(1)
+                    uiUtils.drawItemIcon(decision.iconID or 0)
+                    
+                    -- Column 3: Item Name
+                    ImGui.TableSetColumnIndex(2)
+                    ImGui.TextColored(1, 1, 0, 1, decision.itemName)
+                    
+                    -- Column 4: Item ID
+                    ImGui.TableSetColumnIndex(3)
+                    ImGui.Text(tostring(decision.itemID or 0))
+                    
+                    -- Column 5: Rule dropdown
+                    ImGui.TableSetColumnIndex(4)
+                    ImGui.SetNextItemWidth(-1)
+                    if ImGui.BeginCombo("##remoteRule_" .. i, assignment.rule) then
+                        for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
+                            local isSelected = (assignment.rule == rule)
+                            if ImGui.Selectable(rule .. "##sel_" .. i, isSelected) then
+                                assignment.rule = rule
+                            end
+                            if isSelected then
+                                ImGui.SetItemDefaultFocus()
+                            end
+                        end
+                        ImGui.EndCombo()
+                    end
+                    
+                    -- Column 6: Threshold input
+                    ImGui.TableSetColumnIndex(5)
+                    if assignment.rule == "KeepIfFewerThan" or assignment.rule == "KeepThenIgnore" then
+                        ImGui.SetNextItemWidth(-1)
+                        local newThreshold, changed = ImGui.InputInt("##remoteThreshold_" .. i, assignment.threshold)
+                        if changed then
+                            assignment.threshold = math.max(1, newThreshold)
+                        end
+                    else
+                        ImGui.TextDisabled("N/A")
+                    end
+                end
+                
+                ImGui.EndTable()
+            end
+            ImGui.EndChild()
+        end
+        
+        ImGui.Separator()
+        
+        -- Helper to build rule string
+        local function getFinalRule(assignment)
+            if assignment.rule == "KeepIfFewerThan" then
+                return "KeepIfFewerThan:" .. assignment.threshold
+            elseif assignment.rule == "KeepThenIgnore" then
+                return "KeepIfFewerThan:" .. assignment.threshold .. ":AutoIgnore"
+            else
+                return assignment.rule
+            end
+        end
+        
+        -- Action buttons
+        local Icons = require("mq.Icons")
+        
+        -- Apply All button
+        if ImGui.Button(Icons.FA_CHECK_CIRCLE .. " Apply All Rules", 180, 30) then
+            local actors = require("actors")
+            local json = require("dkjson")
+            
+            -- Process each decision with its assignment
+            for i, decision in ipairs(remoteDecisions) do
+                local assignment = lootUI.remotePendingAssignments[i]
+                local rule = getFinalRule(assignment)
+                
+                -- Apply to requester
+                database.saveLootRuleFor(decision.requester, decision.itemName, decision.itemID, rule, decision.iconID)
+                util.sendPeerCommandViaActor(decision.requester, "reload_rules")
+                
+                -- Send decision response
+                pcall(function()
+                    local responseData = {
+                        cmd = "pending_decision_response",
+                        sender = mq.TLO.Me.Name(),
+                        itemName = decision.itemName,
+                        itemID = decision.itemID,
+                        iconID = decision.iconID,
+                        rule = rule
+                    }
+                    actors.send(
+                        { mailbox = "smartloot_mailbox" },
+                        json.encode(responseData)
+                    )
+                end)
+                
+                util.printSmartLoot(string.format("Applied rule '%s' for '%s' to %s", rule, decision.itemName, decision.requester), "success")
+            end
+            
+            -- Clear queue
+            _G.SMARTLOOT_REMOTE_DECISIONS = {}
+            lootUI.remotePendingAssignments = {}
+        end
+        
+        ImGui.SameLine()
+        
+        -- Apply to All Peers button
+        if ImGui.Button(Icons.FA_USERS .. " Apply To All Peers", 180, 30) then
+            local actors = require("actors")
+            local json = require("dkjson")
+            local connectedPeers = util.getConnectedPeers()
+            
+            -- Process each decision with its assignment
+            for i, decision in ipairs(remoteDecisions) do
+                local assignment = lootUI.remotePendingAssignments[i]
+                local rule = getFinalRule(assignment)
+                
+                -- Apply to all peers
+                for _, peer in ipairs(connectedPeers) do
+                    database.saveLootRuleFor(peer, decision.itemName, decision.itemID, rule, decision.iconID)
+                    util.sendPeerCommandViaActor(peer, "reload_rules")
+                end
+                
+                -- Send decision response
+                pcall(function()
+                    local responseData = {
+                        cmd = "pending_decision_response",
+                        sender = mq.TLO.Me.Name(),
+                        itemName = decision.itemName,
+                        itemID = decision.itemID,
+                        iconID = decision.iconID,
+                        rule = rule
+                    }
+                    actors.send(
+                        { mailbox = "smartloot_mailbox" },
+                        json.encode(responseData)
+                    )
+                end)
+                
+                util.printSmartLoot(string.format("Applied rule '%s' for '%s' to all peers", rule, decision.itemName), "success")
+            end
+            
+            -- Clear queue
+            _G.SMARTLOOT_REMOTE_DECISIONS = {}
+            lootUI.remotePendingAssignments = {}
+        end
+        
+        ImGui.SameLine()
+        
+        -- Clear All button
+        if ImGui.Button(Icons.FA_TRASH .. " Clear All", 140, 30) then
+            _G.SMARTLOOT_REMOTE_DECISIONS = {}
+            lootUI.remotePendingAssignments = {}
+            util.printSmartLoot("Cleared all pending decisions", "warning")
+        end
+        
+        ImGui.SameLine()
+        
+        -- Close button
+        if ImGui.Button(Icons.FA_TIMES .. " Close", 100, 30) then
+            keepOpen = false
+        end
+    end
+    
+    ImGui.End()
 end
 
 function uiPopups.drawGettingStartedPopup(lootUI)

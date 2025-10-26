@@ -21,7 +21,14 @@ modeHandler.state = {
 -- Determine if current character should be RGMain based on peer order
 function modeHandler.shouldBeRGMain()
     local currentToon = mq.TLO.Me.Name()
-    local connectedPeers = util.getConnectedPeers()
+    
+    -- Use legacy peer discovery during startup check, as actor heartbeats may not have propagated yet
+    -- After startup, the regular getConnectedPeers() will use actor-based discovery
+    local connectedPeers = util.getConnectedPeersLegacy()
+    if #connectedPeers == 0 then
+        -- Fallback to actor-based if legacy returns nothing
+        connectedPeers = util.getConnectedPeers()
+    end
     
     if not config.peerLootOrder or #config.peerLootOrder == 0 then
         logging.log("No peer loot order configured - defaulting to RGMain")

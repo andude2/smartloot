@@ -1396,7 +1396,7 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
                             db.saveLootRuleFor(peer, itemName, itemID or 0, defaultAction, iconID or 0)
                         end
                     end
-                    util.broadcastCommand("/sl_rulescache")
+                    util.broadcastRulesReload()
                 end)
             end
 
@@ -1442,7 +1442,7 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
                     database.refreshLootRuleCache()
                     -- Notify connected peers to refresh their rules cache/UI
                     local util = require("modules.util")
-                    util.broadcastCommand("/sl_rulescache")
+                    util.broadcastRulesReload()
                 end)
                 if not ok then
                     logging.debug("[Engine] Failed to auto-set rule to Ignore at threshold: " .. tostring(err))
@@ -2080,6 +2080,44 @@ function SmartLootEngine.createPendingDecision(itemName, itemID, iconID, quantit
         }
     end
 
+    -- Forward to foreground character if we're not foreground
+    local isForeground = util.isForeground()
+    logging.debug(string.format("[Engine] createPendingDecision: isForeground=%s, itemName=%s", tostring(isForeground), itemName))
+    
+    if not isForeground then
+        -- Get list of connected peers to find foreground character
+        local connectedPeers = util.getConnectedPeers()
+        logging.debug(string.format("[Engine] Connected peers: %s", table.concat(connectedPeers, ", ")))
+        
+        -- Send to all connected peers via broadcast; foreground will handle it
+        local messageData = {
+            cmd = "pending_decision_request",
+            sender = mq.TLO.Me.Name(),
+            itemName = itemName,
+            itemID = itemID or 0,
+            iconID = iconID or 0,
+            quantity = quantity or 1
+        }
+        local messageJson = json.encode(messageData)
+        
+        logging.debug(string.format("[Engine] Broadcasting pending decision request for: %s", itemName))
+        
+        local success, err = pcall(function()
+            actors.send(
+                { mailbox = "smartloot_mailbox" },
+                messageJson
+            )
+        end)
+        
+        if success then
+            logging.debug("[Engine] Broadcast sent successfully")
+        else
+            logging.debug(string.format("[Engine] Failed to broadcast: %s", tostring(err)))
+        end
+        
+        util.printSmartLoot(string.format("Pending decision for %s forwarded to foreground character", itemName), "info")
+    end
+
     -- Send chat notification
     if config and config.sendChatMessage then
         -- Get corpse slot from current item state if available
@@ -2412,10 +2450,10 @@ function SmartLootEngine.processProcessingItemsState()
     SmartLootEngine.state.currentItem.iconID = finalIconID
 
     logging.debug(string.format("[Engine] Processing item %d: %s (rule: %s)",
-        SmartLootEngine.state.currentItemIndex, itemInfo.name, rule))
+        SmartLootEngine.state.currentItemIndex, itemInfo.name, tostring(rule)))
 
     -- Handle rule outcomes
-    if rule == "Unset" then
+    if not rule or rule == "" or rule == "Unset" then
         SmartLootEngine.createPendingDecision(itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
         setState(SmartLootEngine.LootState.WaitingForPendingDecision, "Pending decision required")
         return

@@ -33,7 +33,34 @@ local function normalizePeerName(peerName)
     return normalized
 end
 
-function util.getConnectedPeers()
+-- Actor-based peer discovery using presence heartbeats
+function util.getConnectedPeersViaActor()
+    local peers = {}
+    
+    -- Access the global presence tracker
+    local presence = _G.SMARTLOOT_PRESENCE
+    if not presence or not presence.peers then
+        return peers
+    end
+    
+    local now = os.time()
+    local staleAfter = presence.staleAfter or 12
+    
+    -- Get all peers that have sent a heartbeat recently
+    for peerName, entry in pairs(presence.peers) do
+        if entry.lastSeen and (now - entry.lastSeen) <= staleAfter then
+            table.insert(peers, peerName)
+        end
+    end
+    
+    -- Sort alphabetically
+    table.sort(peers, function(a, b) return a < b end)
+    
+    return peers
+end
+
+-- Legacy peer discovery via DanNet/EQBC/E3 (kept for backward compatibility)
+function util.getConnectedPeersLegacy()
     local peers = {}
     
     -- Convert config value to lowercase for consistent comparison
@@ -100,6 +127,12 @@ function util.getConnectedPeers()
     return uniquePeers
 end
 
+-- Main peer discovery function - uses actor-based presence by default
+function util.getConnectedPeers()
+    -- Use actor-based presence detection
+    return util.getConnectedPeersViaActor()
+end
+
 -- Helper function to check if DanNet is available and loaded
 function util.isDanNetAvailable()
     return mq.TLO.Plugin("MQ2DanNet").IsLoaded()
@@ -120,7 +153,7 @@ function util.isDanNetPeerConnected(peerName)
     return false
 end
 
--- Helper function to send a command via the configured communication method
+-- Helper function to send a command via the configured communication method (LEGACY)
 function util.sendPeerCommand(peerName, command)
     -- Convert config value to lowercase for consistent comparison
     local lootType = (config.lootCommandType or ""):lower()
@@ -158,6 +191,56 @@ function util.sendPeerCommand(peerName, command)
     return false
 end
 
+-- Actor-based peer command - sends via mailbox system
+function util.sendPeerCommandViaActor(peerName, commandType, args)
+    local actors = require("actors")
+    local json = require("dkjson")
+    
+    args = args or {}
+    
+    local success, err = pcall(function()
+        actors.send(
+            { mailbox = "smartloot_command" },
+            { type = "command", command = commandType, args = args, target = peerName }
+        )
+    end)
+    
+    if not success then
+        util.printSmartLoot(string.format("Failed to send command to %s: %s", peerName, tostring(err)), "error")
+        return false
+    end
+    
+    return true
+end
+
+-- Actor-based broadcast command - sends to all peers via mailbox
+function util.broadcastCommandViaActor(commandType, args)
+    local actors = require("actors")
+    local json = require("dkjson")
+    
+    args = args or {}
+    
+    -- Broadcast via smartloot_command mailbox (no target means everyone receives it)
+    local success, err = pcall(function()
+        actors.send(
+            { mailbox = "smartloot_command" },
+            { type = "command", command = commandType, args = args, target = nil }
+        )
+    end)
+    
+    if not success then
+        util.printSmartLoot(string.format("Failed to broadcast command: %s", tostring(err)), "error")
+        return false
+    end
+    
+    return true
+end
+
+-- Broadcast rules reload to all peers via actor mailbox
+function util.broadcastRulesReload()
+    return util.broadcastCommandViaActor("reload_rules", {})
+end
+
 -- Helper function to broadcast a command to all connected peers
 function util.broadcastCommand(command)
     -- Convert config value to lowercase for consistent comparison
@@ -192,6 +275,23 @@ end
 
 function util.getCurrentToon()
     return mq.TLO.Me.Name() or "unknown"
+end
+
+-- Get the name of the character that is currently /foreground
+function util.getForegroundCharacter()
+    -- Check if this character is foreground
+    if mq.TLO.MacroQuest.Foreground() then
+        return mq.TLO.Me.Name()
+    end
+    
+    -- If not, we can't directly detect who is foreground from this session
+    -- Return nil to indicate we're not foreground
+    return nil
+end
+
+-- Check if current character is foreground
+function util.isForeground()
+    return mq.TLO.MacroQuest.Foreground() == true
 end
 
 -- Debug function to show peer discovery information

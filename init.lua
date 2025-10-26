@@ -10,7 +10,6 @@ local lootStats        = require("modules.loot_stats")
 local json             = require("dkjson")
 local config           = require("modules.config")
 local util             = require("modules.util")
-local lfs              = require("lfs")
 local Icons            = require("mq.Icons")
 local actors           = require("actors")
 local modeHandler      = require("modules.mode_handler")
@@ -153,33 +152,6 @@ if config.master_looter_mode then
     require("smartloot.master.init")
 end
 
--- ============================================================================
--- PEER DATABASE DISCOVERY
--- ============================================================================
-
-local availablePeers = {}
-local function scanForPeerDatabases()
-    local dbPath = mq.TLO.MacroQuest.Path('resources')()
-
-    if not dbPath then
-        logging.log("[SmartLoot] Could not get resources path")
-        return
-    end
-
-    for file in lfs.dir(dbPath) do
-        local server = file:match("^smartloot_(.-)%.db$")
-        if server then
-            table.insert(availablePeers, {
-                name = server,
-                server = server,
-                filename = file
-            })
-            logging.log("[SmartLoot] Found database for server: " .. server)
-        end
-    end
-end
-
-scanForPeerDatabases()
 
 -- ============================================================================
 -- UI STATE (Simplified for State Engine)
@@ -475,6 +447,38 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
         }
 
         actors.send(sender .. "_smartloot_mailbox", json.encode(statusData))
+    elseif cmd == "pending_decision_request" then
+        -- Another character is requesting we make a decision for their item
+        util.printSmartLoot("Pending decision request from " .. sender .. " for " .. (data.itemName or "unknown"), "info")
+        
+        -- Store in global remote pending decisions queue
+        _G.SMARTLOOT_REMOTE_DECISIONS = _G.SMARTLOOT_REMOTE_DECISIONS or {}
+        
+        table.insert(_G.SMARTLOOT_REMOTE_DECISIONS, {
+            requester = sender,
+            itemName = data.itemName,
+            itemID = data.itemID or 0,
+            iconID = data.iconID or 0,
+            quantity = data.quantity or 1,
+            timestamp = mq.gettime()
+        })
+        
+        logging.log(string.format("[SmartLoot] Added remote pending decision from %s for item: %s (queue size: %d)", 
+            sender, data.itemName, #_G.SMARTLOOT_REMOTE_DECISIONS))
+    elseif cmd == "pending_decision_response" then
+        -- Foreground character responded with a decision
+        util.printSmartLoot("Pending decision response from " .. sender, "info")
+        
+        local itemName = data.itemName
+        local itemID = data.itemID or 0
+        local iconID = data.iconID or 0
+        local rule = data.rule
+        
+        if rule and itemName then
+            -- Apply the rule and resolve the pending decision
+            SmartLootEngine.resolvePendingDecision(itemName, itemID, rule, iconID)
+            logging.log(string.format("[SmartLoot] Applied remote decision from %s: %s = %s", sender, itemName, rule))
+        end
     else
         util.printSmartLoot("Unknown command '" .. tostring(cmd) .. "' from " .. sender, "warning")
     end
@@ -491,6 +495,9 @@ local smartlootCommandMailbox = actors.register("smartloot_command", function(me
 
     local myName = mq.TLO.Me.Name()
     local target = content.target
+    
+    -- If there's a target specified and it's not me, ignore the message
+    -- If target is nil, it's a broadcast to everyone
     if target and myName and target ~= myName then
         -- Not for me
         return
@@ -542,6 +549,12 @@ local smartlootCommandMailbox = actors.register("smartloot_command", function(me
             SmartLootEngine.setDirectedAssignmentVisible(true)
             util.printSmartLoot("Directed Assignment UI opened via command mailbox", "info")
         end
+    elseif cmd == "clear_cache" then
+        SmartLootEngine.resetProcessedCorpses()
+        util.printSmartLoot("Corpse cache cleared via command mailbox", "system")
+    elseif cmd == "emergency_stop" then
+        SmartLootEngine.emergencyStop("Emergency stop via command mailbox")
+        util.printSmartLoot("Emergency stop executed via command mailbox", "system")
     end
 end)
 
@@ -552,10 +565,11 @@ else
 end
 
 -- ============================================================================
--- LOOT STATUS PRESENCE (Mailbox-based, no globals)
+-- LOOT STATUS PRESENCE (Mailbox-based actor presence system)
 -- ============================================================================
 
-local LOOT_STATUS = {
+-- Make LOOT_STATUS globally accessible for peer discovery
+_G.SMARTLOOT_PRESENCE = {
     mailbox_name = "smartloot_loot_status",
     actor = nil,
     peers = {},                 -- [peerName] = { isLooting=bool, lastSeen=os.time(), mode="once|rgonce" }
@@ -564,6 +578,8 @@ local LOOT_STATUS = {
     staleAfter = 12,            -- seconds (2x heartbeat)
     lastPrune = 0,
 }
+
+local LOOT_STATUS = _G.SMARTLOOT_PRESENCE
 
 local function _safeLower(s)
     if type(s) ~= "string" then return "" end
@@ -586,7 +602,7 @@ local function handleLootStatusMessage(message)
     local mode = msg.mode or ""
     local entry = LOOT_STATUS.peers[sender] or {}
 
-    if cmd == "looting_start" or cmd == "looting_heartbeat" then
+    if cmd == "looting_start" or cmd == "looting_heartbeat" or cmd == "presence_heartbeat" then
         entry.isLooting = (mode == "once" or mode == "rgonce")
         entry.mode = mode
         entry.lastSeen = now
@@ -640,10 +656,10 @@ local function publishLootStatusTick()
         LOOT_STATUS.lastHeartbeatSent = 0 -- force heartbeat soon after
     end
 
-    -- Heartbeat while active
-    if inActive and (now - (LOOT_STATUS.lastHeartbeatSent or 0) >= LOOT_STATUS.heartbeatInterval) then
+    -- ALWAYS send heartbeat for presence detection (not just when actively looting)
+    if (now - (LOOT_STATUS.lastHeartbeatSent or 0) >= LOOT_STATUS.heartbeatInterval) then
         _send({
-            cmd = "looting_heartbeat",
+            cmd = inActive and "looting_heartbeat" or "presence_heartbeat",
             character = myName,
             mode = mode,
             timestamp = now,
@@ -1469,6 +1485,7 @@ mq.imgui.init("SmartLoot", function()
     -- Always show popups
     if uiPopups then
         uiPopups.drawLootDecisionPopup(lootUI, settings, nil)
+        uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
         uiPopups.drawLootStatsPopup(lootUI, lootStats)
         uiPopups.drawLootRulesPopup(lootUI, database, util)
         uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
