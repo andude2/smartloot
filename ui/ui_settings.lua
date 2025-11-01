@@ -1649,6 +1649,127 @@ local function draw_inventory_settings(config)
     ImGui.Spacing()
 end
 
+local function draw_navigation_settings(config)
+    local function previewCommand(command)
+        if not command or command == "" then
+            return "(disabled)"
+        end
+        if command:find("%%d") then
+            return command:gsub("%%d", "<spawnID>")
+        end
+        return string.format("%s id <spawnID>", command)
+    end
+
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.8, 1.0, 1.0)
+    if ImGui.CollapsingHeader("Navigation Command Settings") then
+        ImGui.PopStyleColor()
+        ImGui.SameLine()
+
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.4, 0.3)
+        if ImGui.Button("(?)##NavigationHelp") then
+            ImGui.OpenPopup("NavigationSettingsHelp")
+        end
+        ImGui.PopStyleColor(2)
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Click for navigation command tips and examples")
+        end
+
+        ImGui.Spacing()
+
+        ImGui.Text("Primary Command:")
+        ImGui.SameLine()
+        ImGui.PushItemWidth(220)
+        local primaryCommand = config.navigationCommand or "/nav"
+        local newPrimaryCommand, primaryChanged = ImGui.InputText("##NavPrimaryCommand", primaryCommand, 128)
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Command SmartLoot issues first when moving to a corpse")
+        end
+        ImGui.PopItemWidth()
+        if primaryChanged then
+            local before = config.navigationCommand
+            local updatedPrimary = config.setNavigationCommands(newPrimaryCommand)
+            if updatedPrimary ~= before then
+                logging.log("Navigation primary command set to: " .. tostring(updatedPrimary))
+            end
+        end
+
+        ImGui.Text("Fallback Command:")
+        ImGui.SameLine()
+        ImGui.PushItemWidth(220)
+        local fallbackCommand = config.navigationFallbackCommand or "/moveto"
+        local newFallbackCommand, fallbackChanged = ImGui.InputText("##NavFallbackCommand", fallbackCommand, 128)
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Used if the primary command cannot run (for example, MQ2Nav not loaded)")
+        end
+        ImGui.PopItemWidth()
+        if fallbackChanged then
+            local before = config.navigationFallbackCommand
+            local _, updatedFallback = config.setNavigationCommands(nil, newFallbackCommand)
+            if updatedFallback ~= before then
+                logging.log("Navigation fallback command set to: " .. tostring(updatedFallback))
+            end
+        end
+
+        ImGui.Text("Stop Command:")
+        ImGui.SameLine()
+        ImGui.PushItemWidth(220)
+        local stopCommand = config.navigationStopCommand or ""
+        local stopDisplay = stopCommand
+        local newStopCommand, stopChanged = ImGui.InputText("##NavStopCommand", stopDisplay, 128)
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Command issued to stop movement when SmartLoot finishes navigating\nLeave blank to rely on the default /nav stop")
+        end
+        ImGui.PopItemWidth()
+        if stopChanged then
+            local before = config.navigationStopCommand or ""
+            local _, _, updatedStop = config.setNavigationCommands(nil, nil, newStopCommand)
+            if (updatedStop or "") ~= before then
+                local label = updatedStop
+                if not label or label == "" then
+                    label = "(disabled)"
+                end
+                logging.log("Navigation stop command set to: " .. label)
+            end
+        end
+
+        ImGui.Spacing()
+        ImGui.Text("Current Configuration:")
+        ImGui.BulletText("Primary: " .. previewCommand(config.navigationCommand))
+        ImGui.BulletText("Fallback: " .. previewCommand(config.navigationFallbackCommand))
+        local stopLabel = config.navigationStopCommand
+        if not stopLabel or stopLabel == "" then
+            stopLabel = "(disabled)"
+        end
+        ImGui.BulletText("Stop: " .. stopLabel)
+
+        if ImGui.BeginPopup("NavigationSettingsHelp") then
+            ImGui.Text("Navigation Command Tips")
+            ImGui.Separator()
+            ImGui.TextWrapped("SmartLoot formats commands automatically. If your command does not include %d, it appends \"id <spawnID>\" when sending it.")
+            ImGui.Separator()
+            ImGui.Text("Examples:")
+            ImGui.BulletText("/nav")
+            ImGui.BulletText("/warp")
+            ImGui.BulletText("/moveto")
+            ImGui.BulletText("/nav id %d (explicit placeholder)")
+            ImGui.Separator()
+            ImGui.Text("Stop Command:")
+            ImGui.BulletText("Match the command prefix when possible (e.g. /nav stop, /moveto stop)")
+            ImGui.BulletText("Leave blank to skip sending a stop command")
+            ImGui.Separator()
+            if ImGui.Button("Close##NavigationHelpClose") then
+                ImGui.CloseCurrentPopup()
+            end
+            ImGui.EndPopup()
+        end
+    else
+        ImGui.PopStyleColor()
+    end
+    ImGui.Spacing()
+end
+
 local function draw_chase_settings(config)
     -- Chase Integration Settings Section
     ImGui.PushStyleColor(ImGuiCol.Text, 1.0, 0.8, 0.6, 1.0) -- Light orange header
@@ -1821,34 +1942,6 @@ function uiSettings.draw(lootUI, settings, config)
     if ImGui.BeginTabItem("Settings") then
         ImGui.Spacing()
 
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0)
-        ImGui.Text("DB:")
-        ImGui.PopStyleColor()
-        ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.9, 1.0)
-        local dbPath = config.filePath or "smartloot_config.json"
-        local dbName = dbPath:match("([^/\\]+)$") or dbPath
-        ImGui.Text(dbName)
-        ImGui.PopStyleColor()
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Database Config File:\n" .. dbPath)
-        end
-
-        ImGui.SameLine()
-        ImGui.Text("  |  ")
-        ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1.0)
-        ImGui.Text("SQLite:")
-        ImGui.PopStyleColor()
-        ImGui.SameLine()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 1.0, 0.6, 1.0)
-        ImGui.Text("Connected")
-        ImGui.PopStyleColor()
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Database Status: SQLite database is connected and operational")
-        end
-
-        ImGui.Spacing()
         ImGui.Separator()
         ImGui.Spacing()
 
@@ -1892,6 +1985,10 @@ function uiSettings.draw(lootUI, settings, config)
             { id = "inventory", label = "Inventory", render = function()
                 openNextHeader()
                 draw_inventory_settings(config)
+            end },
+            { id = "navigation", label = "Navigation", render = function()
+                openNextHeader()
+                draw_navigation_settings(config)
             end },
             { id = "chase", label = "Chase Controls", render = function()
                 openNextHeader()

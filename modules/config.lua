@@ -41,6 +41,11 @@ config.useChaseCommands = false  -- Whether to use chase commands at all
 config.chasePauseCommand = "/luachase pause on"  -- Command to pause chase
 config.chaseResumeCommand = "/luachase pause off"  -- Command to resume chase
 
+-- Navigation command configuration
+config.navigationCommand = "/nav"  -- Primary navigation command
+config.navigationFallbackCommand = "/moveto"  -- Fallback command if primary unavailable
+config.navigationStopCommand = "/nav stop"  -- Command to stop navigation if supported
+
 -- Hotbar configuration
 config.hotbar = {
     position = { x = 100, y = 300 },
@@ -175,6 +180,9 @@ local configData = {
         useChaseCommands = config.useChaseCommands,
         chasePauseCommand = config.chasePauseCommand,
         chaseResumeCommand = config.chaseResumeCommand,
+        navigationCommand = config.navigationCommand,
+        navigationFallbackCommand = config.navigationFallbackCommand,
+        navigationStopCommand = config.navigationStopCommand,
         -- Hotbar configuration in global settings
         hotbar = config.hotbar,
         -- Engine timing configuration in global settings
@@ -226,6 +234,9 @@ function config.load()
             config.useChaseCommands = configData.global.useChaseCommands or config.useChaseCommands
             config.chasePauseCommand = configData.global.chasePauseCommand or config.chasePauseCommand
             config.chaseResumeCommand = configData.global.chaseResumeCommand or config.chaseResumeCommand
+            config.navigationCommand = configData.global.navigationCommand or config.navigationCommand
+            config.navigationFallbackCommand = configData.global.navigationFallbackCommand or config.navigationFallbackCommand
+            config.navigationStopCommand = configData.global.navigationStopCommand or config.navigationStopCommand
 
             -- Apply hotbar settings
             if configData.global.hotbar then
@@ -315,6 +326,9 @@ function config.save()
     configData.global.useChaseCommands = config.useChaseCommands
     configData.global.chasePauseCommand = config.chasePauseCommand
     configData.global.chaseResumeCommand = config.chaseResumeCommand
+    configData.global.navigationCommand = config.navigationCommand
+    configData.global.navigationFallbackCommand = config.navigationFallbackCommand
+    configData.global.navigationStopCommand = config.navigationStopCommand
     
     -- Update hotbar settings
     configData.global.hotbar = config.hotbar
@@ -762,6 +776,53 @@ function config.executeChaseCommand(action)
     
     mq.cmd(command)
     return true, "Executed: " .. command
+end
+
+local function normalizeSlashCommand(cmd)
+    if not cmd then return nil end
+    local trimmed = cmd:match("^%s*(.-)%s*$") or ""
+    if trimmed == "" then return nil end
+    if not trimmed:match("^/") then
+        trimmed = "/" .. trimmed
+    end
+    return trimmed
+end
+
+function config.setNavigationCommands(primary, fallback, stop)
+    local updated = false
+
+    if primary ~= nil then
+        local normalized = normalizeSlashCommand(primary) or config.navigationCommand
+        if normalized ~= config.navigationCommand then
+            config.navigationCommand = normalized
+            updated = true
+        end
+    end
+
+    if fallback ~= nil then
+        local normalized = normalizeSlashCommand(fallback) or config.navigationFallbackCommand
+        if normalized ~= config.navigationFallbackCommand then
+            config.navigationFallbackCommand = normalized
+            updated = true
+        end
+    end
+
+    if stop ~= nil then
+        local normalized = normalizeSlashCommand(stop)
+        if not normalized and type(stop) == "string" then
+            normalized = "" -- allow clearing the stop command
+        end
+        if normalized ~= config.navigationStopCommand then
+            config.navigationStopCommand = normalized
+            updated = true
+        end
+    end
+
+    if updated then
+        config.save()
+    end
+
+    return config.navigationCommand, config.navigationFallbackCommand, config.navigationStopCommand
 end
 
 function config.getChaseConfigDescription()
@@ -1215,6 +1276,14 @@ function config.debugPrint()
         print("  Chase Pause Command: " .. tostring(config.chasePauseCommand))
         print("  Chase Resume Command: " .. tostring(config.chaseResumeCommand))
     end
+    print("Navigation Commands:")
+    print("  Primary Command: " .. tostring(config.navigationCommand))
+    print("  Fallback Command: " .. tostring(config.navigationFallbackCommand))
+    local stopLabel = config.navigationStopCommand
+    if stopLabel == nil or stopLabel == "" then
+        stopLabel = "(disabled)"
+    end
+    print("  Stop Command: " .. tostring(stopLabel))
     print("Hotbar Configuration:")
     print("  Position: " .. config.hotbar.position.x .. ", " .. config.hotbar.position.y)
     print("  Button Size: " .. config.hotbar.buttonSize)

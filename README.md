@@ -29,7 +29,8 @@ Once you've got the script loaded, you can /sl_getstarted for an in game help, O
 
 2) Once you've saved your Loot Order, embrace your inner Froglok, and hop on over to the Settings Tab.  Here we'll need to tweak a couple things for your custom set up! Important Settings:
       a) Chat Output Settings - The System will announce various actions/activities.  Choose your output channel, or Silent if you don't want to hear it!
-      b) Chase Commands - SmartLoot uses /nav to move around the world.  If you have any kind of auto chase set, you might want to set the commands here to pause/resume.  Otherwise if a corpse is further away than your leash, your toon will never get there!
+      b) Navigation Commands - Choose the movement command SmartLoot should use to reach corpses (/nav, /moveto, /warp, etc.).  You can also define a fallback if MQ2Nav isn't available and a stop command to send when looting finishes.
+      c) Chase Commands - If you have any kind of auto chase set, set the pause/resume commands here.  Otherwise if a corpse is further away than your leash, your toon will never get there!
 
    <img width="988" height="574" alt="image" src="https://github.com/user-attachments/assets/92c93dda-041b-47b6-babc-7a0d470ee569" />
 

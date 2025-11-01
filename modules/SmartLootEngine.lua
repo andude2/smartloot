@@ -58,50 +58,126 @@ local function isNavAvailable()
     return true
 end
 
--- Smart navigation function that falls back to /moveto if nav is unavailable
+local function commandRequiresNav(command)
+    if type(command) ~= "string" then return false end
+    return command:lower():match("^/nav") ~= nil
+end
+
+local function commandMatchesStop(command, stopCommand)
+    if type(command) ~= "string" or type(stopCommand) ~= "string" or stopCommand == "" then
+        return false
+    end
+    local commandBase = command:match("^(/%S+)")
+    local stopBase = stopCommand:match("^(/%S+)")
+    if not commandBase or not stopBase then
+        return false
+    end
+    return commandBase:lower() == stopBase:lower()
+end
+
+local function formatNavigationCommand(command, spawnID)
+    if not command or command == "" then return nil end
+
+    if command:find("%%") then
+        local ok, formattedOrErr = pcall(string.format, command, spawnID)
+        if ok then
+            return formattedOrErr
+        else
+            logging.debug(string.format("[Engine] Failed to format navigation command '%s': %s", tostring(command),
+                tostring(formattedOrErr)))
+            return nil
+        end
+    end
+
+    return string.format("%s id %d", command, spawnID)
+end
+
+-- Smart navigation function that uses configurable commands with optional fallback
 local function smartNavigate(spawnID, reason)
     reason = reason or "navigation"
 
-    if isNavAvailable() then
-        logging.debug(string.format("[Engine] Using /nav for %s (ID: %d)", reason, spawnID))
-        mq.cmdf("/nav id %d", spawnID)
-        -- Mark that SmartLoot initiated this navigation
-        SmartLootEngine.state.smartLootNavigationActive = true
-        return "nav"
-    else
-        logging.debug(string.format("[Engine] Nav unavailable, using /moveto for %s (ID: %d)", reason, spawnID))
-        mq.cmdf("/moveto id %d", spawnID)
-        -- Mark that SmartLoot initiated this navigation
-        SmartLootEngine.state.smartLootNavigationActive = true
-        return "moveto"
+    local commandsToTry = {
+        { label = "primary", command = config.navigationCommand },
+        { label = "fallback", command = config.navigationFallbackCommand },
+    }
+
+    for _, entry in ipairs(commandsToTry) do
+        local command = entry.command
+        if command and command ~= "" then
+            local requiresNav = commandRequiresNav(command)
+            if requiresNav and not isNavAvailable() then
+                logging.debug(string.format("[Engine] %s navigation command '%s' skipped - nav unavailable",
+                    entry.label, command))
+            else
+                local formatted = formatNavigationCommand(command, spawnID)
+                if formatted then
+                    logging.debug(string.format("[Engine] Using %s navigation command for %s (ID: %d): %s",
+                        entry.label, reason, spawnID, formatted))
+                    mq.cmd(formatted)
+
+                    SmartLootEngine.state.smartLootNavigationActive = true
+                    SmartLootEngine.state.activeNavigationCommand = command
+                    SmartLootEngine.state.activeNavigationRequiresNav = requiresNav
+                    if commandMatchesStop(command, config.navigationStopCommand or "") then
+                        SmartLootEngine.state.activeNavigationStopCommand = config.navigationStopCommand
+                    else
+                        SmartLootEngine.state.activeNavigationStopCommand = nil
+                    end
+                    SmartLootEngine.state.navMethod = command
+
+                    return command
+                else
+                    logging.debug(string.format("[Engine] Failed to build %s navigation command '%s'",
+                        entry.label, tostring(command)))
+                end
+            end
+        end
     end
+
+    logging.debug(string.format("[Engine] No navigation command executed for %s (ID: %d)", reason, spawnID))
+    SmartLootEngine.state.smartLootNavigationActive = false
+    SmartLootEngine.state.activeNavigationCommand = nil
+    SmartLootEngine.state.activeNavigationRequiresNav = false
+    SmartLootEngine.state.activeNavigationStopCommand = nil
+    return nil
 end
 
 -- Stop navigation/movement - only if SmartLoot initiated it
 local function stopMovement()
-    -- Only stop navigation if SmartLoot was responsible for initiating it
-    if SmartLootEngine.state.smartLootNavigationActive and isNavAvailable() and mq.TLO.Navigation.Active() then
-        mq.cmd("/nav stop")
-        logging.debug("[Engine] Stopped SmartLoot-initiated navigation due to combat")
-    elseif SmartLootEngine.state.smartLootNavigationActive then
-        logging.debug("[Engine] SmartLoot navigation was active but no nav plugin or navigation not active")
-    else
-        logging.debug("[Engine] Skipping nav stop - navigation not initiated by SmartLoot")
+    if not SmartLootEngine.state.smartLootNavigationActive then
+        logging.debug("[Engine] Skipping navigation stop - movement not initiated by SmartLoot")
+        SmartLootEngine.state.activeNavigationCommand = nil
+        SmartLootEngine.state.activeNavigationRequiresNav = false
+        SmartLootEngine.state.activeNavigationStopCommand = nil
+        return
     end
 
-    -- Clear the flag regardless
+    local stopCommand = SmartLootEngine.state.activeNavigationStopCommand
+    if stopCommand and stopCommand ~= "" then
+        mq.cmd(stopCommand)
+        logging.debug(string.format("[Engine] Sent navigation stop command: %s", stopCommand))
+    elseif SmartLootEngine.state.activeNavigationRequiresNav and isNavAvailable() and mq.TLO.Navigation.Active() then
+        mq.cmd("/nav stop")
+        logging.debug("[Engine] Sent default /nav stop command")
+    else
+        logging.debug("[Engine] No navigation stop command executed")
+    end
+
     SmartLootEngine.state.smartLootNavigationActive = false
-    -- Note: /moveto doesn't have a stop command, it completes automatically
+    SmartLootEngine.state.activeNavigationCommand = nil
+    SmartLootEngine.state.activeNavigationRequiresNav = false
+    SmartLootEngine.state.activeNavigationStopCommand = nil
 end
 
--- Check if we're currently moving (nav or moveto)
+-- Check if we're currently moving based on active navigation mode
 local function isMoving()
-    if isNavAvailable() then
-        return mq.TLO.Navigation.Active()
-    else
-        -- For /moveto, we check if we're moving towards our target
-        return mq.TLO.Me.Moving()
+    if SmartLootEngine.state.activeNavigationRequiresNav and isNavAvailable() then
+        if mq.TLO.Navigation.Active() then
+            return true
+        end
     end
+
+    return mq.TLO.Me.Moving()
 end
 
 -- ============================================================================
@@ -179,6 +255,11 @@ SmartLootEngine.state = {
     navTargetZ = 0,
     openLootAttempts = 0,
     navWarningAnnounced = false,
+    navMethod = nil,
+    smartLootNavigationActive = false,
+    activeNavigationCommand = nil,
+    activeNavigationStopCommand = nil,
+    activeNavigationRequiresNav = false,
 
     -- Current item processing
     currentItem = {
