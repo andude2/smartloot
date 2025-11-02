@@ -232,6 +232,9 @@ SmartLootEngine.state = {
     -- Core state machine
     currentState = SmartLootEngine.LootState.Idle,
     mode = SmartLootEngine.LootMode.Background,
+    paused = false,
+    pausePreviousMode = SmartLootEngine.LootMode.Background,
+    pausePreviousState = SmartLootEngine.LootState.Idle,
     nextActionTime = 0,
 
     -- Location tracking for once mode
@@ -3041,6 +3044,12 @@ function SmartLootEngine.processTick()
         return
     end
 
+    -- When paused (disabled mode), take no action beyond delaying the next tick
+    if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Disabled then
+        scheduleNextTick(SmartLootEngine.config.tickIntervalMs)
+        return
+    end
+
     -- Automated corpse cache cleanup (every 5 minutes)
     if tickStart - SmartLootEngine.state.lastCorpseCacheCleanup > 300000 then -- 5 minutes in milliseconds
         SmartLootEngine.cleanupCorpseCache()
@@ -3193,13 +3202,27 @@ function SmartLootEngine.setLootMode(newMode, reason)
     elseif newMode == SmartLootEngine.LootMode.Background then
         -- Background
     elseif newMode == SmartLootEngine.LootMode.Disabled then
-        SmartLootEngine.state.emergencyStop = true
-        SmartLootEngine.state.emergencyReason = "Mode disabled"
-        setState(SmartLootEngine.LootState.EmergencyStop, "Disabled")
+        SmartLootEngine.state.paused = true
+        if oldMode ~= SmartLootEngine.LootMode.Disabled then
+            SmartLootEngine.state.pausePreviousMode = oldMode
+            SmartLootEngine.state.pausePreviousState = SmartLootEngine.state.currentState
+        end
+        SmartLootEngine.state.emergencyStop = false
+        SmartLootEngine.state.emergencyReason = ""
+        SmartLootEngine.state.emergencyStopTime = 0
+        scheduleNextTick(SmartLootEngine.config.tickIntervalMs)
     end
 
     -- Clear emergency stop when switching to active mode
     if newMode ~= SmartLootEngine.LootMode.Disabled then
+        if oldMode == SmartLootEngine.LootMode.Disabled then
+            SmartLootEngine.state.paused = false
+            SmartLootEngine.state.pausePreviousMode = newMode
+            SmartLootEngine.state.pausePreviousState = SmartLootEngine.LootState.Idle
+            setState(SmartLootEngine.LootState.Idle, "Resuming from pause")
+            scheduleNextTick(100)
+        end
+        SmartLootEngine.state.paused = false
         SmartLootEngine.state.emergencyStop = false
         SmartLootEngine.state.emergencyReason = ""
     end
@@ -3291,6 +3314,7 @@ function SmartLootEngine.getState()
         currentState = SmartLootEngine.state.currentState,
         currentStateName = getStateName(SmartLootEngine.state.currentState),
         mode = SmartLootEngine.state.mode,
+        paused = SmartLootEngine.state.paused,
         currentCorpseID = SmartLootEngine.state.currentCorpseID,
         currentItemIndex = SmartLootEngine.state.currentItemIndex,
         currentItemName = SmartLootEngine.state.currentItem.name,

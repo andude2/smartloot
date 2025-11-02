@@ -447,7 +447,7 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
             target = sender,
             mode = engineState.mode,
             state = engineState.currentStateName,
-            paused = engineState.mode == SmartLootEngine.LootMode.Disabled,
+            paused = engineState.paused,
             pendingDecision = engineState.needsPendingDecision,
             corpseID = engineState.currentCorpseID
         }
