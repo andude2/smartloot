@@ -21,7 +21,7 @@ local bindings         = require("modules.bindings")
 -- INITIALIZATION
 -- ============================================================================
 
-local dbInitialized = false
+local dbInitialized    = false
 local function initializeDatabase()
     if not dbInitialized then
         local success, err = database.healthCheck()
@@ -136,7 +136,8 @@ end
 if runMode ~= "main" and runMode ~= "once" and runMode ~= "background" and
     runMode ~= "rgmain" and runMode ~= "rgonce" then
     util.printSmartLoot(
-    'Invalid run mode: ' .. runMode .. '. Valid options are "main", "once", "background", "rgmain", or "rgonce"', "error")
+        'Invalid run mode: ' .. runMode .. '. Valid options are "main", "once", "background", "rgmain", or "rgonce"',
+        "error")
     runMode = "main"
 end
 
@@ -176,7 +177,7 @@ local lootUI = {
     showHotbar = config.uiVisibility.showHotbar,
     showUI = config.uiVisibility.showUI,
     showDebugWindow = config.uiVisibility.showDebugWindow, -- Add debug window flag
-    windowLocked = false,    -- Lock window feature
+    windowLocked = false,                                  -- Lock window feature
     selectedItemForPopup = nil,
 
     peerItemRulesPopup = {
@@ -266,7 +267,8 @@ local settings = {
 settings.lootRadius = config.lootRadius or settings.lootRadius
 settings.lootRange = config.lootRange or settings.lootRange
 settings.combatWaitDelay = config.engineTiming and config.engineTiming.combatWaitDelayMs or settings.combatWaitDelay
-settings.pendingDecisionTimeout = config.engineTiming and config.engineTiming.pendingDecisionTimeoutMs or settings.pendingDecisionTimeout
+settings.pendingDecisionTimeout = config.engineTiming and config.engineTiming.pendingDecisionTimeoutMs or
+settings.pendingDecisionTimeout
 
 local historyUI = {
     show = true,
@@ -456,10 +458,10 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
     elseif cmd == "pending_decision_request" then
         -- Another character is requesting we make a decision for their item
         util.printSmartLoot("Pending decision request from " .. sender .. " for " .. (data.itemName or "unknown"), "info")
-        
+
         -- Store in global remote pending decisions queue
         _G.SMARTLOOT_REMOTE_DECISIONS = _G.SMARTLOOT_REMOTE_DECISIONS or {}
-        
+
         table.insert(_G.SMARTLOOT_REMOTE_DECISIONS, {
             requester = sender,
             itemName = data.itemName,
@@ -468,18 +470,18 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
             quantity = data.quantity or 1,
             timestamp = mq.gettime()
         })
-        
-        logging.log(string.format("[SmartLoot] Added remote pending decision from %s for item: %s (queue size: %d)", 
+
+        logging.log(string.format("[SmartLoot] Added remote pending decision from %s for item: %s (queue size: %d)",
             sender, data.itemName, #_G.SMARTLOOT_REMOTE_DECISIONS))
     elseif cmd == "pending_decision_response" then
         -- Foreground character responded with a decision
         util.printSmartLoot("Pending decision response from " .. sender, "info")
-        
+
         local itemName = data.itemName
         local itemID = data.itemID or 0
         local iconID = data.iconID or 0
         local rule = data.rule
-        
+
         if rule and itemName then
             -- Apply the rule and resolve the pending decision
             SmartLootEngine.resolvePendingDecision(itemName, itemID, rule, iconID)
@@ -501,7 +503,7 @@ local smartlootCommandMailbox = actors.register("smartloot_command", function(me
 
     local myName = mq.TLO.Me.Name()
     local target = content.target
-    
+
     -- If there's a target specified and it's not me, ignore the message
     -- If target is nil, it's a broadcast to everyone
     if target and myName and target ~= myName then
@@ -578,10 +580,10 @@ end
 _G.SMARTLOOT_PRESENCE = {
     mailbox_name = "smartloot_loot_status",
     actor = nil,
-    peers = {},                 -- [peerName] = { isLooting=bool, lastSeen=os.time(), mode="once|rgonce" }
+    peers = {},            -- [peerName] = { isLooting=bool, lastSeen=os.time(), mode="once|rgonce" }
     lastHeartbeatSent = 0,
-    heartbeatInterval = 5,      -- seconds
-    staleAfter = 12,            -- seconds (2x heartbeat)
+    heartbeatInterval = 5, -- seconds
+    staleAfter = 12,       -- seconds (2x heartbeat)
     lastPrune = 0,
 }
 
@@ -740,12 +742,13 @@ local smartLootType = mq.DataType.new('SmartLoot', {
 
         PendingDecision = function(_, self)
             local state = SmartLootEngine.getState()
-            return 'string', state.needsPendingDecision and "TRUE" or "FALSE"
+            return 'bool', state.needsPendingDecision
         end,
 
         CorpseCount = function(_, self)
             local center = SmartLootEngine.getEffectiveCenter()
-            local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", settings.lootRadius, center.x, center.y, center.z)
+            local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", settings.lootRadius, center.x, center
+            .y, center.z)
             local corpseCount = mq.TLO.SpawnCount(query)() or 0
             return 'string', tostring(corpseCount)
         end,
@@ -921,7 +924,8 @@ local smartLootType = mq.DataType.new('SmartLoot', {
 
             -- Check for unprocessed NPC corpses
             local center = SmartLootEngine.getEffectiveCenter()
-            local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", settings.lootRadius, center.x, center.y, center.z)
+            local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", settings.lootRadius, center.x, center
+            .y, center.z)
             local corpseCount = mq.TLO.SpawnCount(query)()
             if corpseCount and corpseCount > 0 then
                 for i = 1, corpseCount do
@@ -1162,12 +1166,18 @@ mq.imgui.init("SmartLoot", function()
     -- Apply SmartLoot-scoped rounded theme (local to our draw only)
     local ROUND = 8.0
     local _sl_pushed = 0
-    ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, ROUND) _sl_pushed = _sl_pushed + 1
-    ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, ROUND)  _sl_pushed = _sl_pushed + 1
-    ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, ROUND)  _sl_pushed = _sl_pushed + 1
-    ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, ROUND)  _sl_pushed = _sl_pushed + 1
-    ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, ROUND) _sl_pushed = _sl_pushed + 1
-    ImGui.PushStyleVar(ImGuiStyleVar.GrabRounding, ROUND)   _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, ROUND)
+    _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, ROUND)
+    _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, ROUND)
+    _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, ROUND)
+    _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, ROUND)
+    _sl_pushed = _sl_pushed + 1
+    ImGui.PushStyleVar(ImGuiStyleVar.GrabRounding, ROUND)
+    _sl_pushed = _sl_pushed + 1
     if ImGuiStyleVar.TabRounding ~= nil then
         ImGui.PushStyleVar(ImGuiStyleVar.TabRounding, ROUND)
         _sl_pushed = _sl_pushed + 1
@@ -1549,9 +1559,9 @@ local isShuttingDown = false
 local function cleanupSmartLoot()
     if isShuttingDown then return end
     isShuttingDown = true
-    
+
     logging.log("[SmartLoot] Shutdown initiated - cleaning up resources...")
-    
+
     -- Clean up the engine completely
     if SmartLootEngine and SmartLootEngine.cleanup then
         SmartLootEngine.cleanup()
@@ -1560,13 +1570,13 @@ local function cleanupSmartLoot()
         SmartLootEngine.emergencyStop("Shutdown cleanup")
         logging.log("[SmartLoot] Engine emergency stopped")
     end
-    
+
     -- Clean up command bindings
     if bindings and bindings.cleanup then
         bindings.cleanup()
         logging.log("[SmartLoot] Command bindings cleaned up")
     end
-    
+
     -- Close database connections in lootHistory
     if lootHistory and lootHistory.close then
         pcall(function()
@@ -1574,7 +1584,7 @@ local function cleanupSmartLoot()
             logging.log("[SmartLoot] Loot history database connections closed")
         end)
     end
-    
+
     -- Close database connections in main database module
     if database and database.cleanup then
         pcall(function()
@@ -1582,7 +1592,7 @@ local function cleanupSmartLoot()
             logging.log("[SmartLoot] Main database connections closed")
         end)
     end
-    
+
     -- Attempt to remove/destroy ImGui window first to prevent callbacks during teardown
     pcall(function()
         if mq and mq.imgui and (mq.imgui.destroy or mq.imgui.delete or mq.imgui.remove) then
@@ -1596,22 +1606,22 @@ local function cleanupSmartLoot()
     if uiLiveStats and uiLiveStats.cleanup then
         uiLiveStats.cleanup()
     end
-    
+
     -- Clean up mailbox actors
     if smartlootMailbox then
         smartlootMailbox = nil
         logging.log("[SmartLoot] Mailbox actors cleaned up")
     end
-    
+
     if smartlootCommandMailbox then
         smartlootCommandMailbox = nil
     end
-    
+
     if LOOT_STATUS and LOOT_STATUS.actor then
         LOOT_STATUS.actor = nil
         LOOT_STATUS.peers = {}
     end
-    
+
     -- Clean up TLO (best-effort, protected)
     pcall(function()
         if mq.RemoveTopLevelObject then
@@ -1619,7 +1629,7 @@ local function cleanupSmartLoot()
             logging.log("[SmartLoot] TLO removed")
         end
     end)
-    
+
     -- Clean up mode handler
     if modeHandler and modeHandler.cleanup then
         pcall(function()
@@ -1627,7 +1637,7 @@ local function cleanupSmartLoot()
             logging.log("[SmartLoot] Mode handler cleaned up")
         end)
     end
-    
+
     logging.log("[SmartLoot] Cleanup completed successfully")
 end
 
@@ -1651,20 +1661,20 @@ local shutdownCheckCount = 0
 local lastShutdownCheck = 0
 local function checkForShutdownSignals()
     local now = mq.gettime()
-    
+
     -- Only check every 5 seconds to avoid false positives
     if now - lastShutdownCheck < 5000 then
         return false
     end
     lastShutdownCheck = now
-    
+
     -- Very conservative shutdown detection - only trigger if multiple checks fail
     local mqAvailable = pcall(function() return mq.TLO.MacroQuest and mq.TLO.MacroQuest() end)
     local meAvailable = pcall(function() return mq.TLO.Me and mq.TLO.Me() end)
-    
+
     if not mqAvailable or not meAvailable then
         shutdownCheckCount = shutdownCheckCount + 1
-        
+
         -- Only consider shutdown if we've had multiple consecutive failures
         if shutdownCheckCount >= 3 then
             logging.log("[SmartLoot] Multiple consecutive TLO failures - shutdown detected")
@@ -1674,7 +1684,7 @@ local function checkForShutdownSignals()
         -- Reset counter if checks pass
         shutdownCheckCount = 0
     end
-    
+
     return false
 end
 
@@ -1687,7 +1697,7 @@ local function processMainTick()
     if isShuttingDown then
         return false
     end
-    
+
     -- CORE ENGINE PROCESSING - This drives everything
     SmartLootEngine.processTick()
 
@@ -1706,7 +1716,7 @@ local function processMainTick()
 
     -- Zone change detection
     checkForZoneChange()
-    
+
     return true
 end
 
@@ -1735,7 +1745,7 @@ while true do
     end
 
     mq.delay(10) -- Small delay to prevent 100% CPU usage
-    
+
     -- Check if we should exit (MQ2 shutting down, etc.)
     if isShuttingDown or checkForShutdownSignals() then
         if not isShuttingDown then
