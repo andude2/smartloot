@@ -53,6 +53,12 @@ function util.getConnectedPeersViaActor()
         end
     end
     
+    -- Include the local peer (self) in the list
+    local myName = mq.TLO.Me.Name()
+    if myName and myName ~= "" then
+        table.insert(peers, myName)
+    end
+    
     -- Sort alphabetically
     table.sort(peers, function(a, b) return a < b end)
     

@@ -73,8 +73,19 @@ function debugWindow.draw(SmartLootEngine, lootUI)
     
     ImGui.SetNextWindowSize(600, 700, ImGuiCond.FirstUseEver)
     
-    local open, shouldClose = ImGui.Begin("SmartLoot Debug Window", true, debugWindow.windowFlags)
-    if open then
+    local shouldDraw, shouldClose = ImGui.Begin("SmartLoot Debug Window", true, debugWindow.windowFlags)
+    
+    -- Handle close button BEFORE drawing content
+    if not shouldClose then
+        lootUI.showDebugWindow = false
+        local config = require("modules.config")
+        config.uiVisibility.showDebugWindow = false
+        if config.save then config.save() end
+        ImGui.End()
+        return
+    end
+    
+    if shouldDraw then
         local state = SmartLootEngine.getState()
         local config = SmartLootEngine.config
         local engineState = SmartLootEngine.state
@@ -95,8 +106,112 @@ function debugWindow.draw(SmartLootEngine, lootUI)
             debugWindow.lastUpdate = now
         end
         
+        -- RGMercs Communication Heartbeat
+        if ImGui.CollapsingHeader("RGMercs Communication", ImGuiTreeNodeFlags.DefaultOpen) then
+            ImGui.Indent()
+            
+            local rgmercs = engineState.rgmercs or {}
+            local lastSent = rgmercs.lastMessageSent or 0
+            local timeSinceLastSent = lastSent > 0 and (now - lastSent) / 1000 or -1
+            
+            -- Status indicator
+            ImGui.Text("Status: ")
+            ImGui.SameLine()
+            
+            if rgmercs.messagesSent > 0 then
+                if timeSinceLastSent >= 0 and timeSinceLastSent < 30 then
+                    -- Active (green)
+                    ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
+                    ImGui.Text("✓ ACTIVE")
+                    ImGui.PopStyleColor()
+                elseif timeSinceLastSent >= 30 and timeSinceLastSent < 60 then
+                    -- Warning (yellow)
+                    ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 0, 1)
+                    ImGui.Text("⚠ IDLE")
+                    ImGui.PopStyleColor()
+                else
+                    -- Stale (gray)
+                    ImGui.PushStyleColor(ImGuiCol.Text, 0.6, 0.6, 0.6, 1)
+                    ImGui.Text("○ STALE")
+                    ImGui.PopStyleColor()
+                end
+            else
+                -- Never sent
+                ImGui.PushStyleColor(ImGuiCol.Text, 0.5, 0.5, 0.5, 1)
+                ImGui.Text("○ NO MESSAGES SENT")
+                ImGui.PopStyleColor()
+            end
+            
+            ImGui.Separator()
+            
+            -- Messages sent TO RGMercs
+            ImGui.Text("Messages Sent to RGMercs: " .. (rgmercs.messagesSent or 0))
+            
+            if lastSent > 0 then
+                ImGui.Text("  Last Sent Type: " .. (rgmercs.lastMessageType or "Unknown"))
+                ImGui.Text("  Last Sent: " .. string.format("%.1fs ago", timeSinceLastSent))
+            else
+                ImGui.Text("  Last Sent: Never")
+            end
+            
+            ImGui.Separator()
+            
+            -- Acknowledgments received FROM RGMercs
+            local lastReceived = rgmercs.lastMessageReceived or 0
+            local timeSinceLastReceived = lastReceived > 0 and (now - lastReceived) / 1000 or -1
+            
+            ImGui.Text("Acknowledgments from RGMercs: " .. (rgmercs.messagesReceived or 0))
+            
+            if lastReceived > 0 then
+                ImGui.Text("  Last Ack Type: " .. (rgmercs.lastAckSubject or "Unknown"))
+                ImGui.Text("  Last Received: " .. string.format("%.1fs ago", timeSinceLastReceived))
+                
+                -- Show communication health
+                ImGui.Text("  Round-trip: ")
+                ImGui.SameLine()
+                if timeSinceLastReceived < 5 then
+                    ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
+                    ImGui.Text("✓ HEALTHY")
+                    ImGui.PopStyleColor()
+                elseif timeSinceLastReceived < 30 then
+                    ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 0, 1)
+                    ImGui.Text("⚠ DELAYED")
+                    ImGui.PopStyleColor()
+                else
+                    ImGui.PushStyleColor(ImGuiCol.Text, 1, 0.3, 0.3, 1)
+                    ImGui.Text("✗ NO RESPONSE")
+                    ImGui.PopStyleColor()
+                end
+            else
+                ImGui.Text("  Last Received: Never")
+            end
+            
+            -- Error display
+            if rgmercs.lastError and rgmercs.lastError ~= "" then
+                local errorTime = rgmercs.lastErrorTime or 0
+                local timeSinceError = errorTime > 0 and (now - errorTime) / 1000 or -1
+                
+                ImGui.Separator()
+                ImGui.PushStyleColor(ImGuiCol.Text, 1, 0.3, 0.3, 1)
+                ImGui.Text("Last Error:")
+                ImGui.PopStyleColor()
+                ImGui.TextWrapped(rgmercs.lastError)
+                if timeSinceError >= 0 then
+                    ImGui.Text(string.format("(%.1fs ago)", timeSinceError))
+                end
+            end
+            
+            -- Info text
+            ImGui.Separator()
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1)
+            ImGui.TextWrapped("SmartLoot sends 'processing' when starting to loot and 'done_looting' when finished. This helps RGMercs coordinate looting behavior.")
+            ImGui.PopStyleColor()
+            
+            ImGui.Unindent()
+        end
+        
         -- Core Engine Status
-        if ImGui.CollapsingHeader("Core Engine Status", ImGuiTreeNodeFlags.DefaultOpen) then
+        if ImGui.CollapsingHeader("Core Engine Status") then
             ImGui.Indent()
             
             ImGui.Text("Current State: " .. state.currentStateName)
@@ -336,12 +451,6 @@ function debugWindow.draw(SmartLootEngine, lootUI)
         end        
     end
     ImGui.End()
-    
-    if not open then
-        lootUI.showDebugWindow = false
-        config.uiVisibility.showDebugWindow = false
-        if config.save then config.save() end
-    end
 end
 
 function debugWindow.toggle(lootUI)

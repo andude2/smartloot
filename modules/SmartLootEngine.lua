@@ -342,7 +342,19 @@ SmartLootEngine.state = {
     tickCount = 0,
 
     -- Corpse cache cleanup tracking
-    lastCorpseCacheCleanup = 0
+    lastCorpseCacheCleanup = 0,
+    
+    -- RGMercs heartbeat tracking
+    rgmercs = {
+        lastMessageSent = 0,       -- timestamp of last message TO rgmercs
+        lastMessageType = "",       -- "processing" or "done_looting"
+        messagesSent = 0,           -- total messages sent
+        lastMessageReceived = 0,   -- timestamp of last ACK FROM rgmercs
+        lastAckSubject = "",        -- subject of last ack received
+        messagesReceived = 0,       -- total acks received
+        lastError = "",             -- last error message
+        lastErrorTime = 0,          -- when last error occurred
+    }
 }
 
 -- ============================================================================
@@ -896,7 +908,8 @@ function SmartLootEngine.notifyRGMercsProcessing()
     -- Send message to RGMercs that we're starting to process loot
     local success, err = pcall(function()
         local actors = require("actors")
-        actors.send({ to = 'loot_module' }, {
+        -- Send to local mailbox on same character (with script target)
+        actors.send({ mailbox = 'loot_module', script = 'rgmercs' }, {
             Subject = 'processing',
             Who = mq.TLO.Me.Name(),
             CombatLooting = SmartLootEngine.config.enableCombatDetection
@@ -904,9 +917,14 @@ function SmartLootEngine.notifyRGMercsProcessing()
     end)
 
     if not success then
-        logging.debug("[Engine] Failed to send processing message to RGMercs: " .. tostring(err))
+        logging.log("[Engine] Failed to send processing message to RGMercs: " .. tostring(err))
+        SmartLootEngine.state.rgmercs.lastError = tostring(err)
+        SmartLootEngine.state.rgmercs.lastErrorTime = mq.gettime()
     else
-        logging.debug("[Engine] Notified RGMercs that loot processing started")
+        logging.log("[Engine] >>> Sent 'processing' to RGMercs loot_module mailbox")
+        SmartLootEngine.state.rgmercs.lastMessageSent = mq.gettime()
+        SmartLootEngine.state.rgmercs.lastMessageType = "processing"
+        SmartLootEngine.state.rgmercs.messagesSent = SmartLootEngine.state.rgmercs.messagesSent + 1
     end
 end
 
@@ -924,7 +942,8 @@ function SmartLootEngine.notifyRGMercsComplete()
     -- Send message to RGMercs that we're done processing loot
     local success, err = pcall(function()
         local actors = require("actors")
-        actors.send({ to = 'loot_module' }, {
+        -- Send to local mailbox on same character (with script target)
+        actors.send({ mailbox = 'loot_module', script = 'rgmercs' }, {
             Subject = 'done_looting',
             Who = mq.TLO.Me.Name(),
             CombatLooting = SmartLootEngine.config.enableCombatDetection
@@ -932,9 +951,14 @@ function SmartLootEngine.notifyRGMercsComplete()
     end)
 
     if not success then
-        logging.debug("[Engine] Failed to send completion message to RGMercs: " .. tostring(err))
+        logging.log("[Engine] Failed to send completion message to RGMercs: " .. tostring(err))
+        SmartLootEngine.state.rgmercs.lastError = tostring(err)
+        SmartLootEngine.state.rgmercs.lastErrorTime = mq.gettime()
     else
-        logging.debug("[Engine] Notified RGMercs that loot processing completed")
+        logging.log("[Engine] >>> Sent 'done_looting' to RGMercs loot_module mailbox")
+        SmartLootEngine.state.rgmercs.lastMessageSent = mq.gettime()
+        SmartLootEngine.state.rgmercs.lastMessageType = "done_looting"
+        SmartLootEngine.state.rgmercs.messagesSent = SmartLootEngine.state.rgmercs.messagesSent + 1
     end
 end
 

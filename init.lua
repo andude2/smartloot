@@ -573,6 +573,66 @@ else
 end
 
 -- ============================================================================
+-- STATE BROADCASTING MAILBOX (For RGMercs and other consumers)
+-- ============================================================================
+
+-- State broadcast system for external consumers (e.g., RGMercs)
+local STATE_BROADCAST = {
+    mailbox_name = "smartloot_state",
+    actor = nil,
+    lastStateBroadcast = 0,
+    broadcastInterval = 2, -- seconds - reduced frequency to avoid spam
+}
+
+-- State broadcast handler (consumers can listen to this mailbox)
+local function handleStateRequestMessage(message)
+    local msg = message()
+    if type(msg) ~= "table" then return end
+    
+    local cmd = msg.cmd or ""
+    local sender = msg.sender or msg.character or "Unknown"
+    
+    if cmd == "state_request" then
+        -- Send current state directly back to requester
+        logging.debug(string.format("[SmartLoot] State request from %s, sending response", sender))
+        
+        -- Send to requester's specific mailbox if they provided one
+        local replyTo = msg.replyTo or msg.mailbox
+        if replyTo then
+            -- Send to specific mailbox
+            sendStateToMailbox(replyTo, sender)
+        else
+            -- Broadcast state update
+            broadcastEngineState(nil)
+        end
+    elseif cmd == "subscribe" then
+        -- Future: track subscribers for targeted updates
+        logging.debug(string.format("[SmartLoot] %s subscribed to state updates", sender))
+    elseif cmd == "unsubscribe" then
+        -- Future: remove from subscriber list
+        logging.debug(string.format("[SmartLoot] %s unsubscribed from state updates", sender))
+    end
+end
+
+-- Forward declarations
+local broadcastEngineState
+local sendStateToMailbox
+
+-- Periodic state broadcast ticker
+local function publishStateBroadcastTick()
+    local now = os.time()
+    
+    -- Only broadcast at configured interval
+    if (now - (STATE_BROADCAST.lastStateBroadcast or 0) < STATE_BROADCAST.broadcastInterval) then
+        return
+    end
+    
+    -- Broadcast current state
+    broadcastEngineState(nil) -- nil = broadcast to all
+    STATE_BROADCAST.lastStateBroadcast = now
+end
+
+-- ============================================================================
 -- LOOT STATUS PRESENCE (Mailbox-based actor presence system)
 -- ============================================================================
 
@@ -700,6 +760,143 @@ local function pruneStalePeerLootStatus()
             LOOT_STATUS.peers[name] = nil
         end
     end
+end
+
+-- Broadcast current engine state (defined after LOOT_STATUS)
+broadcastEngineState = function(targetPeer)
+    local state = SmartLootEngine.getState()
+    local center = SmartLootEngine.getEffectiveCenter()
+    local query = string.format("npccorpse radius %d loc %.1f %.1f %.1f", 
+        settings.lootRadius, center.x, center.y, center.z)
+    local corpseCount = mq.TLO.SpawnCount(query)() or 0
+    
+    -- Check for new unprocessed corpses
+    local hasNewCorpses = false
+    if corpseCount > 0 then
+        for i = 1, corpseCount do
+            local corpse = mq.TLO.NearestSpawn(i, query)
+            if corpse and corpse.ID() then
+                local corpseID = corpse.ID()
+                if not SmartLootEngine.isCorpseProcessed(corpseID) then
+                    hasNewCorpses = true
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Check if any peer is actively looting
+    local anyPeerLooting = false
+    local me = mq.TLO.Me.Name()
+    local now = os.time()
+    if LOOT_STATUS and LOOT_STATUS.peers then
+        for name, entry in pairs(LOOT_STATUS.peers) do
+            if not me or _safeLower(name) ~= _safeLower(me) then
+                if entry.isLooting and entry.lastSeen and 
+                   (now - entry.lastSeen) <= (LOOT_STATUS.staleAfter or 12) then
+                    anyPeerLooting = true
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Compute SafeToLoot
+    local safeToLoot = true
+    if mq.TLO.Me() then
+        if mq.TLO.Me.Combat() or mq.TLO.Me.Casting() or mq.TLO.Me.Moving() then
+            safeToLoot = false
+        end
+    else
+        safeToLoot = false
+    end
+    
+    local stateData = {
+        cmd = "state_update",
+        sender = mq.TLO.Me.Name(),
+        timestamp = os.time(),
+        
+        -- Core engine state matching TLO methods
+        hasNewCorpses = hasNewCorpses,
+        anyPeerLooting = anyPeerLooting,
+        safeToLoot = safeToLoot,
+        
+        -- Additional useful state information
+        mode = state.mode,
+        engineState = state.currentStateName,
+        isProcessing = state.currentStateName == "ProcessingItems" or 
+                      state.currentStateName == "FindingCorpse" or
+                      state.currentStateName == "NavigatingToCorpse" or
+                      state.currentStateName == "OpeningLootWindow" or
+                      state.currentStateName == "CleaningUpCorpse",
+        isIdle = state.currentStateName == "Idle",
+        corpseCount = corpseCount,
+        needsPendingDecision = state.needsPendingDecision or false,
+        inCombat = mq.TLO.Me.Combat() or false,
+    }
+    
+    -- Send to specific peer or broadcast to all
+    local destination = targetPeer and { to = targetPeer } or { mailbox = STATE_BROADCAST.mailbox_name }
+    
+    if STATE_BROADCAST.actor then
+        STATE_BROADCAST.actor:send(destination, stateData)
+    else
+        actors.send(destination, stateData)
+    end
+end
+
+-- Register state broadcast mailbox
+local ok_state_mailbox
+ok_state_mailbox, STATE_BROADCAST.actor = pcall(function()
+    return actors.register(STATE_BROADCAST.mailbox_name, handleStateRequestMessage)
+end)
+
+if not ok_state_mailbox or not STATE_BROADCAST.actor then
+    logging.log(string.format("[SmartLoot] Failed to register mailbox %s (state broadcaster)", 
+        STATE_BROADCAST.mailbox_name))
+else
+    logging.log(string.format("[SmartLoot] State broadcast mailbox registered: %s", 
+        STATE_BROADCAST.mailbox_name))
+end
+
+-- RGMercs acknowledgment mailbox
+local function handleRGMercsAck(message)
+    local msg = message()
+    logging.log("[SmartLoot] >>> RGMercs ack handler CALLED, message type: " .. type(msg))
+    
+    if type(msg) ~= "table" then 
+        logging.log("[SmartLoot] >>> RGMercs ack message is not a table: " .. tostring(msg))
+        return 
+    end
+    
+    local cmd = msg.cmd or ""
+    local subject = msg.subject or ""
+    local who = msg.who or "Unknown"
+    
+    logging.log(string.format("[SmartLoot] >>> RGMercs ack received - cmd=%s, subject=%s, who=%s", cmd, subject, who))
+    
+    if cmd == "ack" then
+        SmartLootEngine.state.rgmercs.lastMessageReceived = mq.gettime()
+        SmartLootEngine.state.rgmercs.lastAckSubject = subject
+        SmartLootEngine.state.rgmercs.messagesReceived = (SmartLootEngine.state.rgmercs.messagesReceived or 0) + 1
+        logging.log(string.format("[SmartLoot] ✓ Received acknowledgment from RGMercs (%s): %s (total: %d)", 
+            who, subject, SmartLootEngine.state.rgmercs.messagesReceived))
+    else
+        logging.log(string.format("[SmartLoot] >>> Unknown ack command: %s", cmd))
+    end
+end
+
+local ok_ack_mailbox, rgmercs_ack_actor = pcall(function()
+    return actors.register("smartloot_rgmercs_ack", handleRGMercsAck)
+end)
+
+if not ok_ack_mailbox then
+    logging.log(string.format("[SmartLoot] Failed to register RGMercs ack mailbox: %s", tostring(rgmercs_ack_actor)))
+elseif not rgmercs_ack_actor then
+    logging.log("[SmartLoot] RGMercs ack mailbox registration returned nil")
+else
+    logging.log("[SmartLoot] ✓ RGMercs acknowledgment mailbox registered: smartloot_rgmercs_ack")
+    logging.log("[SmartLoot]   RGMercs should send acks to this mailbox when it receives messages")
 end
 
 -- ============================================================================
@@ -1621,6 +1818,10 @@ local function cleanupSmartLoot()
         LOOT_STATUS.actor = nil
         LOOT_STATUS.peers = {}
     end
+    
+    if STATE_BROADCAST and STATE_BROADCAST.actor then
+        STATE_BROADCAST.actor = nil
+    end
 
     -- Clean up TLO (best-effort, protected)
     pcall(function()
@@ -1710,6 +1911,9 @@ local function processMainTick()
     -- Publish our looting presence and maintain peer table
     publishLootStatusTick()
     pruneStalePeerLootStatus()
+    
+    -- Publish engine state for external consumers (RGMercs, etc.)
+    publishStateBroadcastTick()
 
     -- PEER MONITORING: Check for peer connection changes and auto-adjust mode
     modeHandler.checkPeerChanges()
