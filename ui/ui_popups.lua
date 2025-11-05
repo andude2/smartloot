@@ -296,23 +296,112 @@ end
 -- Loot Decision Popup - REDESIGNED with better layout and consistent button sizing
 function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
     if lootUI.currentItem then
-        ImGui.SetNextWindowSize(520, 350)
+        ImGui.SetNextWindowSize(520, 380)
         local decisionOpen = ImGui.Begin("SmartLoot - Choose Action", true, ImGuiWindowFlags.NoResize)
         if decisionOpen then
-            -- Header with item info in a styled box
-            ImGui.PushStyleColor(ImGuiCol.ChildBg, 0.1, 0.1, 0.2, 0.8)
-            ImGui.BeginChild("ItemHeader", 0, 70, true)
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 8)
-            ImGui.Text("Item requiring decision:")
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2)
-            ImGui.TextColored(1, 1, 0, 1, lootUI.currentItem.name)
-            ImGui.EndChild()
-            ImGui.PopStyleColor()
-            
             -- Get current item info
             local itemName = lootUI.currentItem.name
             local itemID = lootUI.currentItem.itemID or 0
             local iconID = lootUI.currentItem.iconID or 0
+            
+            -- Get item value from corpse (in copper)
+            local itemValue = 0
+            local itemIndex = lootUI.currentItem.index
+            if itemIndex then
+                local corpseItem = mq.TLO.Corpse.Item(itemIndex)
+                if corpseItem and corpseItem() then
+                    itemValue = corpseItem.Value() or 0
+                end
+            end
+            
+            -- Convert copper to platinum display (1000 copper = 1 platinum)
+            local platValue = math.floor(itemValue / 1000)
+            local goldValue = math.floor((itemValue % 1000) / 100)
+            local silverValue = math.floor((itemValue % 100) / 10)
+            local copperValue = itemValue % 10
+            
+            -- Build value string
+            local valueStr = ""
+            if platValue > 0 then
+                valueStr = string.format("%dp", platValue)
+                if goldValue > 0 then valueStr = valueStr .. string.format(" %dg", goldValue) end
+            elseif goldValue > 0 then
+                valueStr = string.format("%dg", goldValue)
+                if silverValue > 0 then valueStr = valueStr .. string.format(" %ds", silverValue) end
+            elseif silverValue > 0 then
+                valueStr = string.format("%ds", silverValue)
+                if copperValue > 0 then valueStr = valueStr .. string.format(" %dc", copperValue) end
+            elseif copperValue > 0 then
+                valueStr = string.format("%dc", copperValue)
+            else
+                valueStr = "0c"
+            end
+            
+            -- Header with item info in a styled box
+            ImGui.PushStyleColor(ImGuiCol.ChildBg, 0.1, 0.1, 0.2, 0.8)
+            ImGui.BeginChild("ItemHeader", 0, 95, true)
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 8)
+            ImGui.Text("Item requiring decision:")
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2)
+            
+            -- Display item icon and clickable name
+            local uiUtils = require("smartloot.ui.ui_utils")
+            if iconID and iconID > 0 then
+                uiUtils.drawItemIcon(iconID)
+                ImGui.SameLine()
+            end
+            
+            -- Make item name clickable to inspect item
+            local itemLabel = itemName .. "##pendingItemLink"
+            ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 0, 1)  -- Yellow color
+            if ImGui.Selectable(itemLabel, false, ImGuiSelectableFlags.DontClosePopups) then
+                -- Get and execute the item link to show item inspect window
+                if itemIndex then
+                    pcall(function()
+                        local corpseItem = mq.TLO.Corpse.Item(itemIndex)
+                        if corpseItem and corpseItem() then
+                            local itemLink = corpseItem.ItemLink()
+                            if itemLink and itemLink ~= "" and itemLink ~= "NULL" then
+                                -- Try with wrapped link first
+                                local wrappedLink = string.format("\x12%s\x12", itemLink)
+                                local links = mq.ExtractLinks(wrappedLink)
+                                if links and #links > 0 then
+                                    mq.ExecuteTextLink(links[1])
+                                else
+                                    -- Try unwrapped as fallback
+                                    links = mq.ExtractLinks(itemLink)
+                                    if links and #links > 0 then
+                                        mq.ExecuteTextLink(links[1])
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                end
+            end
+            ImGui.PopStyleColor()
+            
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip(string.format("Click to inspect item\nItem ID: %d", itemID))
+            end
+            
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 5)
+            
+            -- Display item value with coin color
+            ImGui.Text("Value: ")
+            ImGui.SameLine()
+            if platValue > 0 then
+                ImGui.TextColored(0.8, 0.8, 0.4, 1, valueStr)  -- Gold-ish color for platinum
+            elseif goldValue > 0 then
+                ImGui.TextColored(0.9, 0.7, 0.3, 1, valueStr)  -- Gold color
+            elseif silverValue > 0 then
+                ImGui.TextColored(0.7, 0.7, 0.7, 1, valueStr)  -- Silver color
+            else
+                ImGui.TextColored(0.6, 0.4, 0.3, 1, valueStr)  -- Copper color
+            end
+            
+            ImGui.EndChild()
+            ImGui.PopStyleColor()
             
             ImGui.Spacing()
             

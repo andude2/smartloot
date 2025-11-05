@@ -862,10 +862,10 @@ end
 -- RGMercs acknowledgment mailbox
 local function handleRGMercsAck(message)
     local msg = message()
-    logging.log("[SmartLoot] >>> RGMercs ack handler CALLED, message type: " .. type(msg))
+    logging.debug("[SmartLoot] RGMercs ack handler CALLED, message type: " .. type(msg))
     
     if type(msg) ~= "table" then 
-        logging.log("[SmartLoot] >>> RGMercs ack message is not a table: " .. tostring(msg))
+        logging.debug("[SmartLoot] RGMercs ack message is not a table: " .. tostring(msg))
         return 
     end
     
@@ -873,16 +873,16 @@ local function handleRGMercsAck(message)
     local subject = msg.subject or ""
     local who = msg.who or "Unknown"
     
-    logging.log(string.format("[SmartLoot] >>> RGMercs ack received - cmd=%s, subject=%s, who=%s", cmd, subject, who))
+    logging.debug(string.format("[SmartLoot] RGMercs ack received - cmd=%s, subject=%s, who=%s", cmd, subject, who))
     
     if cmd == "ack" then
         SmartLootEngine.state.rgmercs.lastMessageReceived = mq.gettime()
         SmartLootEngine.state.rgmercs.lastAckSubject = subject
         SmartLootEngine.state.rgmercs.messagesReceived = (SmartLootEngine.state.rgmercs.messagesReceived or 0) + 1
-        logging.log(string.format("[SmartLoot] ✓ Received acknowledgment from RGMercs (%s): %s (total: %d)", 
+        logging.debug(string.format("[SmartLoot] Received acknowledgment from RGMercs (%s): %s (total: %d)", 
             who, subject, SmartLootEngine.state.rgmercs.messagesReceived))
     else
-        logging.log(string.format("[SmartLoot] >>> Unknown ack command: %s", cmd))
+        logging.debug(string.format("[SmartLoot] >>> Unknown ack command: %s", cmd))
     end
 end
 
@@ -893,10 +893,10 @@ end)
 if not ok_ack_mailbox then
     logging.log(string.format("[SmartLoot] Failed to register RGMercs ack mailbox: %s", tostring(rgmercs_ack_actor)))
 elseif not rgmercs_ack_actor then
-    logging.log("[SmartLoot] RGMercs ack mailbox registration returned nil")
+    logging.debug("[SmartLoot] RGMercs ack mailbox registration returned nil")
 else
-    logging.log("[SmartLoot] ✓ RGMercs acknowledgment mailbox registered: smartloot_rgmercs_ack")
-    logging.log("[SmartLoot]   RGMercs should send acks to this mailbox when it receives messages")
+    logging.debug("[SmartLoot] RGMercs acknowledgment mailbox registered: smartloot_rgmercs_ack")
+    logging.debug("[SmartLoot] RGMercs should send acks to this mailbox when it receives messages")
 end
 
 -- ============================================================================
@@ -1840,21 +1840,6 @@ local function cleanupSmartLoot()
     end
 
     logging.log("[SmartLoot] Cleanup completed successfully")
-end
-
--- Register exit handler
-local function exitHandler()
-    -- Keep exit handler minimal to avoid touching MQ state during plugin shutdown
-    logging.log("[SmartLoot] Exit handler called - marking shutdown")
-    isShuttingDown = true
-end
-
--- Set up multiple exit handling mechanisms
-if mq.atExit then
-    mq.atExit(exitHandler)
-    logging.log("[SmartLoot] Exit handler registered with mq.atExit")
-else
-    logging.log("[SmartLoot] Warning: mq.atExit not available - using alternative shutdown detection")
 end
 
 -- Additional shutdown signal handling (conservative approach)

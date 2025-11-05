@@ -54,7 +54,7 @@ function modeHandler.shouldBeRGMain()
         local higherPriorityPeer = config.peerLootOrder[i]
         for _, connectedPeer in ipairs(connectedPeers) do
             if higherPriorityPeer:lower() == connectedPeer:lower() then
-                logging.log(string.format("Higher priority peer '%s' is connected - should be Bacground", higherPriorityPeer))
+                logging.log(string.format("Higher priority peer '%s' is connected - should be Background", higherPriorityPeer))
                 return false
             end
         end

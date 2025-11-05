@@ -3,17 +3,7 @@ local mq = require("mq")
 local config = require("modules.config")   -- Load the config module
 
 function util.printSmartLoot(message, msgType)
-    local colors = {
-        success = "\\ag",   -- Green
-        info = "\\ab",      -- Blue  
-        warning = "\\ay",   -- Yellow
-        error = "\\ar",     -- Red
-        debug = "\\ap",     -- Purple
-        system = "\\ac"     -- Cyan
-    }
-    
-    local color = colors[msgType] or colors.success
-    mq.cmd(string.format('/echo %s[SmartLoot]\\ax %s', color, message))
+    printf('[SmartLoot] %s', message)
 end
 
 -- **Get Peers Dynamically Based on Selected Command Type**
