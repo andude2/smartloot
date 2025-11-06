@@ -2553,13 +2553,25 @@ function SmartLootEngine.processProcessingItemsState()
         SmartLootEngine.state.currentCorpseName
     )
 
-    -- Evaluate rule
-    local rule, finalItemID, finalIconID = SmartLootEngine.evaluateItemRule(
-        itemInfo.name, itemInfo.itemID, itemInfo.iconID)
+    -- Check if rule was already resolved (from pending decision)
+    local rule, finalItemID, finalIconID
+    if SmartLootEngine.state.currentItem.rule and SmartLootEngine.state.currentItem.rule ~= "" and
+       not SmartLootEngine.state.currentItem.rule:find("KeepIfFewerThan") then
+        -- Use already-resolved rule (from pending decision)
+        -- BUT: KeepIfFewerThan rules need to be evaluated by evaluateItemRule to check inventory count
+        rule = SmartLootEngine.state.currentItem.rule
+        finalItemID = SmartLootEngine.state.currentItem.itemID
+        finalIconID = SmartLootEngine.state.currentItem.iconID
+        logging.debug(string.format("[Engine] Using already-resolved rule for %s: %s", itemInfo.name, rule))
+    else
+        -- Evaluate rule
+        rule, finalItemID, finalIconID = SmartLootEngine.evaluateItemRule(
+            itemInfo.name, itemInfo.itemID, itemInfo.iconID)
 
-    SmartLootEngine.state.currentItem.rule = rule
-    SmartLootEngine.state.currentItem.itemID = finalItemID
-    SmartLootEngine.state.currentItem.iconID = finalIconID
+        SmartLootEngine.state.currentItem.rule = rule
+        SmartLootEngine.state.currentItem.itemID = finalItemID
+        SmartLootEngine.state.currentItem.iconID = finalIconID
+    end
 
     logging.debug(string.format("[Engine] Processing item %d: %s (rule: %s)",
         SmartLootEngine.state.currentItemIndex, itemInfo.name, tostring(rule)))
@@ -2588,6 +2600,9 @@ function SmartLootEngine.processProcessingItemsState()
                 itemInfo.quantity)
             SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
 
+            -- Clear the resolved rule before moving to next item
+            SmartLootEngine.state.currentItem.rule = ""
+            
             -- Move to next item
             SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
             scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
@@ -2615,6 +2630,10 @@ function SmartLootEngine.processProcessingItemsState()
                     SmartLootEngine.recordLootAction("Left Behind (No Space)", itemInfo.name, finalItemID, finalIconID,
                         itemInfo.quantity)
                     SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
+                    
+                    -- Clear the resolved rule before moving to next item
+                    SmartLootEngine.state.currentItem.rule = ""
+                    
                     SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
                     scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
                     return
@@ -2643,6 +2662,9 @@ function SmartLootEngine.processProcessingItemsState()
         SmartLootEngine.recordLootAction(actionText, itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
         SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
 
+        -- Clear the resolved rule before moving to next item
+        SmartLootEngine.state.currentItem.rule = ""
+        
         -- Move to next item
         SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
         scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
@@ -2655,6 +2677,9 @@ function SmartLootEngine.processProcessingItemsState()
             itemInfo.quantity)
         SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
 
+        -- Clear the resolved rule before moving to next item
+        SmartLootEngine.state.currentItem.rule = ""
+        
         SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
         scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
     end
@@ -3284,12 +3309,15 @@ function SmartLootEngine.triggerRGMain()
     return true
 end
 
-function SmartLootEngine.resolvePendingDecision(itemName, itemID, selectedRule, iconID)
+function SmartLootEngine.resolvePendingDecision(itemName, itemID, selectedRule, iconID, skipRuleSave)
     if not SmartLootEngine.state.needsPendingDecision then
         return false
     end
 
-    logging.debug(string.format("[Engine] Resolving pending decision: %s -> %s", itemName, selectedRule))
+    skipRuleSave = skipRuleSave or false
+    
+    logging.debug(string.format("[Engine] Resolving pending decision: %s -> %s (skipSave: %s)", 
+        itemName, selectedRule, tostring(skipRuleSave)))
 
     -- Check for Lore conflict if user selected Keep
     if selectedRule == "Keep" then
@@ -3298,14 +3326,16 @@ function SmartLootEngine.resolvePendingDecision(itemName, itemID, selectedRule, 
         if hasLoreConflict then
             logging.debug(string.format("[Engine] Manual Keep decision overridden by Lore check: %s", loreReason))
             selectedRule = "Ignore"
-            -- Still save the original rule to database, but override the action
-            database.saveLootRule(itemName, itemID, "Keep", iconID or 0)
+            -- Still save the original rule to database, but override the action (unless skipRuleSave is true)
+            if not skipRuleSave then
+                database.saveLootRule(itemName, itemID, "Keep", iconID or 0)
+            end
             util.printSmartLoot(string.format("Cannot loot %s - %s", itemName, loreReason), "warning")
         end
     end
 
-    -- Save the rule to database (unless we already saved it above for Lore conflict)
-    if selectedRule ~= "Ignore" or not selectedRule then
+    -- Save the rule to database (unless skipRuleSave is true, or we already saved it above for Lore conflict)
+    if not skipRuleSave and (selectedRule ~= "Ignore" or not selectedRule) then
         database.saveLootRule(itemName, itemID, selectedRule, iconID or 0)
     end
 

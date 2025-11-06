@@ -319,12 +319,14 @@ local function processUIDecisionForEngine()
         local action = lootUI.pendingLootAction
         local itemName = action.item.name
         local rule = action.rule
+        local skipRuleSave = action.skipRuleSave or false
 
-        SmartLootEngine.resolvePendingDecision(itemName, action.itemID, rule, action.iconID)
+        SmartLootEngine.resolvePendingDecision(itemName, action.itemID, rule, action.iconID, skipRuleSave)
         lootUI.pendingLootAction = nil
         lootUI.currentItem = nil
 
-        logging.debug("[Bridge] Resolved engine decision for: " .. itemName .. " with rule: " .. rule)
+        logging.debug(string.format("[Bridge] Resolved engine decision for: %s with rule: %s (skipSave: %s)", 
+            itemName, rule, tostring(skipRuleSave)))
         return
     end
 
@@ -457,8 +459,6 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
         actors.send(sender .. "_smartloot_mailbox", json.encode(statusData))
     elseif cmd == "pending_decision_request" then
         -- Another character is requesting we make a decision for their item
-        util.printSmartLoot("Pending decision request from " .. sender .. " for " .. (data.itemName or "unknown"), "info")
-
         -- Store in global remote pending decisions queue
         _G.SMARTLOOT_REMOTE_DECISIONS = _G.SMARTLOOT_REMOTE_DECISIONS or {}
 
@@ -471,21 +471,53 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
             timestamp = mq.gettime()
         })
 
-        logging.log(string.format("[SmartLoot] Added remote pending decision from %s for item: %s (queue size: %d)",
+        logging.debug(string.format("[SmartLoot] Added remote pending decision from %s for item: %s (queue size: %d)",
             sender, data.itemName, #_G.SMARTLOOT_REMOTE_DECISIONS))
     elseif cmd == "pending_decision_response" then
         -- Foreground character responded with a decision
-        util.printSmartLoot("Pending decision response from " .. sender, "info")
-
         local itemName = data.itemName
         local itemID = data.itemID or 0
         local iconID = data.iconID or 0
         local rule = data.rule
 
         if rule and itemName then
-            -- Apply the rule and resolve the pending decision
-            SmartLootEngine.resolvePendingDecision(itemName, itemID, rule, iconID)
-            logging.log(string.format("[SmartLoot] Applied remote decision from %s: %s = %s", sender, itemName, rule))
+            -- Only resolve if this character is currently waiting for a decision on this exact item
+            local engineState = SmartLootEngine.getState()
+            if engineState.needsPendingDecision and 
+               engineState.pendingItemDetails.itemName == itemName and
+               (engineState.pendingItemDetails.itemID or 0) == itemID then
+                -- Apply the rule and resolve the pending decision
+                SmartLootEngine.resolvePendingDecision(itemName, itemID, rule, iconID)
+                logging.debug(string.format("[SmartLoot] Applied remote decision from %s: %s = %s", sender, itemName, rule))
+            else
+                logging.debug(string.format("[SmartLoot] Received decision from %s for %s but not currently pending on this character", sender, itemName))
+            end
+        end
+    elseif cmd == "clear_remote_decision" then
+        -- A decision was resolved by foreground - clear it from our queue
+        local requester = data.requester
+        local itemName = data.itemName
+        local itemID = data.itemID or 0
+        
+        _G.SMARTLOOT_REMOTE_DECISIONS = _G.SMARTLOOT_REMOTE_DECISIONS or {}
+        
+        -- Remove matching decisions from the queue
+        local newQueue = {}
+        local removedCount = 0
+        for _, decision in ipairs(_G.SMARTLOOT_REMOTE_DECISIONS) do
+            -- Keep decisions that don't match
+            if not (decision.requester == requester and decision.itemName == itemName and (decision.itemID or 0) == itemID) then
+                table.insert(newQueue, decision)
+            else
+                removedCount = removedCount + 1
+            end
+        end
+        
+        _G.SMARTLOOT_REMOTE_DECISIONS = newQueue
+        
+        if removedCount > 0 then
+            logging.debug(string.format("[SmartLoot] Cleared %d resolved remote decision(s) for '%s' from %s", 
+                removedCount, itemName, requester))
         end
     else
         util.printSmartLoot("Unknown command '" .. tostring(cmd) .. "' from " .. sender, "warning")

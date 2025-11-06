@@ -614,11 +614,28 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.5, 0.5, 1.0)
             
             if ImGui.Button("Skip Item (Leave Unset)", buttonWidth, 30) then
-                logging.log("Skipping item " .. itemName .. " - leaving rule unset")
+                logging.log("Skipping item " .. itemName .. " - leaving rule unset, moving to next item")
+                
+                -- Resolve the pending decision with Ignore to move to next item
+                -- But don't save a rule to the database
+                local itemID_from_current = lootUI.currentItem.itemID or 0
+                local iconID_from_current = lootUI.currentItem.iconID or 0
+                
+                -- Queue an ignore action without saving a rule
+                lootUI.pendingLootAction = {
+                    item = lootUI.currentItem,
+                    itemID = itemID_from_current,
+                    iconID = iconID_from_current,
+                    rule = "Ignore",
+                    numericCorpseID = lootUI.currentItem.numericCorpseID,
+                    startTime = lootUI.currentItem.decisionStartTime,
+                    skipRuleSave = true  -- Flag to skip saving the rule
+                }
+                
+                -- Clear UI state
                 lootUI.currentItem = nil
                 lootUI.pendingDecisionRule = "Keep"
                 lootUI.pendingThreshold = 1
-                -- Don't queue any loot action - just move on
             end
             ImGui.PopStyleColor(3)
             
@@ -3194,7 +3211,7 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                 database.saveLootRuleFor(decision.requester, decision.itemName, decision.itemID, rule, decision.iconID)
                 util.sendPeerCommandViaActor(decision.requester, "reload_rules")
                 
-                -- Send decision response
+                -- Send decision response to the requester
                 pcall(function()
                     local responseData = {
                         cmd = "pending_decision_response",
@@ -3210,7 +3227,22 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                     )
                 end)
                 
-                util.printSmartLoot(string.format("Applied rule '%s' for '%s' to %s", rule, decision.itemName, decision.requester), "success")
+                -- Broadcast to all characters to clear this decision from their queues
+                pcall(function()
+                    local clearData = {
+                        cmd = "clear_remote_decision",
+                        sender = mq.TLO.Me.Name(),
+                        requester = decision.requester,
+                        itemName = decision.itemName,
+                        itemID = decision.itemID
+                    }
+                    actors.send(
+                        { mailbox = "smartloot_mailbox" },
+                        json.encode(clearData)
+                    )
+                end)
+                
+                logging.debug(string.format("Applied rule '%s' for '%s' to %s", rule, decision.itemName, decision.requester))
             end
             
             -- Clear queue
@@ -3237,7 +3269,7 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                     util.sendPeerCommandViaActor(peer, "reload_rules")
                 end
                 
-                -- Send decision response
+                -- Send decision response to the requester
                 pcall(function()
                     local responseData = {
                         cmd = "pending_decision_response",
@@ -3253,7 +3285,22 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                     )
                 end)
                 
-                util.printSmartLoot(string.format("Applied rule '%s' for '%s' to all peers", rule, decision.itemName), "success")
+                -- Broadcast to all characters to clear this decision from their queues
+                pcall(function()
+                    local clearData = {
+                        cmd = "clear_remote_decision",
+                        sender = mq.TLO.Me.Name(),
+                        requester = decision.requester,
+                        itemName = decision.itemName,
+                        itemID = decision.itemID
+                    }
+                    actors.send(
+                        { mailbox = "smartloot_mailbox" },
+                        json.encode(clearData)
+                    )
+                end)
+                
+                logging.debug(string.format("Applied rule '%s' for '%s' to all peers", rule, decision.itemName))
             end
             
             -- Clear queue
