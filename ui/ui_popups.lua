@@ -296,8 +296,8 @@ end
 -- Loot Decision Popup - REDESIGNED with better layout and consistent button sizing
 function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
     if lootUI.currentItem then
-        ImGui.SetNextWindowSize(520, 380)
-        local decisionOpen = ImGui.Begin("SmartLoot - Choose Action", true, ImGuiWindowFlags.NoResize)
+    ImGui.SetNextWindowSize(520, 380)
+    local decisionOpen = ImGui.Begin("SmartLoot - Loot Decision", true, ImGuiWindowFlags.NoResize)
         if decisionOpen then
             -- Get current item info
             local itemName = lootUI.currentItem.name
@@ -669,7 +669,7 @@ end
 -- Peer Item Rules Popup (ENHANCED with better workflow integration)
 function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
     if lootUI.peerItemRulesPopup and lootUI.peerItemRulesPopup.isOpen then
-        local windowTitle = "Peer Rules for: " .. (lootUI.peerItemRulesPopup.itemName or "Unknown Item")
+        local windowTitle = "SmartLoot - Peer Rules Manager"
         
         logging.debug(string.format("[PeerRulesPopup] Opened for: %s (itemID=%d, iconID=%d)", 
             lootUI.peerItemRulesPopup.itemName or "Unknown", 
@@ -1134,7 +1134,7 @@ end
 -- Update ItemID/IconID Popup
 function uiPopups.drawUpdateIDsPopup(lootUI, database, util)
     if lootUI.updateIDsPopup and lootUI.updateIDsPopup.isOpen then
-        local windowTitle = "Update ItemID/IconID: " .. (lootUI.updateIDsPopup.itemName or "Unknown Item")
+        local windowTitle = "SmartLoot - Item ID Manager"
         
         ImGui.SetNextWindowSize(500, 350, ImGuiCond.FirstUseEver)
         local keepOpen = true
@@ -1459,8 +1459,10 @@ end
 function uiPopups.drawLootStatsPopup(lootUI, lootStats)
     if lootUI.selectedStatItem then
         ImGui.SetNextWindowSize(400, 300, ImGuiCond.FirstUseEver)
-        local popupOpen = ImGui.Begin("Loot Stats for " .. lootUI.selectedStatItem, true)
+        local popupOpen = ImGui.Begin("SmartLoot - Item Statistics", true)
         if popupOpen then
+            ImGui.Text("Statistics for: " .. (lootUI.selectedStatItem or "Unknown Item"))
+            ImGui.Separator()
             local zoneStats = lootStats.getItemDropRates(lootUI.selectedStatItem) or {}
             if ImGui.BeginTable("ZoneStatsTable", 4, ImGuiTableFlags.BordersInnerV + ImGuiTableFlags.RowBg) then
                 ImGui.TableSetupColumn("Zone", ImGuiTableColumnFlags.WidthFixed, 100)
@@ -1496,8 +1498,10 @@ end
 function uiPopups.drawLootRulesPopup(lootUI, database, util)
     if lootUI.selectedItemForPopup then
         ImGui.SetNextWindowSize(400, 300, ImGuiCond.FirstUseEver)
-        local popupOpen = ImGui.Begin("Loot Rules for " .. lootUI.selectedItemForPopup, true)
+        local popupOpen = ImGui.Begin("SmartLoot - Item Rules", true)
         if popupOpen then
+            ImGui.Text("Rules for: " .. (lootUI.selectedItemForPopup or "Unknown Item"))
+            ImGui.Separator()
             if ImGui.BeginTable("LootRulesPopupTable", 2, ImGuiTableFlags.BordersInnerV + ImGuiTableFlags.RowBg) then
                 ImGui.TableSetupColumn("Peer", ImGuiTableColumnFlags.WidthFixed, 100)
                 ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthStretch)
