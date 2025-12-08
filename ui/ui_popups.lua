@@ -154,6 +154,7 @@ function uiPopups.drawWhitelistManagerPopup(lootUI, database, util)
     ImGui.PopItemWidth()
 
     ImGui.SameLine()
+    ImGui.PushItemWidth(120)
     local ruleTypes = {"Keep", "KeepIfFewerThan"}
     local currentRule = state.addRuleType or "Keep"
     if ImGui.BeginCombo("##WLAddRuleType", currentRule) then
@@ -167,6 +168,7 @@ function uiPopups.drawWhitelistManagerPopup(lootUI, database, util)
         end
         ImGui.EndCombo()
     end
+    ImGui.PopItemWidth()
 
     if currentRule ~= "Keep" then
         ImGui.SameLine()

@@ -30,14 +30,19 @@ function uiPeerCommands.draw(lootUI, loot, util)
         lootUI.peerCommandsOpen = lootUI.showPeerCommands ~= false
     end
 
-    -- Drive p_open from our own visibility flag so close/minimize can't desync state
-    local pOpen = lootUI.peerCommandsOpen ~= false
-    local open, keepOpen = ImGui.Begin("Peer Commands", pOpen)
+    -- Only draw if we want it open
+    if not lootUI.peerCommandsOpen then
+        return
+    end
+
+    -- Pass the tracked open state into ImGui so the close button can update it
+    local windowOpen, p_open = ImGui.Begin("Peer Commands", lootUI.peerCommandsOpen)
+    lootUI.peerCommandsOpen = p_open ~= false
     local isCollapsed = ImGui.IsWindowCollapsed and ImGui.IsWindowCollapsed() or false
     -- Clear one-shot flags after creating the window
     if lootUI.resetPeerCommandsWindow then lootUI.resetPeerCommandsWindow = false end
     if lootUI.uncollapsePeerCommandsOnNextOpen then lootUI.uncollapsePeerCommandsOnNextOpen = false end
-    if open then
+    if windowOpen then
         local peerList = util.getConnectedPeers()
         
         if #peerList > 0 then
@@ -268,15 +273,16 @@ function uiPeerCommands.draw(lootUI, loot, util)
     
     ImGui.End()
     
-    -- Persist the open state reported by ImGui (true unless user clicked X)
-    if keepOpen ~= nil then
-        lootUI.peerCommandsOpen = keepOpen and true or false
-
-        if keepOpen == false and not isCollapsed then
-            lootUI.showPeerCommands = false
-            config.uiVisibility.showPeerCommands = false
-            if config.save then config.save() end
-        end
+    -- Handle the close button (X) in the window header
+    -- p_open will be false if the user clicked the X button
+    -- Some docking setups report close by returning windowOpen == false without toggling p_open,
+    -- so also treat a hidden-but-not-collapsed window as closed.
+    local requestedClose = (p_open == false) or (windowOpen == false and not isCollapsed)
+    if requestedClose then
+        lootUI.peerCommandsOpen = false
+        lootUI.showPeerCommands = false
+        config.uiVisibility.showPeerCommands = false
+        if config.save then config.save() end
     end
 end
 

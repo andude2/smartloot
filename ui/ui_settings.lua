@@ -544,16 +544,6 @@ local function draw_peer_coordination_settings(lootUI, settings, config, showHea
 
         ImGui.AlignTextToFramePadding()
         ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
-        ImGui.Text("Is Main Looter:")
-        ImGui.PopStyleColor()
-        ImGui.SameLine(150)
-        local isMain, changedIsMain = ImGui.Checkbox("##IsMain", settings.isMain)
-        if changedIsMain then settings.isMain = isMain end
-
-        ImGui.NextColumn()
-
-        ImGui.AlignTextToFramePadding()
-        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
         ImGui.Text("Loot Command Type:")
         ImGui.PopStyleColor()
         ImGui.SameLine()
@@ -1282,6 +1272,9 @@ local function draw_communication_settings(config)
     if ImGui.CollapsingHeader("Communication Settings") then
         ImGui.PopStyleColor()
         
+        -- Keep popups scoped to this section so table IDs don't break them
+        ImGui.PushID("CommunicationSettings")
+
         -- Create table with 3 columns
         if ImGui.BeginTable("CommunicationSettings", 3, ImGuiTableFlags.BordersInnerV + ImGuiTableFlags.Resizable) then
             -- Setup columns
@@ -1358,7 +1351,7 @@ local function draw_communication_settings(config)
                 ImGui.PopItemWidth()
             end
             
-            -- Help button for Chat
+            -- Help button + popup for Chat
             ImGui.Spacing()
             ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)
@@ -1366,6 +1359,38 @@ local function draw_communication_settings(config)
                 ImGui.OpenPopup("ChatSettingsHelp")
             end
             ImGui.PopStyleColor(2)
+
+            if ImGui.BeginPopup("ChatSettingsHelp") then
+                ImGui.Text("Chat Output Settings Help")
+                ImGui.Separator()
+                ImGui.Text("Available chat modes:")
+                ImGui.BulletText("Raid Say - Sends messages to /rsay (raid)")
+                ImGui.BulletText("Group - Sends messages to /g (group)")
+                ImGui.BulletText("Guild - Sends messages to /gu (guild)")
+                ImGui.BulletText("Custom - Specify your own channel")
+                ImGui.BulletText("Silent - No chat output")
+                ImGui.Separator()
+                ImGui.Text("Test your settings:")
+                ImGui.SameLine()
+                if ImGui.Button("Send Test Message") then
+                    local testMessage = "SmartLoot test message - chat mode working!"
+                    local outputMode = config.chatOutputMode or "group"
+
+                    if outputMode == "rsay" then
+                        mq.cmd("/rsay " .. testMessage)
+                    elseif outputMode == "group" then
+                        mq.cmd("/g " .. testMessage)
+                    elseif outputMode == "guild" then
+                        mq.cmd("/gu " .. testMessage)
+                    elseif outputMode == "custom" then
+                        local customChannel = config.customChannel or "say"
+                        mq.cmd("/" .. customChannel .. " " .. testMessage)
+                    elseif outputMode == "silent" then
+                        logging.log("Test message (silent mode): " .. testMessage)
+                    end
+                end
+                ImGui.EndPopup()
+            end
             
             -- Column 2: Item Announce Settings
             ImGui.TableSetColumnIndex(1)
@@ -1399,7 +1424,7 @@ local function draw_communication_settings(config)
             end
             ImGui.PopItemWidth()
             
-            -- Help button for Item Announce
+            -- Help button + popup for Item Announce
             ImGui.Spacing()
             ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)
@@ -1407,6 +1432,21 @@ local function draw_communication_settings(config)
                 ImGui.OpenPopup("ItemAnnounceSettingsHelp")
             end
             ImGui.PopStyleColor(2)
+
+            if ImGui.BeginPopup("ItemAnnounceSettingsHelp") then
+                ImGui.Text("Item Announce Settings Help")
+                ImGui.Separator()
+                ImGui.Text("Item announce modes:")
+                ImGui.BulletText("All Items - Announces every item looted and its rule")
+                ImGui.BulletText("Ignored Items Only - Only announces items that are ignored")
+                ImGui.BulletText("No Announcements - Silent item processing")
+                ImGui.Separator()
+                ImGui.Text("Examples:")
+                ImGui.BulletText("All: 'Looted Ancient Blade (Keep)'")
+                ImGui.BulletText("Ignored: 'Looted Rusty Sword (Ignore)'")
+                ImGui.BulletText("None: No item messages in chat")
+                ImGui.EndPopup()
+            end
             
             -- Column 3: Lore Check Settings
             ImGui.TableSetColumnIndex(2)
@@ -1429,7 +1469,7 @@ local function draw_communication_settings(config)
                 ImGui.SetTooltip("Announces when Lore items are skipped due to conflicts")
             end
             
-            -- Help button for Lore Check
+            -- Help button + popup for Lore Check
             ImGui.Spacing()
             ImGui.PushStyleColor(ImGuiCol.Button, 0, 0, 0, 0)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.2, 0.2, 0.3)
@@ -1437,79 +1477,30 @@ local function draw_communication_settings(config)
                 ImGui.OpenPopup("LoreCheckSettingsHelp")
             end
             ImGui.PopStyleColor(2)
+
+            if ImGui.BeginPopup("LoreCheckSettingsHelp") then
+                ImGui.Text("Lore Item Check Settings Help")
+                ImGui.Separator()
+                ImGui.Text("What it does:")
+                ImGui.BulletText("Before looting any item with a 'Keep' rule, checks if it's Lore")
+                ImGui.BulletText("If Lore and you already have one, changes action to 'Ignore'")
+                ImGui.BulletText("Prevents the loot attempt that would cause an error")
+                ImGui.BulletText("Allows SmartLoot to continue processing other items")
+                ImGui.Separator()
+                ImGui.Text("Settings:")
+                ImGui.BulletText("Lore Item Checking: Always enabled to prevent getting stuck")
+                ImGui.BulletText("Announce Lore Conflicts: Chat notifications when items are skipped")
+                ImGui.Separator()
+                ImGui.Text("Examples:")
+                ImGui.BulletText("'Skipping Lore item Ancient Blade (already have 1)'")
+                ImGui.BulletText("Works with all Keep rules including KeepIfFewerThan")
+                ImGui.EndPopup()
+            end
             
             ImGui.EndTable()
         end
-        
-        -- Keep all the existing popup help dialogs here
-        -- Chat Settings Help Popup
-        if ImGui.BeginPopup("ChatSettingsHelp") then
-            ImGui.Text("Chat Output Settings Help")
-            ImGui.Separator()
-            ImGui.Text("Available chat modes:")
-            ImGui.BulletText("Raid Say - Sends messages to /rsay (raid)")
-            ImGui.BulletText("Group - Sends messages to /g (group)")
-            ImGui.BulletText("Guild - Sends messages to /gu (guild)")
-            ImGui.BulletText("Custom - Specify your own channel")
-            ImGui.BulletText("Silent - No chat output")
-            ImGui.Separator()
-            ImGui.Text("Test your settings:")
-            ImGui.SameLine()
-            if ImGui.Button("Send Test Message") then
-                local testMessage = "SmartLoot test message - chat mode working!"
-                local outputMode = config.chatOutputMode or "group"
-                
-                if outputMode == "rsay" then
-                    mq.cmd("/rsay " .. testMessage)
-                elseif outputMode == "group" then
-                    mq.cmd("/g " .. testMessage)
-                elseif outputMode == "guild" then
-                    mq.cmd("/gu " .. testMessage)
-                elseif outputMode == "custom" then
-                    local customChannel = config.customChannel or "say"
-                    mq.cmd("/" .. customChannel .. " " .. testMessage)
-                elseif outputMode == "silent" then
-                    logging.log("Test message (silent mode): " .. testMessage)
-                end
-            end
-            ImGui.EndPopup()
-        end
-        
-        -- Item Announce Settings Help Popup
-        if ImGui.BeginPopup("ItemAnnounceSettingsHelp") then
-            ImGui.Text("Item Announce Settings Help")
-            ImGui.Separator()
-            ImGui.Text("Item announce modes:")
-            ImGui.BulletText("All Items - Announces every item looted and its rule")
-            ImGui.BulletText("Ignored Items Only - Only announces items that are ignored")
-            ImGui.BulletText("No Announcements - Silent item processing")
-            ImGui.Separator()
-            ImGui.Text("Examples:")
-            ImGui.BulletText("All: 'Looted Ancient Blade (Keep)'")
-            ImGui.BulletText("Ignored: 'Looted Rusty Sword (Ignore)'")
-            ImGui.BulletText("None: No item messages in chat")
-            ImGui.EndPopup()
-        end
-        
-        -- Lore Check Settings Help Popup
-        if ImGui.BeginPopup("LoreCheckSettingsHelp") then
-            ImGui.Text("Lore Item Check Settings Help")
-            ImGui.Separator()
-            ImGui.Text("What it does:")
-            ImGui.BulletText("Before looting any item with a 'Keep' rule, checks if it's Lore")
-            ImGui.BulletText("If Lore and you already have one, changes action to 'Ignore'")
-            ImGui.BulletText("Prevents the loot attempt that would cause an error")
-            ImGui.BulletText("Allows SmartLoot to continue processing other items")
-            ImGui.Separator()
-            ImGui.Text("Settings:")
-            ImGui.BulletText("Lore Item Checking: Always enabled to prevent getting stuck")
-            ImGui.BulletText("Announce Lore Conflicts: Chat notifications when items are skipped")
-            ImGui.Separator()
-            ImGui.Text("Examples:")
-            ImGui.BulletText("'Skipping Lore item Ancient Blade (already have 1)'")
-            ImGui.BulletText("Works with all Keep rules including KeepIfFewerThan")
-            ImGui.EndPopup()
-        end
+
+        ImGui.PopID()
     else
         ImGui.PopStyleColor()
     end
