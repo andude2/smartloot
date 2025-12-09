@@ -96,6 +96,14 @@ What's this AFK Rules tab?!  Good question!  The system is designed around savin
 - Manage whitelist items:
   - Open UI: Settings → Character Settings → Manage Whitelist…
   - Or command: `/sl_whitelist` to open, `/sl_whitelist off` to close.
+
+Bug fixes
+---------
+- Fixed a rule leakage bug where a resolved Keep rule could carry over to the next slot on the same corpse. This could cause SmartLoot to loot a non-whitelisted item if the previous item had been whitelisted. The engine now clears the resolved item state after completing (or failing) a loot action so subsequent slots are evaluated independently.
+
+How to validate
+---------------
+- See tests/whitelist_leak_test.md for manual verification steps to run inside MacroQuest.
 - Optional: “Do not trigger peers”
   - In Settings → Character Settings, enable “Do not trigger peers while whitelist-only” if you don’t want this toon to start waterfall triggers for others while running in whitelist-only mode.
 - How to “whitelist” items: add normal rules for those items (e.g., set Diamonds/Blue Diamonds to Keep for that toon via the UI or commands). With whitelist-only enabled, only those Kept items will be looted; all other items are auto-ignored without asking.

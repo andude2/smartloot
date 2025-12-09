@@ -2705,10 +2705,10 @@ function SmartLootEngine.processExecutingLootActionState()
         if SmartLootEngine.executeLootAction(item.action, item.slot, item.name, item.itemID, item.iconID, item.quantity) then
             scheduleNextTick(SmartLootEngine.config.lootActionDelayMs)
         else
-            -- Failed to start action
+            -- Failed to start action - clear current item so its resolved rule won't carry to next slot
             SmartLootEngine.stats.lootActionFailures = SmartLootEngine.stats.lootActionFailures + 1
-            SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex +
-                1 -- Still increment on failure to avoid getting stuck
+            resetCurrentItem()
+            SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
             setState(SmartLootEngine.LootState.ProcessingItems, "Loot action failed")
             scheduleNextTick(SmartLootEngine.config.itemProcessingDelayMs)
         end
@@ -2717,6 +2717,9 @@ function SmartLootEngine.processExecutingLootActionState()
 
     -- Check if action completed
     if SmartLootEngine.checkLootActionCompletion() then
+        -- Clear current item state so a resolved rule doesn't carry over to the next slot
+        resetCurrentItem()
+
         -- ALWAYS move to the next item index after an action is completed (or timed out)
         SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
 
