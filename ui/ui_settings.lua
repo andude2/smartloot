@@ -747,6 +747,27 @@ local function draw_database_tools(lootUI, showHeader)
         ImGui.Spacing()
         ImGui.TextColored(0.7, 0.7, 0.7, 1, "Import legacy E3 loot rules from INI format files")
         ImGui.Spacing()
+
+        ImGui.Separator()
+        ImGui.Spacing()
+        ImGui.Text("Copy & Manage Rules:")
+        ImGui.Spacing()
+
+        if ImGui.Button("Bulk Copy Rules##bulkcopy", 120, 0) then
+            lootUI.bulkCopyRulesPopup = lootUI.bulkCopyRulesPopup or {}
+            lootUI.bulkCopyRulesPopup.isOpen = true
+            lootUI.bulkCopyRulesPopup.sourceCharacter = ""
+            lootUI.bulkCopyRulesPopup.targetCharacter = ""
+            lootUI.bulkCopyRulesPopup.previewRules = nil
+            lootUI.bulkCopyRulesPopup.copyResult = ""
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Copy all loot rules from one character to another")
+        end
+
+        ImGui.Spacing()
+        ImGui.TextColored(0.7, 0.7, 0.7, 1, "Copy an entire ruleset from one character to another")
+        ImGui.Spacing()
     end
 
     if showHeader ~= false then

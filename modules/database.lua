@@ -1124,6 +1124,65 @@ function database.getAllCharactersWithRules()
     return characters
 end
 
+-- Get all loot rules for a specific character
+function database.getLootRulesByCharacter(characterName)
+    if not db or not characterName or characterName == "" then
+        logging.error("[Database] Invalid character name for getLootRulesByCharacter")
+        return { rules = {} }
+    end
+    
+    local rulesData = {
+        character = characterName,
+        rules = {}
+    }
+    
+    -- Get rules from v2 table
+    local v2Stmt = prepareStatement([[
+        SELECT item_name, item_id, rule, icon_id 
+        FROM lootrules_v2 
+        WHERE toon = ? 
+        ORDER BY item_name
+    ]])
+    
+    if v2Stmt then
+        v2Stmt:bind(1, characterName)
+        for row in v2Stmt:nrows() do
+            table.insert(rulesData.rules, {
+                itemName = row.item_name,
+                itemId = row.item_id,
+                rule = row.rule,
+                iconId = row.icon_id,
+                tableSource = "lootrules_v2"
+            })
+        end
+        v2Stmt:finalize()
+    end
+    
+    -- Get rules from fallback table
+    local fallbackStmt = prepareStatement([[
+        SELECT item_name, rule, icon_id 
+        FROM lootrules_name_fallback 
+        WHERE toon = ? 
+        ORDER BY item_name
+    ]])
+    
+    if fallbackStmt then
+        fallbackStmt:bind(1, characterName)
+        for row in fallbackStmt:nrows() do
+            table.insert(rulesData.rules, {
+                itemName = row.item_name,
+                itemId = 0,
+                rule = row.rule,
+                iconId = row.icon_id,
+                tableSource = "lootrules_name_fallback"
+            })
+        end
+        fallbackStmt:finalize()
+    end
+    
+    return rulesData
+end
+
 function database.deleteLootRule(itemName, itemID)
     local toonName = mq.TLO.Me.Name() or "unknown"
     itemID = tonumber(itemID) or 0
@@ -1820,6 +1879,85 @@ function database.copySpecificRule(fromName, toName, itemName, itemId, tableSour
     end
     
     return success
+end
+
+-- Copy ALL rules from one character to another
+function database.copyAllRulesFromCharacter(fromName, toName)
+    if not db then
+        logging.error("[Database] Database not initialized")
+        return false, "Database not initialized"
+    end
+    
+    if not fromName or not toName or fromName == "" or toName == "" then
+        logging.error("[Database] Invalid character names for copyAllRulesFromCharacter")
+        return false, "Invalid character names"
+    end
+    
+    if fromName == toName then
+        logging.error("[Database] Cannot copy rules from a character to itself")
+        return false, "Source and destination are the same"
+    end
+    
+    local success = true
+    local copiedCount = 0
+    
+    -- Copy all rules from lootrules_v2 table
+    local copyV2Stmt = prepareStatement([[
+        INSERT OR REPLACE INTO lootrules_v2 
+        (toon, item_id, item_name, rule, icon_id, updated_at)
+        SELECT ?, item_id, item_name, rule, icon_id, CURRENT_TIMESTAMP
+        FROM lootrules_v2 
+        WHERE toon = ?
+    ]])
+    
+    if copyV2Stmt then
+        copyV2Stmt:bind(1, toName)
+        copyV2Stmt:bind(2, fromName)
+        if copyV2Stmt:step() == sqlite3.DONE then
+            copiedCount = copiedCount + (db:total_changes() or 0)
+        else
+            success = false
+        end
+        copyV2Stmt:finalize()
+    else
+        success = false
+    end
+    
+    -- Copy all rules from lootrules_name_fallback table
+    local copyFallbackStmt = prepareStatement([[
+        INSERT OR REPLACE INTO lootrules_name_fallback 
+        (toon, item_name, rule, updated_at)
+        SELECT ?, item_name, rule, CURRENT_TIMESTAMP
+        FROM lootrules_name_fallback 
+        WHERE toon = ?
+    ]])
+    
+    if copyFallbackStmt then
+        copyFallbackStmt:bind(1, toName)
+        copyFallbackStmt:bind(2, fromName)
+        if copyFallbackStmt:step() == sqlite3.DONE then
+            copiedCount = copiedCount + (db:total_changes() or 0)
+        else
+            success = false
+        end
+        copyFallbackStmt:finalize()
+    else
+        success = false
+    end
+    
+    if success then
+        logging.debug(string.format("[Database] Copied all rules from '%s' to '%s' (%d rules)", fromName, toName, copiedCount))
+        
+        -- Clear cache for target to force reload
+        if lootRulesCache.loaded[toName] then
+            lootRulesCache.loaded[toName] = false
+        end
+        
+        return true, copiedCount
+    else
+        logging.error(string.format("[Database] Failed to copy all rules from '%s' to '%s'", fromName, toName))
+        return false, "Failed to copy rules"
+    end
 end
 
 -- Delete a specific rule for a character

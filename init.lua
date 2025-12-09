@@ -209,6 +209,16 @@ local lootUI = {
         newIconID = 0
     },
 
+    bulkCopyRulesPopup = {
+        isOpen = false,
+        sourceCharacter = "",
+        targetCharacter = "",
+        previewRules = nil,
+        allCharacters = {},
+        copying = false,
+        copyResult = ""
+    },
+
     searchFilter = "",
     selectedZone = mq.TLO.Zone.Name() or "All",
     peerOrderList = nil,
@@ -1673,6 +1683,7 @@ mq.imgui.init("SmartLoot", function()
         uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
         uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
         uiPopups.drawWhitelistManagerPopup(lootUI, database, util)
+        uiPopups.drawBulkCopyRulesPopup(lootUI, database, util)
     end
 
     if lootUI.showPeerCommands and uiPeerCommands then

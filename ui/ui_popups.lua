@@ -3425,4 +3425,234 @@ function uiPopups.drawGettingStartedPopup(lootUI)
     end
 end
 
+-- Bulk Copy Rules Popup
+function uiPopups.drawBulkCopyRulesPopup(lootUI, database, util)
+    if lootUI.bulkCopyRulesPopup and lootUI.bulkCopyRulesPopup.isOpen then
+        ImGui.SetNextWindowSize(700, 600, ImGuiCond.FirstUseEver)
+        local keepOpen = true
+        local open, p_open = ImGui.Begin("Bulk Copy Rules", true)
+        
+        if open then
+            ImGui.Text("Copy all loot rules from one character to another")
+            ImGui.Separator()
+            
+            -- Get all characters with rules
+            if not lootUI.bulkCopyRulesPopup.allCharacters or #lootUI.bulkCopyRulesPopup.allCharacters == 0 then
+                lootUI.bulkCopyRulesPopup.allCharacters = database.getAllCharactersWithRules() or {}
+            end
+            
+            local characters = lootUI.bulkCopyRulesPopup.allCharacters
+            local charNames = {}
+            for _, char in ipairs(characters) do
+                table.insert(charNames, char)
+            end
+            table.sort(charNames)
+            
+            -- Source character dropdown
+            ImGui.Text("Source Character:")
+            ImGui.SameLine(200)
+            if ImGui.BeginCombo("##sourceChar", lootUI.bulkCopyRulesPopup.sourceCharacter or "Select...", ImGuiComboFlags.HeightLarge) then
+                for _, charName in ipairs(charNames) do
+                    local isSelected = (charName == lootUI.bulkCopyRulesPopup.sourceCharacter)
+                    if ImGui.Selectable(charName, isSelected) then
+                        lootUI.bulkCopyRulesPopup.sourceCharacter = charName
+                        lootUI.bulkCopyRulesPopup.previewRules = nil  -- Clear preview
+                    end
+                    if isSelected then
+                        ImGui.SetItemDefaultFocus()
+                    end
+                end
+                ImGui.EndCombo()
+            end
+            
+            -- Target character dropdown
+            ImGui.Text("Target Character:")
+            ImGui.SameLine(200)
+            if ImGui.BeginCombo("##targetChar", lootUI.bulkCopyRulesPopup.targetCharacter or "Select...", ImGuiComboFlags.HeightLarge) then
+                for _, charName in ipairs(charNames) do
+                    -- Don't allow selecting source as target
+                    if charName ~= lootUI.bulkCopyRulesPopup.sourceCharacter then
+                        local isSelected = (charName == lootUI.bulkCopyRulesPopup.targetCharacter)
+                        if ImGui.Selectable(charName, isSelected) then
+                            lootUI.bulkCopyRulesPopup.targetCharacter = charName
+                            lootUI.bulkCopyRulesPopup.previewRules = nil  -- Clear preview
+                        end
+                        if isSelected then
+                            ImGui.SetItemDefaultFocus()
+                        end
+                    end
+                end
+                ImGui.EndCombo()
+            end
+            
+            ImGui.Spacing()
+            
+            -- Preview button
+            if ImGui.Button("Preview Rules##preview", 120, 0) then
+                if lootUI.bulkCopyRulesPopup.sourceCharacter and lootUI.bulkCopyRulesPopup.sourceCharacter ~= "" then
+                    lootUI.bulkCopyRulesPopup.previewRules = database.getLootRulesByCharacter(lootUI.bulkCopyRulesPopup.sourceCharacter)
+                else
+                    lootUI.bulkCopyRulesPopup.copyResult = "Please select a source character"
+                end
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Load and display all rules for the selected source character")
+            end
+            
+            ImGui.Spacing()
+            ImGui.Separator()
+            ImGui.Spacing()
+            
+            -- Rules preview
+            ImGui.Text("Rules Preview:")
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, "Items to be copied:")
+            
+            if lootUI.bulkCopyRulesPopup.previewRules then
+                local rulesData = lootUI.bulkCopyRulesPopup.previewRules
+                local totalRules = 0
+                local addedRules = 0
+                local changedRules = 0
+                
+                -- Get target character's existing rules for comparison
+                local targetRules = {}
+                if lootUI.bulkCopyRulesPopup.targetCharacter and lootUI.bulkCopyRulesPopup.targetCharacter ~= "" then
+                    local targetRulesData = database.getLootRulesByCharacter(lootUI.bulkCopyRulesPopup.targetCharacter)
+                    if targetRulesData.rules then
+                        for _, rule in ipairs(targetRulesData.rules) do
+                            local key = (rule.itemId and rule.itemId > 0) and tostring(rule.itemId) or rule.itemName
+                            targetRules[key] = rule.rule
+                        end
+                    end
+                end
+                
+                if ImGui.BeginTable("previewRulesTable", 3, ImGuiTableFlags.Borders + ImGuiTableFlags.RowBg + ImGuiTableFlags.Resizable) then
+                    ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+                    ImGui.TableSetupColumn("Item ID", ImGuiTableColumnFlags.WidthFixed, 80)
+                    ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 80)
+                    ImGui.TableHeadersRow()
+                    
+                    -- Display rules
+                    if rulesData.rules then
+                        for _, rule in ipairs(rulesData.rules) do
+                            local key = (rule.itemId and rule.itemId > 0) and tostring(rule.itemId) or rule.itemName
+                            local existingRule = targetRules[key]
+                            local isNew = not existingRule
+                            local isChanged = existingRule and existingRule ~= rule.rule
+                            
+                            -- Determine row color
+                            local rowColor = nil
+                            local colorR, colorG, colorB, colorA = 1, 1, 1, 1
+                            if isNew then
+                                colorR, colorG, colorB, colorA = 0.2, 0.5, 0.2, 0.3  -- Green for new rules
+                                rowColor = true
+                                addedRules = addedRules + 1
+                            elseif isChanged then
+                                colorR, colorG, colorB, colorA = 0.5, 0.4, 0.2, 0.3  -- Orange/Yellow for changed rules
+                                rowColor = true
+                                changedRules = changedRules + 1
+                            end
+                            
+                            ImGui.TableNextRow()
+                            
+                            -- Set row background color if needed
+                            if rowColor then
+                                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(colorR, colorG, colorB, colorA))
+                            end
+                            
+                            ImGui.TableSetColumnIndex(0)
+                            ImGui.Text(rule.itemName or "Unknown")
+                            
+                            ImGui.TableSetColumnIndex(1)
+                            if rule.itemId and rule.itemId > 0 then
+                                ImGui.Text(tostring(rule.itemId))
+                            else
+                                ImGui.TextColored(0.6, 0.6, 0.6, 1, "N/A")
+                            end
+                            
+                            ImGui.TableSetColumnIndex(2)
+                            if isChanged then
+                                ImGui.TextColored(1.0, 0.7, 0.2, 1, rule.rule .. " (was: " .. existingRule .. ")")
+                            else
+                                ImGui.Text(rule.rule or "Unknown")
+                            end
+                            
+                            totalRules = totalRules + 1
+                        end
+                    end
+                    
+                    ImGui.EndTable()
+                end
+                
+                ImGui.Spacing()
+                ImGui.TextColored(0.7, 1.0, 0.7, 1, "Total Rules: " .. totalRules)
+                if addedRules > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(0.3, 0.8, 0.3, 1, " | New: " .. addedRules)
+                end
+                if changedRules > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(1.0, 0.7, 0.2, 1, " | Changed: " .. changedRules)
+                end
+            else
+                ImGui.TextColored(0.6, 0.6, 0.6, 1, "Click 'Preview Rules' to see what will be copied")
+            end
+            
+            ImGui.Spacing()
+            ImGui.Separator()
+            ImGui.Spacing()
+            
+            -- Result message
+            if lootUI.bulkCopyRulesPopup.copyResult and lootUI.bulkCopyRulesPopup.copyResult ~= "" then
+                if string.match(lootUI.bulkCopyRulesPopup.copyResult, "Error") or 
+                   string.match(lootUI.bulkCopyRulesPopup.copyResult, "Failed") then
+                    ImGui.TextColored(1.0, 0.4, 0.4, 1, lootUI.bulkCopyRulesPopup.copyResult)
+                else
+                    ImGui.TextColored(0.4, 1.0, 0.4, 1, lootUI.bulkCopyRulesPopup.copyResult)
+                end
+                ImGui.Spacing()
+            end
+            
+            -- Action buttons
+            ImGui.Spacing()
+            if ImGui.Button("Execute Copy", 150, 0) then
+                if not lootUI.bulkCopyRulesPopup.sourceCharacter or lootUI.bulkCopyRulesPopup.sourceCharacter == "" then
+                    lootUI.bulkCopyRulesPopup.copyResult = "Error: Please select a source character"
+                elseif not lootUI.bulkCopyRulesPopup.targetCharacter or lootUI.bulkCopyRulesPopup.targetCharacter == "" then
+                    lootUI.bulkCopyRulesPopup.copyResult = "Error: Please select a target character"
+                else
+                    lootUI.bulkCopyRulesPopup.copying = true
+                    local success, result = database.copyAllRulesFromCharacter(
+                        lootUI.bulkCopyRulesPopup.sourceCharacter,
+                        lootUI.bulkCopyRulesPopup.targetCharacter
+                    )
+                    lootUI.bulkCopyRulesPopup.copying = false
+                    
+                    if success then
+                        lootUI.bulkCopyRulesPopup.copyResult = string.format("Success! Copied %d rules from %s to %s", 
+                            result, 
+                            lootUI.bulkCopyRulesPopup.sourceCharacter,
+                            lootUI.bulkCopyRulesPopup.targetCharacter)
+                    else
+                        lootUI.bulkCopyRulesPopup.copyResult = "Error: " .. (result or "Unknown error during copy")
+                    end
+                end
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Copy all rules from source to target character")
+            end
+            
+            ImGui.SameLine()
+            if ImGui.Button("Close", 100, 0) then
+                lootUI.bulkCopyRulesPopup.isOpen = false
+                keepOpen = false
+            end
+        end
+        
+        ImGui.End()
+        lootUI.bulkCopyRulesPopup.isOpen = keepOpen and open
+        lootUI.bulkCopyRulesPopup.isOpen = keepOpen and open
+    end
+end
+
 return uiPopups
+
