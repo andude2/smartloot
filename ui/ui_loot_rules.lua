@@ -774,7 +774,7 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
     ImGui.Text(paginationText)
     
     -- Scrollable table
-    ImGui.BeginChild("LootRulesScrollableTable", 0, 420, ImGuiWindowFlags.HorizontalScrollbar)
+    ImGui.BeginChild("LootRulesScrollableTable", 0, 420, ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar)
     
     local tableFlags = ImGuiTableFlags.Borders + ImGuiTableFlags.RowBg + ImGuiTableFlags.Resizable + ImGuiTableFlags.ScrollY
     if ImGui.BeginTable("LootRulesTable", 6, tableFlags) then

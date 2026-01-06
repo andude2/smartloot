@@ -92,6 +92,44 @@ local function formatNavigationCommand(command, spawnID)
     return string.format("%s id %d", command, spawnID)
 end
 
+-- Get navigation path length to a spawn, with fallback to straight-line distance
+--
+-- DISTANCE CHECKING STRATEGY:
+-- - Use PATH distance (this function) when SELECTING which corpse to loot
+--   This prevents selecting corpses that are close straight-line but far to walk
+--   (e.g., on different floors, across chasms, behind walls)
+-- - Use STRAIGHT-LINE distance when CHECKING if we've reached our destination
+--   This is for interaction range validation after we've already committed to looting
+--
+-- Returns: distance (number), isPathDistance (boolean)
+local function getPathLengthToSpawn(spawnID)
+    if not spawnID then
+        return 999, false
+    end
+
+    local spawn = mq.TLO.Spawn(spawnID)
+    if not spawn() then
+        return 999, false
+    end
+
+    -- Try to get navigation path length if nav is available
+    if isNavAvailable() then
+        local ok, pathLength = pcall(function()
+            return mq.TLO.Navigation.PathLength(string.format("id %d", spawnID))()
+        end)
+
+        if ok and pathLength and pathLength > 0 and pathLength < 999999 then
+            logging.debug(string.format("[Engine] Path length to spawn %d: %.1f (via navigation)", spawnID, pathLength))
+            return pathLength, true
+        end
+    end
+
+    -- Fallback to straight-line distance
+    local straightDist = spawn.Distance() or 999
+    logging.debug(string.format("[Engine] Using straight-line distance to spawn %d: %.1f (nav unavailable)", spawnID, straightDist))
+    return straightDist, false
+end
+
 -- Smart navigation function that uses configurable commands with optional fallback
 local function smartNavigate(spawnID, reason)
     reason = reason or "navigation"
@@ -613,6 +651,8 @@ function SmartLootEngine.processDirectedTasksTick()
     end
 
     if SmartLootEngine.state.directedProcessing.step == "navigating" then
+        -- Use straight-line distance here since we're checking if we've reached our destination
+        -- (Path distance was already validated when selecting this corpse)
         local distance = corpse.Distance() or 999
 
         -- If we're very close (<= lootRange), proceed to opening
@@ -1231,7 +1271,9 @@ function SmartLootEngine.findNearestCorpse()
         local corpse = mq.TLO.NearestSpawn(i, query)
         if corpse() then
             local corpseID = corpse.ID()
-            local distance = corpse.Distance() or 999
+
+            -- Use navigation path distance instead of straight-line distance
+            local distance, isPathDist = getPathLengthToSpawn(corpseID)
 
             -- Skip if already processed
             if not SmartLootEngine.isCorpseProcessed(corpseID) then
@@ -1248,17 +1290,22 @@ function SmartLootEngine.findNearestCorpse()
                     isNPCCorpse = false
                 end
 
-                if isNPCCorpse and distance < closestDistance then
+                -- Only consider corpses within the configured radius
+                -- This prevents looting corpses that are close as the crow flies but far to walk
+                if isNPCCorpse and distance <= radius and distance < closestDistance then
                     closestCorpse = {
                         spawnID = corpseID,
                         corpseID = corpseID,
                         name = corpseName,
                         distance = distance,
+                        isPathDistance = isPathDist,
                         x = corpse.X() or 0,
                         y = corpse.Y() or 0,
                         z = corpse.Z() or 0
                     }
                     closestDistance = distance
+                    logging.debug(string.format("[Engine] Found corpse '%s' (ID: %d) at %s distance: %.1f",
+                        corpseName, corpseID, isPathDist and "path" or "straight-line", distance))
                 end
             end
         end
@@ -2360,6 +2407,8 @@ function SmartLootEngine.processNavigatingToCorpseState()
         return
     end
 
+    -- Use straight-line distance here since we're checking if we've reached our destination
+    -- (Path distance was already validated when selecting this corpse)
     local distance = corpse.Distance() or 999
     SmartLootEngine.state.currentCorpseDistance = distance
 
@@ -2426,6 +2475,7 @@ function SmartLootEngine.processOpeningLootWindowState()
         -- Double-check we're still in range after stopping
         local corpse = mq.TLO.Spawn(SmartLootEngine.state.currentCorpseSpawnID)
         if corpse() then
+            -- Use straight-line distance for interaction range check
             local distance = corpse.Distance() or 999
             if distance > SmartLootEngine.config.lootRange + SmartLootEngine.config.lootRangeTolerance then
                 logging.debug(string.format("[Engine] Too far from corpse after stopping (%.1f) - closing loot window",

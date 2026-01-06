@@ -367,7 +367,7 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
             ImGuiTableFlags.Resizable + ImGuiTableFlags.ScrollY +
             ImGuiTableFlags.BordersOuter
 
-        ImGui.BeginChild("StatsTableRegion", 0, 450, ImGuiWindowFlags.HorizontalScrollbar)
+        ImGui.BeginChild("StatsTableRegion", 0, 450, ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar)
         if ImGui.BeginTable("LootStatsTable", 8, tableFlags) then
             -- Setup columns with proper headers
             ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 35)
@@ -604,7 +604,7 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
                                         ImGuiTableFlags.Resizable + ImGuiTableFlags.BordersOuter +
                                         ImGuiTableFlags.ScrollY
 
-                        ImGui.BeginChild("ZoneBreakdownScrollRegion", 0, 120, ImGuiWindowFlags.HorizontalScrollbar)
+                        ImGui.BeginChild("ZoneBreakdownScrollRegion", 0, 120, ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar)
                         
                         if ImGui.BeginTable("ZoneBreakdownTable", 5, tableFlags) then
                             -- Setup columns (no sorting for now to prevent crashes)
