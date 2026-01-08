@@ -330,12 +330,18 @@ function util.sendGroupMessage(message)
 end
 
 -- Create an item link using mq.TLO.Corpse.Item.ItemLink for clickable item links in chat
-function util.createItemLink(itemName, itemID, corpseSlot)
+function util.createItemLink(itemName, itemID, corpseSlot, preCapturedItemLink)
     if not itemName or itemName == "" then
         return ""
     end
 
-    -- Try to create a proper item link using Corpse.Item.ItemLink if we have a corpse slot
+    -- Priority 1: Use pre-captured ItemLink if available (captured before looting)
+    if preCapturedItemLink and preCapturedItemLink ~= "" then
+        -- Format the raw link data for chat display with \x12 delimiters
+        return string.format("\x12%s\x12", preCapturedItemLink)
+    end
+
+    -- Priority 2: Try to create a proper item link using Corpse.Item.ItemLink if we have a corpse slot
     -- Wrap in pcall to prevent crashes
     if corpseSlot then
         local success, itemLink = pcall(function()
@@ -352,7 +358,7 @@ function util.createItemLink(itemName, itemID, corpseSlot)
         end
     end
 
-    -- Fallback: try using mq.TLO.Item if we have an itemID
+    -- Priority 3: Fallback to using mq.TLO.Item if we have an itemID
     if itemID and itemID > 0 then
         local success, itemLink = pcall(function()
             local item = mq.TLO.Item(itemID)

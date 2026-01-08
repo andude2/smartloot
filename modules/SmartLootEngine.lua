@@ -794,6 +794,7 @@ function SmartLootEngine.processDirectedTasksTick()
             SmartLootEngine.state.currentItem.iconID = foundItemInfo.iconID
             SmartLootEngine.state.currentItem.quantity = foundItemInfo.quantity
             SmartLootEngine.state.currentItem.slot = targetSlot
+            SmartLootEngine.state.currentItem.itemLink = foundItemInfo.itemLink or ""
             SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Loot
 
             SmartLootEngine.state.directedProcessing.step = "looting"
@@ -915,6 +916,7 @@ local function resetCurrentItem()
         iconID = 0,
         quantity = 1,
         slot = 0,
+        itemLink = "",
         rule = "",
         action = SmartLootEngine.LootAction.None
     }
@@ -1473,11 +1475,21 @@ function SmartLootEngine.getCorpseItem(index)
         return nil
     end
 
+    -- Capture ItemLink while item is still on corpse
+    local itemLink = ""
+    local success, link = pcall(function()
+        return item.ItemLink() or ""
+    end)
+    if success and link and link ~= "" then
+        itemLink = link
+    end
+
     return {
         name = item.Name() or "",
         itemID = item.ID() or 0,
         iconID = item.Icon() or 0,
         quantity = item.Stack() or 1,
+        itemLink = itemLink,
         valid = true
     }
 end
@@ -1799,7 +1811,8 @@ function SmartLootEngine.executeLootAction(action, itemSlot, itemName, itemID, i
         mq.cmdf("/nomodkey /shift /itemnotify loot%d leftmouseup", itemSlot)
     elseif action == SmartLootEngine.LootAction.Ignore then
         -- No action needed for ignore - just record and continue
-        SmartLootEngine.recordLootAction("Ignored", itemName, itemID, iconID, quantity)
+        local itemLink = SmartLootEngine.state.currentItem and SmartLootEngine.state.currentItem.itemLink or ""
+        SmartLootEngine.recordLootAction("Ignored", itemName, itemID, iconID, quantity, itemLink)
         SmartLootEngine.state.lootActionInProgress = false
         return true
     end
@@ -1827,7 +1840,7 @@ function SmartLootEngine.checkLootActionCompletion()
 
         if action == SmartLootEngine.LootAction.Destroy and itemOnCursor then
             mq.cmd("/destroy")
-            SmartLootEngine.recordLootAction("Destroyed", item.name, item.itemID, item.iconID, item.quantity)
+            SmartLootEngine.recordLootAction("Destroyed", item.name, item.itemID, item.iconID, item.quantity, item.itemLink)
             SmartLootEngine.stats.itemsDestroyed = SmartLootEngine.stats.itemsDestroyed + 1
         elseif action == SmartLootEngine.LootAction.Loot then
             if SmartLootEngine.config.autoInventoryOnLoot then
@@ -1837,7 +1850,7 @@ function SmartLootEngine.checkLootActionCompletion()
                     if not SmartLootEngine.isItemOnCursor() then break end
                 end
             end
-            SmartLootEngine.recordLootAction("Looted", item.name, item.itemID, item.iconID, item.quantity)
+            SmartLootEngine.recordLootAction("Looted", item.name, item.itemID, item.iconID, item.quantity, item.itemLink)
             SmartLootEngine.stats.itemsLooted = SmartLootEngine.stats.itemsLooted + 1
         end
 
@@ -1884,7 +1897,7 @@ function SmartLootEngine.checkLootActionCompletion()
     return false
 end
 
-function SmartLootEngine.recordLootAction(action, itemName, itemID, iconID, quantity)
+function SmartLootEngine.recordLootAction(action, itemName, itemID, iconID, quantity, preCapturedItemLink)
     local targetSpawn = mq.TLO.Target
     local corpseName = (targetSpawn() and targetSpawn.Name()) or SmartLootEngine.state.currentCorpseName
     local corpseID = SmartLootEngine.state.currentCorpseID
@@ -1895,16 +1908,16 @@ function SmartLootEngine.recordLootAction(action, itemName, itemID, iconID, quan
     -- Send chat message if configured based on item announce settings
     if config and config.sendChatMessage and config.shouldAnnounceItem then
         if config.shouldAnnounceItem(action) then
-            -- Get corpse slot from current item state if available
+            -- Use pre-captured itemLink if available, otherwise try to create one
             local corpseSlot = SmartLootEngine.state.currentItem and SmartLootEngine.state.currentItem.slot or nil
-            local itemLink = util.createItemLink(itemName, itemID, corpseSlot)
+            local itemLink = util.createItemLink(itemName, itemID, corpseSlot, preCapturedItemLink)
             local corpseText = corpseID and corpseID > 0 and string.format(" from corpse %d", corpseID) or ""
             config.sendChatMessage(string.format("%s %s%s", action, itemLink, corpseText))
         end
     elseif config and config.sendChatMessage and (action == "Ignored" or action == "Left Behind" or action:find("Ignored")) then
         -- Fallback to old behavior if shouldAnnounceItem function doesn't exist
         local corpseSlot = SmartLootEngine.state.currentItem and SmartLootEngine.state.currentItem.slot or nil
-        local itemLink = util.createItemLink(itemName, itemID, corpseSlot)
+        local itemLink = util.createItemLink(itemName, itemID, corpseSlot, preCapturedItemLink)
         local corpseText = corpseID and corpseID > 0 and string.format(" from corpse %d", corpseID) or ""
         config.sendChatMessage(string.format("%s %s%s", action, itemLink, corpseText))
     end
@@ -2655,6 +2668,7 @@ function SmartLootEngine.processProcessingItemsState()
     SmartLootEngine.state.currentItem.iconID = itemInfo.iconID
     SmartLootEngine.state.currentItem.quantity = itemInfo.quantity
     SmartLootEngine.state.currentItem.slot = SmartLootEngine.state.currentItemIndex
+    SmartLootEngine.state.currentItem.itemLink = itemInfo.itemLink or ""
 
     logging.debug(string.format("[Engine] Item from corpse: %s (itemID=%d, iconID=%d)",
         itemInfo.name, itemInfo.itemID, itemInfo.iconID))
@@ -2712,8 +2726,9 @@ function SmartLootEngine.processProcessingItemsState()
                     SmartLootEngine.state.currentCorpseSpawnID, SmartLootEngine.state.currentCorpseName)
             end
 
+            local itemLink = itemInfo.itemLink or SmartLootEngine.state.currentItem.itemLink or ""
             SmartLootEngine.recordLootAction("Ignored (Lore Conflict)", itemInfo.name, finalItemID, finalIconID,
-                itemInfo.quantity)
+                itemInfo.quantity, itemLink)
             SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
 
             -- Clear the resolved rule before moving to next item
@@ -2743,8 +2758,9 @@ function SmartLootEngine.processProcessingItemsState()
                     -- Main/RGMain: record rule, leave item behind, and continue scanning
                     SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
                     SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
+                    local itemLink = itemInfo.itemLink or SmartLootEngine.state.currentItem.itemLink or ""
                     SmartLootEngine.recordLootAction("Left Behind (No Space)", itemInfo.name, finalItemID, finalIconID,
-                        itemInfo.quantity)
+                        itemInfo.quantity, itemLink)
                     SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
                     
                     -- Clear the resolved rule before moving to next item
@@ -2775,7 +2791,8 @@ function SmartLootEngine.processProcessingItemsState()
         end
 
         local actionText = rule == "LeftBehind" and "Left Behind" or "Ignored"
-        SmartLootEngine.recordLootAction(actionText, itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
+        local itemLink = itemInfo.itemLink or SmartLootEngine.state.currentItem.itemLink or ""
+        SmartLootEngine.recordLootAction(actionText, itemInfo.name, finalItemID, finalIconID, itemInfo.quantity, itemLink)
         SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
 
         -- Clear the resolved rule before moving to next item
@@ -2789,8 +2806,9 @@ function SmartLootEngine.processProcessingItemsState()
         logging.debug(string.format("[Engine] Unknown rule '%s' for item %s - treating as ignore", rule, itemInfo.name))
         SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Ignore
         SmartLootEngine.queueIgnoredItem(itemInfo.name, finalItemID)
+        local itemLink = itemInfo.itemLink or SmartLootEngine.state.currentItem.itemLink or ""
         SmartLootEngine.recordLootAction("Ignored (Unknown Rule)", itemInfo.name, finalItemID, finalIconID,
-            itemInfo.quantity)
+            itemInfo.quantity, itemLink)
         SmartLootEngine.stats.itemsIgnored = SmartLootEngine.stats.itemsIgnored + 1
 
         -- Clear the resolved rule before moving to next item
