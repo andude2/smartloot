@@ -412,7 +412,25 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             ImGui.Separator()
             
             -- Initialize selected rule state
-            lootUI.pendingDecisionRule = lootUI.pendingDecisionRule or "Keep"
+            -- Load default from config, with validation and fallback to "Keep"
+            if not lootUI.pendingDecisionRule then
+                local config = require("modules.config")
+                local toonName = mq.TLO.Me.Name() or "unknown"
+                local selection = "Keep"  -- default fallback
+                if config.getDefaultPromptDropdown then
+                    selection = config.getDefaultPromptDropdown(toonName)
+                end
+                -- Validate it's a known rule
+                local validRules = {"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}
+                local isValid = false
+                for _, rule in ipairs(validRules) do
+                    if selection == rule then
+                        isValid = true
+                        break
+                    end
+                end
+                lootUI.pendingDecisionRule = isValid and selection or "Keep"
+            end
             lootUI.pendingThreshold = lootUI.pendingThreshold or 1
             
             -- Rule dropdown with better spacing

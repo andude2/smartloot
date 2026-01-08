@@ -301,7 +301,7 @@ local function draw_character_settings(lootUI, config)
         currentAction = config.getDefaultNewItemAction(toonName) or "Prompt"
     end
     
-    local actionOptions = {"Prompt", "Keep", "Ignore", "Destroy"}
+    local actionOptions = {"Prompt", "PromptThenKeep", "PromptThenIgnore", "Keep", "Ignore", "Destroy"}
     local displayLabel = currentAction
 
     ImGui.PushItemWidth(150)
@@ -333,13 +333,15 @@ local function draw_character_settings(lootUI, config)
     if ImGui.IsItemHovered() then
         ImGui.SetTooltip("Choose the default action for new items without existing rules:\n\n" ..
                         "• Prompt: Ask for decision (default behavior)\n" ..
+                        "• PromptThenKeep: Ask for decision, auto-Keep on timeout\n" ..
+                        "• PromptThenIgnore: Ask for decision, auto-Ignore on timeout\n" ..
                         "• Keep: Automatically loot all new items\n" ..
                         "• Ignore: Automatically ignore all new items\n" ..
                         "• Destroy: Automatically destroy all new items")
     end
 
-    -- Decision Timeout (render only when Prompt is selected)
-    if (currentAction == "Prompt") then
+    -- Decision Timeout (render only when Prompt or PromptThen* is selected)
+    if (currentAction == "Prompt" or currentAction == "PromptThenKeep" or currentAction == "PromptThenIgnore") then
         ImGui.Spacing()
         ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
         ImGui.Text("Decision Timeout (seconds):")
@@ -366,6 +368,48 @@ local function draw_character_settings(lootUI, config)
 
         if ImGui.IsItemHovered() then
             ImGui.SetTooltip("How long to wait for a decision before applying the timeout action.\nRange: 5-300 seconds")
+        end
+
+        -- Default Prompt Dropdown Selection (only show when Default Action is "Prompt")
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Default Dropdown Selection:")
+        ImGui.PopStyleColor()
+
+        local currentDropdown = "Keep"
+        if config.getDefaultPromptDropdown then
+            currentDropdown = config.getDefaultPromptDropdown(toonName) or "Keep"
+        end
+
+        local dropdownOptions = {"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}
+
+        ImGui.PushItemWidth(150)
+        if ImGui.BeginCombo("##DefaultPromptDropdown", currentDropdown) then
+            for _, option in ipairs(dropdownOptions) do
+                local isSelected = (option == currentDropdown)
+                if ImGui.Selectable(option, isSelected) then
+                    if config.setDefaultPromptDropdown then
+                        local success, err = config.setDefaultPromptDropdown(toonName, option)
+                        if success then
+                            logging.log("Default prompt dropdown set to: " .. option .. " for " .. toonName)
+                        else
+                            logging.log("Error setting default dropdown: " .. tostring(err))
+                        end
+                    end
+                end
+                if isSelected then ImGui.SetItemDefaultFocus() end
+            end
+            ImGui.EndCombo()
+        end
+        ImGui.PopItemWidth()
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Choose the default selection in the dropdown when the New Item prompt appears:\n\n" ..
+                            "• Keep: Auto-select 'Keep' in dropdown\n" ..
+                            "• Ignore: Auto-select 'Ignore' in dropdown\n" ..
+                            "• Destroy: Auto-select 'Destroy' in dropdown\n" ..
+                            "• KeepIfFewerThan: Auto-select threshold rule\n" ..
+                            "• KeepThenIgnore: Auto-select threshold rule")
         end
     end
 

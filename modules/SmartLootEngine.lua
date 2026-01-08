@@ -40,6 +40,57 @@ local function _preventPeerTriggers()
 end
 
 -- ============================================================================
+-- DEFAULT ACTION HELPER FUNCTIONS
+-- ============================================================================
+
+--- Extract fallback action from PromptThen* default actions
+-- @param defaultAction string - The default action (e.g., "PromptThenKeep")
+-- @return string|nil - The fallback action ("Keep", "Ignore", "Destroy") or nil
+local function extractFallbackAction(defaultAction)
+    if not defaultAction or type(defaultAction) ~= "string" then
+        return nil
+    end
+
+    -- Check if this is a "PromptThen*" action
+    if defaultAction:match("^PromptThen") then
+        -- Extract the part after "PromptThen"
+        local fallback = defaultAction:match("^PromptThen(.+)$")
+
+        -- Validate it's a real action
+        local validFallbacks = {"Keep", "Ignore", "Destroy"}
+        for _, valid in ipairs(validFallbacks) do
+            if fallback == valid then
+                return fallback
+            end
+        end
+    end
+
+    -- Not a PromptThen* action or invalid fallback
+    return nil
+end
+
+--- Check if a default action should trigger the prompt popup
+-- @param defaultAction string - The default action
+-- @return boolean - true if should show prompt
+local function shouldShowPrompt(defaultAction)
+    if not defaultAction then
+        return false
+    end
+
+    -- "Prompt" always shows prompt
+    if defaultAction == "Prompt" then
+        return true
+    end
+
+    -- "PromptThen*" actions also show prompt
+    if defaultAction:match("^PromptThen") then
+        return true
+    end
+
+    return false
+end
+
+-- ============================================================================
 -- NAVIGATION HELPER FUNCTIONS
 -- ============================================================================
 
@@ -1528,8 +1579,9 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
             defaultAction = config.getDefaultNewItemAction(toonName)
         end
 
-        -- If default action is not "Prompt", apply it directly
-        if defaultAction ~= "Prompt" then
+        -- If default action does not require prompting, apply it directly
+        -- (applies to Keep, Ignore, Destroy - but NOT Prompt or PromptThen* actions)
+        if not shouldShowPrompt(defaultAction) then
             logging.debug(string.format("[Engine] Applying default action '%s' for new item: %s", defaultAction, itemName))
 
             -- Auto-save a local rule so future encounters don't need default handling
@@ -2306,18 +2358,32 @@ function SmartLootEngine.checkPendingDecisionTimeout()
     if elapsed > timeoutMs then
         logging.debug(string.format("[Engine] Pending decision timed out after %dms (timeout: %dms)", elapsed, timeoutMs))
 
-        if SmartLootEngine.config.autoResolveUnknownItems then
-            local defaultAction = SmartLootEngine.config.defaultUnknownItemAction
-            SmartLootEngine.resolvePendingDecision(SmartLootEngine.state.currentItem.name,
-                SmartLootEngine.state.currentItem.itemID,
-                defaultAction,
-                SmartLootEngine.state.currentItem.iconID)
-        else
-            SmartLootEngine.resolvePendingDecision(SmartLootEngine.state.currentItem.name,
-                SmartLootEngine.state.currentItem.itemID,
-                "Ignore",
-                SmartLootEngine.state.currentItem.iconID)
+        -- Determine fallback action based on default action setting
+        local defaultAction = "Prompt"
+        if config and config.getDefaultNewItemAction then
+            defaultAction = config.getDefaultNewItemAction(toonName)
         end
+
+        -- Try to extract fallback from PromptThen* actions
+        local fallbackAction = extractFallbackAction(defaultAction)
+        if not fallbackAction then
+            -- Not a PromptThen* action, use "Ignore" as default (backward compatible)
+            fallbackAction = "Ignore"
+        end
+
+        logging.debug(string.format(
+            "[Engine] Applying timeout fallback action: %s (from default: %s)",
+            fallbackAction,
+            defaultAction))
+
+        -- Apply the fallback action
+        -- Note: For PromptThen* actions, this will save the rule (unlike old "Prompt" behavior)
+        SmartLootEngine.resolvePendingDecision(
+            SmartLootEngine.state.currentItem.name,
+            SmartLootEngine.state.currentItem.itemID,
+            fallbackAction,
+            SmartLootEngine.state.currentItem.iconID)
+
         return true
     end
 

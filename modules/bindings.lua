@@ -453,24 +453,31 @@ local function bindDefaultActionCommands()
                 current = config.getDefaultNewItemAction(toonName)
             end
             util.printSmartLoot("Default action for new items: " .. current, "info")
-            util.printSmartLoot("Usage: /sl_defaultaction <Prompt|Keep|Ignore|Destroy>", "info")
+            util.printSmartLoot("Usage: /sl_defaultaction <Prompt|PromptThenKeep|PromptThenIgnore|Keep|Ignore|Destroy>", "info")
             return
         end
-        
+
         local a = action:lower()
-        local validActions = {"prompt", "keep", "ignore", "destroy"}
+        local validActions = {"prompt", "promptthenkeep", "promptthenignore", "keep", "ignore", "destroy"}
         local normalized = nil
-        
-        -- Normalize action
+
+        -- Normalize action (handle CamelCase for PromptThen* actions)
         for _, valid in ipairs(validActions) do
             if a == valid then
-                normalized = valid:sub(1,1):upper() .. valid:sub(2)
+                if valid == "promptthenkeep" then
+                    normalized = "PromptThenKeep"
+                elseif valid == "promptthenignore" then
+                    normalized = "PromptThenIgnore"
+                else
+                    -- Standard capitalization for simple actions
+                    normalized = valid:sub(1,1):upper() .. valid:sub(2)
+                end
                 break
             end
         end
-        
+
         if not normalized then
-            util.printSmartLoot("Invalid action. Valid options: Prompt, Keep, Ignore, Destroy", "error")
+            util.printSmartLoot("Invalid action. Valid options: Prompt, PromptThenKeep, PromptThenIgnore, Keep, Ignore, Destroy", "error")
             return
         end
         
@@ -514,6 +521,55 @@ local function bindDefaultActionCommands()
         if config.setDecisionTimeout then
             local actualMs = config.setDecisionTimeout(toonName, timeoutMs)
             util.printSmartLoot("Decision timeout set to " .. math.floor(actualMs / 1000) .. " seconds", "success")
+        else
+            util.printSmartLoot("Config functions not available", "error")
+        end
+    end)
+
+    -- Set default prompt dropdown selection
+    mq.bind("/sl_promptdefault", function(selection)
+        if not selection or selection == "" then
+            local toonName = mq.TLO.Me.Name() or "unknown"
+            local current = "Keep"
+            if config.getDefaultPromptDropdown then
+                current = config.getDefaultPromptDropdown(toonName)
+            end
+            util.printSmartLoot("Default prompt dropdown: " .. current, "info")
+            util.printSmartLoot("Usage: /sl_promptdefault <Keep|Ignore|Destroy|KeepIfFewerThan|KeepThenIgnore>", "info")
+            return
+        end
+
+        -- Normalize selection (case-insensitive)
+        local validSelections = {
+            {input = "keep", output = "Keep"},
+            {input = "ignore", output = "Ignore"},
+            {input = "destroy", output = "Destroy"},
+            {input = "keepiffewerthan", output = "KeepIfFewerThan"},
+            {input = "keepthenignore", output = "KeepThenIgnore"}
+        }
+
+        local normalized = nil
+        local inputLower = selection:lower()
+        for _, valid in ipairs(validSelections) do
+            if inputLower == valid.input then
+                normalized = valid.output
+                break
+            end
+        end
+
+        if not normalized then
+            util.printSmartLoot("Invalid selection. Valid options: Keep, Ignore, Destroy, KeepIfFewerThan, KeepThenIgnore", "error")
+            return
+        end
+
+        local toonName = mq.TLO.Me.Name() or "unknown"
+        if config.setDefaultPromptDropdown then
+            local success, err = config.setDefaultPromptDropdown(toonName, normalized)
+            if success then
+                util.printSmartLoot("Default prompt dropdown set to: " .. normalized, "success")
+            else
+                util.printSmartLoot("Error: " .. tostring(err), "error")
+            end
         else
             util.printSmartLoot("Config functions not available", "error")
         end

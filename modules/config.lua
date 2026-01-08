@@ -492,7 +492,7 @@ function config.setDefaultNewItemAction(toonName, action)
     charCfg, toonName = ensureCharacterConfig(toonName)
     
     -- Validate action
-    local validActions = {"Prompt", "Keep", "Ignore", "Destroy"}
+    local validActions = {"Prompt", "PromptThenKeep", "PromptThenIgnore", "Keep", "Ignore", "Destroy"}
     local isValid = false
     for _, validAction in ipairs(validActions) do
         if action == validAction then
@@ -518,6 +518,40 @@ function config.getDefaultNewItemAction(toonName)
     local chars = serverConfig.characters or {}
     local charCfg = chars[toonName]
     return charCfg and charCfg.defaultNewItemAction or "Prompt"
+end
+
+-- Default prompt dropdown selection for new item prompt (per character)
+function config.setDefaultPromptDropdown(toonName, selection)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+
+    -- Validate selection
+    local validSelections = {"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}
+    local isValid = false
+    for _, validSelection in ipairs(validSelections) do
+        if selection == validSelection then
+            isValid = true
+            break
+        end
+    end
+
+    if not isValid then
+        return false, "Invalid selection. Valid options: " .. table.concat(validSelections, ", ")
+    end
+
+    charCfg.defaultPromptDropdown = selection
+    config.save()
+    return charCfg.defaultPromptDropdown
+end
+
+function config.getDefaultPromptDropdown(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName]
+    return charCfg and charCfg.defaultPromptDropdown or "Keep"
 end
 
 -- Decision timeout for new items (per character)
