@@ -3137,7 +3137,8 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
         ImGui.Spacing()
         
         -- Scrollable table
-        if ImGui.BeginChild("RemotePendingList", 0, -50) then
+        local remoteListVisible = ImGui.BeginChild("RemotePendingList", 0, -50)
+        if remoteListVisible then
             local tableFlags = ImGuiTableFlags.Borders + ImGuiTableFlags.RowBg + ImGuiTableFlags.ScrollY
             if ImGui.BeginTable("RemotePendingTable", 6, tableFlags) then
                 ImGui.TableSetupColumn("Peer", ImGuiTableColumnFlags.WidthFixed, 100)
@@ -3202,8 +3203,8 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                 
                 ImGui.EndTable()
             end
-            ImGui.EndChild()
         end
+        ImGui.EndChild()
         
         ImGui.Separator()
         
@@ -3673,4 +3674,3 @@ function uiPopups.drawBulkCopyRulesPopup(lootUI, database, util)
 end
 
 return uiPopups
-
