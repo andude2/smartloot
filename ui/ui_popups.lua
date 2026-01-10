@@ -500,7 +500,7 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 
                 -- Clear currentItem for immediate processing
                 lootUI.currentItem = nil
-                lootUI.pendingDecisionRule = "Keep"
+                lootUI.pendingDecisionRule = nil
                 lootUI.pendingThreshold = 1
             end
             
@@ -654,7 +654,7 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 
                 -- Clear UI state
                 lootUI.currentItem = nil
-                lootUI.pendingDecisionRule = "Keep"
+                lootUI.pendingDecisionRule = nil
                 lootUI.pendingThreshold = 1
             end
             ImGui.PopStyleColor(3)
@@ -680,7 +680,7 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
         -- If window was closed, clean up state
         if not decisionOpen then
             lootUI.currentItem = nil
-            lootUI.pendingDecisionRule = "Keep"
+            lootUI.pendingDecisionRule = nil
             lootUI.pendingThreshold = 1
         end
     end
