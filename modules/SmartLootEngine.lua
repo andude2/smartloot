@@ -375,6 +375,7 @@ SmartLootEngine.state = {
     needsPendingDecision = false,
     pendingDecisionStartTime = 0,
     pendingDecisionTimeoutMs = 30000,
+    pendingDecisionForwarded = false,
 
     -- Session tracking
     processedCorpsesThisSession = {},
@@ -2291,6 +2292,7 @@ function SmartLootEngine.createPendingDecision(itemName, itemID, iconID, quantit
 
     SmartLootEngine.state.needsPendingDecision = true
     SmartLootEngine.state.pendingDecisionStartTime = mq.gettime()
+    SmartLootEngine.state.pendingDecisionForwarded = false
 
     -- Update UI if available
     if SmartLootEngine.state.lootUI then
@@ -2332,14 +2334,15 @@ function SmartLootEngine.createPendingDecision(itemName, itemID, iconID, quantit
                 messageJson
             )
         end)
-        
+
         if success then
             logging.debug("[Engine] Broadcast sent successfully")
         else
             logging.debug(string.format("[Engine] Failed to broadcast: %s", tostring(err)))
         end
-        
+
         util.printSmartLoot(string.format("Pending decision for %s forwarded to foreground character", itemName), "info")
+        SmartLootEngine.state.pendingDecisionForwarded = true
     end
 
     -- Send chat notification
@@ -3493,6 +3496,28 @@ function SmartLootEngine.resolvePendingDecision(itemName, itemID, selectedRule, 
     -- Resume item processing with the resolved rule
     setState(SmartLootEngine.LootState.ProcessingItems, "Decision resolved")
     scheduleNextTick(100)
+
+    local forwarded = SmartLootEngine.state.pendingDecisionForwarded
+    SmartLootEngine.state.pendingDecisionForwarded = false
+    if forwarded then
+        local requester = mq.TLO.Me.Name() or "Unknown"
+        local clearData = {
+            cmd = "clear_remote_decision",
+            sender = requester,
+            requester = requester,
+            itemName = itemName,
+            itemID = itemID or 0
+        }
+        local ok, err = pcall(function()
+            actors.send(
+                { mailbox = "smartloot_mailbox" },
+                json.encode(clearData)
+            )
+        end)
+        if not ok then
+            logging.debug(string.format("[Engine] Failed to broadcast remote decision clear: %s", tostring(err)))
+        end
+    end
 
     return true
 end

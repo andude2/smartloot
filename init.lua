@@ -468,6 +468,13 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
 
         actors.send(sender .. "_smartloot_mailbox", json.encode(statusData))
     elseif cmd == "pending_decision_request" then
+        local currentToon = getCurrentToon()
+        if sender and currentToon and sender:lower() == currentToon:lower() then
+            logging.debug(string.format("[SmartLoot] Ignoring remote pending decision request from self for item: %s",
+                tostring(data.itemName)))
+            return
+        end
+
         -- Another character is requesting we make a decision for their item
         -- Store in global remote pending decisions queue
         _G.SMARTLOOT_REMOTE_DECISIONS = _G.SMARTLOOT_REMOTE_DECISIONS or {}
