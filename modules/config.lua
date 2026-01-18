@@ -596,6 +596,25 @@ function config.isAutoBroadcastNewRules(toonName)
     return charCfg and charCfg.autoBroadcastNewRules == true
 end
 
+-- Use buttons instead of dropdown for pending decisions (per character)
+function config.setUsePendingDecisionButtons(toonName, enabled)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.usePendingDecisionButtons = enabled and true or false
+    config.save()
+    return charCfg.usePendingDecisionButtons
+end
+
+function config.isUsePendingDecisionButtons(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName]
+    return charCfg and charCfg.usePendingDecisionButtons == true
+end
+
 function config.setPeerSelectionStrategy(strategy)
     local normalized = "items_first"
     if type(strategy) == "string" then

@@ -428,6 +428,21 @@ local function draw_character_settings(lootUI, config)
         ImGui.SetTooltip("When Default Action auto-creates a Keep/Ignore rule for a new item, automatically copy that rule to connected peers and refresh their caches.")
     end
 
+    -- Use buttons instead of dropdown for pending decisions
+    local useButtons = false
+    if config.isUsePendingDecisionButtons then
+        useButtons = config.isUsePendingDecisionButtons(toonName)
+    end
+    local newUseButtons, ubChanged = ImGui.Checkbox("Use buttons for pending decisions (instead of dropdown)", useButtons)
+    if ubChanged then
+        if config.setUsePendingDecisionButtons then
+            config.setUsePendingDecisionButtons(toonName, newUseButtons)
+        end
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.SetTooltip("When enabled, shows a row of small buttons (Keep, Ignore, Destroy, etc.) instead of a dropdown selector in the pending decisions window.")
+    end
+
     ImGui.Spacing()
     ImGui.Separator()
     ImGui.Spacing()

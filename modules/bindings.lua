@@ -123,6 +123,10 @@ local function bindDirectedMode()
 
     -- Simple test command for directed mode
     mq.bind("/sl_directed_status", function()
+        if not SmartLootEngine or not SmartLootEngine.state then
+            util.printSmartLoot("SmartLootEngine or state not available", "error")
+            return
+        end
         local q = SmartLootEngine.state.directedTasksQueue or {}
         local dp = SmartLootEngine.state.directedProcessing or {}
         util.printSmartLoot(string.format("Directed Status: active=%s, queue=%d, step=%s", tostring(dp.active), #q, tostring(dp.step)), "info")
@@ -570,6 +574,30 @@ local function bindDefaultActionCommands()
             else
                 util.printSmartLoot("Error: " .. tostring(err), "error")
             end
+        else
+            util.printSmartLoot("Config functions not available", "error")
+        end
+    end)
+
+    -- Toggle button vs dropdown mode for pending decisions
+    mq.bind("/sl_pendingbuttons", function(arg)
+        local toonName = mq.TLO.Me.Name() or "unknown"
+
+        if not arg or arg == "" then
+            -- Show current setting
+            local current = false
+            if config.isUsePendingDecisionButtons then
+                current = config.isUsePendingDecisionButtons(toonName)
+            end
+            util.printSmartLoot("Pending decision buttons: " .. (current and "enabled" or "disabled"), "info")
+            util.printSmartLoot("Usage: /sl_pendingbuttons <on|off>", "info")
+            return
+        end
+
+        local enabled = arg:lower() == "on" or arg:lower() == "true" or arg == "1"
+        if config.setUsePendingDecisionButtons then
+            config.setUsePendingDecisionButtons(toonName, enabled)
+            util.printSmartLoot("Pending decision buttons " .. (enabled and "enabled" or "disabled"), "success")
         else
             util.printSmartLoot("Config functions not available", "error")
         end

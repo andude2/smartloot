@@ -433,19 +433,51 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             end
             lootUI.pendingThreshold = lootUI.pendingThreshold or 1
             
-            -- Rule dropdown with better spacing
-            ImGui.SetNextItemWidth(180)
-            if ImGui.BeginCombo("##pendingRule", lootUI.pendingDecisionRule) then
-                for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
-                    local isSelected = (lootUI.pendingDecisionRule == rule)
-                    if ImGui.Selectable(rule, isSelected) then
-                        lootUI.pendingDecisionRule = rule
+            -- Rule selection (dropdown or buttons based on config)
+            local config = require("modules.config")
+            local toonName = mq.TLO.Me.Name() or "unknown"
+            local useButtons = config.isUsePendingDecisionButtons and config.isUsePendingDecisionButtons(toonName) or false
+
+            if useButtons then
+                -- Button mode: row of small buttons
+                local buttonRules = {
+                    {rule = "Keep", label = "Keep", width = 45},
+                    {rule = "Ignore", label = "Ignore", width = 45},
+                    {rule = "Destroy", label = "Destroy", width = 50},
+                    {rule = "KeepIfFewerThan", label = "K<N", width = 35},
+                    {rule = "KeepThenIgnore", label = "KTI", width = 35}
+                }
+                for bi, btn in ipairs(buttonRules) do
+                    if bi > 1 then ImGui.SameLine() end
+                    local isSelected = (lootUI.pendingDecisionRule == btn.rule)
+                    if isSelected then
+                        ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.2, 1.0)
+                    end
+                    if ImGui.Button(btn.label .. "##pendingBtn_" .. bi, btn.width, 0) then
+                        lootUI.pendingDecisionRule = btn.rule
                     end
                     if isSelected then
-                        ImGui.SetItemDefaultFocus()
+                        ImGui.PopStyleColor()
+                    end
+                    if ImGui.IsItemHovered() then
+                        ImGui.SetTooltip(btn.rule)
                     end
                 end
-                ImGui.EndCombo()
+            else
+                -- Dropdown mode (default)
+                ImGui.SetNextItemWidth(180)
+                if ImGui.BeginCombo("##pendingRule", lootUI.pendingDecisionRule) then
+                    for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
+                        local isSelected = (lootUI.pendingDecisionRule == rule)
+                        if ImGui.Selectable(rule, isSelected) then
+                            lootUI.pendingDecisionRule = rule
+                        end
+                        if isSelected then
+                            ImGui.SetItemDefaultFocus()
+                        end
+                    end
+                    ImGui.EndCombo()
+                end
             end
             
             -- Threshold input for KeepIfFewerThan
@@ -3150,42 +3182,74 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                 ImGui.TableHeadersRow()
                 
                 local uiUtils = require("smartloot.ui.ui_utils")
-                
+                local config = require("modules.config")
+                local toonName = mq.TLO.Me.Name() or "unknown"
+                local useButtons = config.isUsePendingDecisionButtons and config.isUsePendingDecisionButtons(toonName) or false
+
                 for i, decision in ipairs(remoteDecisions) do
                     ImGui.TableNextRow()
-                    
+
                     local assignment = lootUI.remotePendingAssignments[i]
-                    
+
                     -- Column 1: Peer/Requester
                     ImGui.TableSetColumnIndex(0)
                     ImGui.TextColored(1, 0.5, 0, 1, decision.requester)
-                    
+
                     -- Column 2: Icon
                     ImGui.TableSetColumnIndex(1)
                     uiUtils.drawItemIcon(decision.iconID or 0)
-                    
+
                     -- Column 3: Item Name
                     ImGui.TableSetColumnIndex(2)
                     ImGui.TextColored(1, 1, 0, 1, decision.itemName)
-                    
+
                     -- Column 4: Item ID
                     ImGui.TableSetColumnIndex(3)
                     ImGui.Text(tostring(decision.itemID or 0))
-                    
-                    -- Column 5: Rule dropdown
+
+                    -- Column 5: Rule selection (dropdown or buttons based on config)
                     ImGui.TableSetColumnIndex(4)
-                    ImGui.SetNextItemWidth(-1)
-                    if ImGui.BeginCombo("##remoteRule_" .. i, assignment.rule) then
-                        for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
-                            local isSelected = (assignment.rule == rule)
-                            if ImGui.Selectable(rule .. "##sel_" .. i, isSelected) then
-                                assignment.rule = rule
+
+                    if useButtons then
+                        -- Button mode: row of small buttons
+                        local buttonRules = {
+                            {rule = "Keep", label = "Keep", width = 32},
+                            {rule = "Ignore", label = "Ign", width = 28},
+                            {rule = "Destroy", label = "Des", width = 28},
+                            {rule = "KeepIfFewerThan", label = "K<N", width = 28},
+                            {rule = "KeepThenIgnore", label = "KTI", width = 28}
+                        }
+                        for bi, btn in ipairs(buttonRules) do
+                            if bi > 1 then ImGui.SameLine() end
+                            local isSelected = (assignment.rule == btn.rule)
+                            if isSelected then
+                                ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.2, 1.0)
+                            end
+                            if ImGui.Button(btn.label .. "##btn_" .. i .. "_" .. bi, btn.width, 0) then
+                                assignment.rule = btn.rule
                             end
                             if isSelected then
-                                ImGui.SetItemDefaultFocus()
+                                ImGui.PopStyleColor()
+                            end
+                            if ImGui.IsItemHovered() then
+                                ImGui.SetTooltip(btn.rule)
                             end
                         end
-                        ImGui.EndCombo()
+                    else
+                        -- Dropdown mode (default)
+                        ImGui.SetNextItemWidth(-1)
+                        if ImGui.BeginCombo("##remoteRule_" .. i, assignment.rule) then
+                            for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
+                                local isSelected = (assignment.rule == rule)
+                                if ImGui.Selectable(rule .. "##sel_" .. i, isSelected) then
+                                    assignment.rule = rule
+                                end
+                                if isSelected then
+                                    ImGui.SetItemDefaultFocus()
+                                end
+                            end
+                            ImGui.EndCombo()
+                        end
                     end
                     
                     -- Column 6: Threshold input
