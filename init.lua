@@ -167,6 +167,8 @@ local lootUI = {
     newRule = "Keep",
     newThreshold = 1,
     paused = false,
+    pendingDecisionPauseActive = false,
+    pendingDecisionPausePrevMode = nil,
     pendingDeleteItem = nil,
     pendingDecision = nil,
     selectedPeer = "",
@@ -256,10 +258,55 @@ local lootUI = {
     },
 }
 
+-- Helper functions to pause/resume the engine directly from pending decisions
+local function pauseEngineForPendingDecision()
+    if lootUI.pendingDecisionPauseActive then
+        return true
+    end
+
+    local currentMode = SmartLootEngine.getLootMode()
+    if currentMode == SmartLootEngine.LootMode.Disabled then
+        lootUI.paused = true
+        util.printSmartLoot("SmartLoot engine is already paused.", "info")
+        return false
+    end
+
+    lootUI.pendingDecisionPausePrevMode = currentMode
+    lootUI.pendingDecisionPauseActive = true
+    SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Disabled, "Pending decision pause")
+    lootUI.paused = true
+    util.printSmartLoot("SmartLoot paused until this decision is resolved.", "warning")
+    return true
+end
+
+local function resumeEngineAfterPendingDecision(reason)
+    if not lootUI.pendingDecisionPauseActive then
+        return false
+    end
+
+    local resumeMode = lootUI.pendingDecisionPausePrevMode
+    lootUI.pendingDecisionPausePrevMode = nil
+    lootUI.pendingDecisionPauseActive = false
+
+    if not resumeMode or resumeMode == SmartLootEngine.LootMode.Disabled then
+        resumeMode = (SmartLootEngine.state and SmartLootEngine.state.pausePreviousMode) or
+            SmartLootEngine.LootMode.Background
+    end
+
+    SmartLootEngine.setLootMode(resumeMode, reason or "Pending decision resolved")
+    lootUI.paused = (SmartLootEngine.getLootMode() == SmartLootEngine.LootMode.Disabled)
+    util.printSmartLoot("SmartLoot resumed.", "success")
+    return true
+end
+
+lootUI.pauseEngineForPendingDecision = pauseEngineForPendingDecision
+lootUI.resumeEngineAfterPendingDecision = resumeEngineAfterPendingDecision
+
 local settings = {
     loopDelay = 500,
     lootRadius = 200,
     lootRange = 15,
+    navPathMaxDistance = config.navPathMaxDistance or 0,
     combatWaitDelay = 1500,
     pendingDecisionTimeout = 30000,
     defaultUnknownItemAction = "Ignore",
@@ -276,6 +323,7 @@ local settings = {
 -- Sync settings from loaded config
 settings.lootRadius = config.lootRadius or settings.lootRadius
 settings.lootRange = config.lootRange or settings.lootRange
+settings.navPathMaxDistance = config.navPathMaxDistance or settings.navPathMaxDistance
 settings.combatWaitDelay = config.engineTiming and config.engineTiming.combatWaitDelayMs or settings.combatWaitDelay
 settings.pendingDecisionTimeout = config.engineTiming and config.engineTiming.pendingDecisionTimeoutMs or
 settings.pendingDecisionTimeout
@@ -332,6 +380,11 @@ local function processUIDecisionForEngine()
         local skipRuleSave = action.skipRuleSave or false
 
         SmartLootEngine.resolvePendingDecision(itemName, action.itemID, rule, action.iconID, skipRuleSave)
+
+        if lootUI.resumeEngineAfterPendingDecision then
+            lootUI.resumeEngineAfterPendingDecision("Pending decision resolved")
+        end
+
         lootUI.pendingLootAction = nil
         lootUI.currentItem = nil
 

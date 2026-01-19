@@ -19,6 +19,7 @@ config.retryDelay = 5     -- Delay between retry attempts in seconds
 -- corpse detection and loot interaction distances (match UI defaults)
 config.lootRadius = 200   -- search radius for corpses
 config.lootRange = 15     -- interaction distance to open loot
+config.navPathMaxDistance = 0 -- optional nav path distance limit (0 = unlimited)
 
 -- Chat output configuration
 config.chatOutputMode = "group"  -- Default to group chat
@@ -252,6 +253,9 @@ function config.load()
             -- Apply loot distances if present
             if configData.global.lootRadius then config.lootRadius = tonumber(configData.global.lootRadius) or config.lootRadius end
             if configData.global.lootRange then config.lootRange = tonumber(configData.global.lootRange) or config.lootRange end
+            if configData.global.navPathMaxDistance ~= nil then
+                config.navPathMaxDistance = tonumber(configData.global.navPathMaxDistance) or config.navPathMaxDistance
+            end
             
             -- Apply engine timing settings
             if configData.global.engineTiming then
@@ -315,6 +319,7 @@ function config.save()
     -- Persist loot distances
     configData.global.lootRadius = config.lootRadius
     configData.global.lootRange = config.lootRange
+    configData.global.navPathMaxDistance = config.navPathMaxDistance
     
     -- Update chat settings
     configData.global.chatOutputMode = config.chatOutputMode
@@ -397,6 +402,15 @@ function config.setLootRange(range)
     local Engine = package.loaded["modules.SmartLootEngine"]
     if Engine and Engine.setLootRange then Engine.setLootRange(range) end
     return range
+end
+
+function config.setNavPathMaxDistance(distance)
+    distance = math.max(0, math.min(5000, tonumber(distance) or config.navPathMaxDistance or 0))
+    config.navPathMaxDistance = distance
+    config.save()
+    local Engine = package.loaded["modules.SmartLootEngine"]
+    if Engine and Engine.setNavPathMaxDistance then Engine.setNavPathMaxDistance(distance) end
+    return distance
 end
 
 -- Chat output helper functions

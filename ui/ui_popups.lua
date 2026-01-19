@@ -298,8 +298,8 @@ end
 -- Loot Decision Popup - REDESIGNED with better layout and consistent button sizing
 function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
     if lootUI.currentItem then
-    ImGui.SetNextWindowSize(520, 380)
-    local decisionOpen = ImGui.Begin("SmartLoot - Loot Decision", true, ImGuiWindowFlags.NoResize)
+    ImGui.SetNextWindowSize(520, 380, ImGuiCond.FirstUseEver)
+    local decisionOpen = ImGui.Begin("SmartLoot - Loot Decision", true)
         if decisionOpen then
             -- Get current item info
             local itemName = lootUI.currentItem.name
@@ -339,72 +339,96 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 valueStr = "0c"
             end
             
-            -- Header with item info in a styled box
-            ImGui.PushStyleColor(ImGuiCol.ChildBg, 0.1, 0.1, 0.2, 0.8)
-            ImGui.BeginChild("ItemHeader", 0, 95, true)
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 8)
-            ImGui.Text("Item requiring decision:")
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2)
-            
-            -- Display item icon and clickable name
+            -- Compact header row with icon + info
             local uiUtils = require("smartloot.ui.ui_utils")
-            if iconID and iconID > 0 then
-                uiUtils.drawItemIcon(iconID)
-                ImGui.SameLine()
-            end
-            
-            -- Make item name clickable to inspect item
+            local iconSize = 42
+            ImGui.BeginGroup()
+            uiUtils.drawItemIcon(iconID or 0, iconSize, iconSize)
+            ImGui.EndGroup()
+            ImGui.SameLine()
+            ImGui.BeginGroup()
+            ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 0.6, 1)
             local itemLabel = itemName .. "##pendingItemLink"
-            ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 0, 1)  -- Yellow color
-            if ImGui.Selectable(itemLabel, false, ImGuiSelectableFlags.DontClosePopups) then
-                -- Get and execute the item link to show item inspect window
-                if itemIndex then
-                    pcall(function()
-                        local corpseItem = mq.TLO.Corpse.Item(itemIndex)
-                        if corpseItem and corpseItem() then
-                            local itemLink = corpseItem.ItemLink()
-                            if itemLink and itemLink ~= "" and itemLink ~= "NULL" then
-                                -- Try with wrapped link first
-                                local wrappedLink = string.format("\x12%s\x12", itemLink)
-                                local links = mq.ExtractLinks(wrappedLink)
+            if ImGui.Selectable(itemLabel, false, ImGuiSelectableFlags.DontClosePopups) and itemIndex then
+                pcall(function()
+                    local corpseItem = mq.TLO.Corpse.Item(itemIndex)
+                    if corpseItem and corpseItem() then
+                        local itemLink = corpseItem.ItemLink()
+                        if itemLink and itemLink ~= "" and itemLink ~= "NULL" then
+                            local wrappedLink = string.format("\x12%s\x12", itemLink)
+                            local links = mq.ExtractLinks(wrappedLink)
+                            if links and #links > 0 then
+                                mq.ExecuteTextLink(links[1])
+                            else
+                                links = mq.ExtractLinks(itemLink)
                                 if links and #links > 0 then
                                     mq.ExecuteTextLink(links[1])
-                                else
-                                    -- Try unwrapped as fallback
-                                    links = mq.ExtractLinks(itemLink)
-                                    if links and #links > 0 then
-                                        mq.ExecuteTextLink(links[1])
-                                    end
                                 end
                             end
                         end
-                    end)
+                    end
+                end)
+            end
+            ImGui.PopStyleColor()
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Click to inspect item")
+            end
+            ImGui.TextDisabled(string.format("Item ID: %d", itemID))
+            ImGui.SameLine()
+            ImGui.TextDisabled(string.format("Corpse Slot: %s", tostring(itemIndex or "?")))
+            ImGui.Text("Value:")
+            ImGui.SameLine()
+            local valueColor = {0.6, 0.4, 0.3, 1}
+            if platValue > 0 then valueColor = {0.9, 0.85, 0.4, 1}
+            elseif goldValue > 0 then valueColor = {0.9, 0.7, 0.3, 1}
+            elseif silverValue > 0 then valueColor = {0.7, 0.7, 0.7, 1} end
+            ImGui.TextColored(valueColor[1], valueColor[2], valueColor[3], valueColor[4], valueStr)
+            ImGui.EndGroup()
+            
+            ImGui.Spacing()
+            ImGui.Separator()
+            ImGui.Spacing()
+
+            -- Quick pause/resume controls for this decision
+            ImGui.Text("Processing control:")
+            ImGui.SameLine()
+            ImGui.TextDisabled("Pause SmartLoot while you decide")
+
+            local pauseActive = lootUI.pendingDecisionPauseActive
+            local pauseLabel = pauseActive and "Resume" or "Pause"
+            local pauseColor = pauseActive and {0.2, 0.7, 0.2, 0.9} or {0.8, 0.3, 0.3, 0.9}
+            local pauseHoverColor = pauseActive and {0.3, 0.8, 0.3, 1.0} or {0.9, 0.4, 0.4, 1.0}
+            local pauseActiveColor = pauseActive and {0.1, 0.5, 0.1, 1.0} or {0.7, 0.2, 0.2, 1.0}
+
+            ImGui.PushStyleColor(ImGuiCol.Button, pauseColor[1], pauseColor[2], pauseColor[3], pauseColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, pauseHoverColor[1], pauseHoverColor[2], pauseHoverColor[3], pauseHoverColor[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, pauseActiveColor[1], pauseActiveColor[2], pauseActiveColor[3], pauseActiveColor[4])
+
+            if ImGui.Button(pauseLabel .. "##PendingDecisionPause", 80, 22) then
+                if pauseActive then
+                    if lootUI.resumeEngineAfterPendingDecision then
+                        lootUI.resumeEngineAfterPendingDecision("Manual resume from pending decision window")
+                    end
+                else
+                    if lootUI.pauseEngineForPendingDecision then
+                        lootUI.pauseEngineForPendingDecision()
+                    end
                 end
             end
-            ImGui.PopStyleColor()
-            
+
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip(string.format("Click to inspect item\nItem ID: %d", itemID))
+                ImGui.SetTooltip(pauseActive and "Resume SmartLoot processing" or "Pause SmartLoot until you're ready")
             end
-            
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 5)
-            
-            -- Display item value with coin color
-            ImGui.Text("Value: ")
-            ImGui.SameLine()
-            if platValue > 0 then
-                ImGui.TextColored(0.8, 0.8, 0.4, 1, valueStr)  -- Gold-ish color for platinum
-            elseif goldValue > 0 then
-                ImGui.TextColored(0.9, 0.7, 0.3, 1, valueStr)  -- Gold color
-            elseif silverValue > 0 then
-                ImGui.TextColored(0.7, 0.7, 0.7, 1, valueStr)  -- Silver color
+            ImGui.PopStyleColor(3)
+
+            if pauseActive then
+                ImGui.SameLine()
+                ImGui.TextColored(1.0, 0.9, 0.4, 1.0, "Processing Paused")
             else
-                ImGui.TextColored(0.6, 0.4, 0.3, 1, valueStr)  -- Copper color
+                ImGui.SameLine()
+                ImGui.TextColored(0.7, 0.9, 0.7, 1.0, "Looting")
             end
-            
-            ImGui.EndChild()
-            ImGui.PopStyleColor()
-            
+
             ImGui.Spacing()
             
             -- Rule selection section
@@ -506,6 +530,23 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                     return lootUI.pendingDecisionRule
                 end
             end
+
+            local function getRuleDisplayLabel()
+                if lootUI.pendingDecisionRule == "KeepIfFewerThan" then
+                    return string.format("Keep if < %d", lootUI.pendingThreshold or 1)
+                elseif lootUI.pendingDecisionRule == "KeepThenIgnore" then
+                    return string.format("Keep if < %d then Ignore", lootUI.pendingThreshold or 1)
+                else
+                    return lootUI.pendingDecisionRule or "Keep"
+                end
+            end
+
+            local currentRuleLabel = getRuleDisplayLabel()
+
+            ImGui.Spacing()
+            ImGui.TextColored(0.9, 0.9, 0.6, 1.0, string.format("Selected rule: %s", currentRuleLabel))
+            ImGui.SameLine()
+            ImGui.TextDisabled("(Click the buttons above to change)")
             
             -- Helper function to apply rule and queue loot action
             local function applyRuleAndQueue(rule, skipAction)
@@ -536,144 +577,115 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 lootUI.pendingThreshold = 1
             end
             
-            -- Main action buttons - smaller, side by side with rounded corners
-            local buttonWidth = 175
-            local buttonHeight = 30
-            local roundingRadius = 6
-            
-            -- Push rounding style for ALL buttons in this popup
+            -- Main action buttons - compact layout
+            local buttonHeight = 22
+            local roundingRadius = 5
             ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, roundingRadius)
-            
-            -- OPTION 1: Apply To All (DEFAULT - highlighted and prominent)
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.7, 0.2, 0.9)
+            local style = ImGui.GetStyle()
+            local spacing = style.ItemSpacing.x
+            local contentWidth = ImGui.GetContentRegionAvail()
+            local primaryWidth = 100
+
+            ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.7, 0.2, 0.95)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.8, 0.3, 1.0)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.6, 0.1, 1.0)
-            
-            if ImGui.Button("Apply To All Connected Peers", buttonWidth, buttonHeight) then
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.5, 0.1, 1.0)
+            local applyAllLabel = string.format("All (%s)", currentRuleLabel)
+            if ImGui.Button(applyAllLabel, primaryWidth, buttonHeight) then
                 local rule = getFinalRule()
                 local connectedPeers = util.getConnectedPeers()
                 local currentCharacter = mq.TLO.Me.Name()
-                
                 local itemID_from_current = lootUI.currentItem.itemID or 0
                 local iconID_from_current = lootUI.currentItem.iconID or 0
-                
-                logging.debug(string.format("[Popup] Apply All: itemName=%s, itemID=%d, iconID=%d", 
+                logging.debug(string.format("[Popup] Apply All: itemName=%s, itemID=%d, iconID=%d",
                     itemName, itemID_from_current, iconID_from_current))
 
-                -- Apply to all connected peers
                 local appliedCount = 0
                 for _, peer in ipairs(connectedPeers) do
-                    if peer ~= currentCharacter then
-                        if database.saveLootRuleFor then
-                            local success = database.saveLootRuleFor(peer, itemName, itemID_from_current, rule, iconID_from_current)
-                            if success then
-                                appliedCount = appliedCount + 1
-                                -- Send reload command to peer via actor
-                                util.sendPeerCommandViaActor(peer, "reload_rules")
-                            end
+                    if peer ~= currentCharacter and database.saveLootRuleFor then
+                        local success = database.saveLootRuleFor(peer, itemName, itemID_from_current, rule, iconID_from_current)
+                        if success then
+                            appliedCount = appliedCount + 1
+                            util.sendPeerCommandViaActor(peer, "reload_rules")
                         end
                     end
                 end
-                
+
                 logging.log(string.format("Applied rule '%s' for '%s' to %d connected peers", rule, itemName, appliedCount))
-                
-                -- Refresh local cache after applying rules to all peers
                 database.refreshLootRuleCache()
-                
                 applyRuleAndQueue(rule)
             end
-            ImGui.PopStyleColor(3)
-            
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("RECOMMENDED: Set this rule for yourself AND all connected peers, then process the item")
+                ImGui.SetTooltip("Apply selected rule to every connected peer and resolve the item")
             end
-            
-            ImGui.SameLine()
-            ImGui.Spacing()
-            ImGui.SameLine()
-            
-            -- OPTION 2: Just me and process
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.5, 0.8, 0.9)
+            ImGui.PopStyleColor(3)
+
+            ImGui.SameLine(0, spacing)
+
+            ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.5, 0.8, 0.95)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.6, 0.9, 1.0)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.4, 0.7, 1.0)
-            
-            if ImGui.Button("Apply To Just Me & Process", buttonWidth, buttonHeight) then
+            local applyMeLabel = string.format("Me (%s)", currentRuleLabel)
+            if ImGui.Button(applyMeLabel, primaryWidth, buttonHeight) then
                 local rule = getFinalRule()
                 logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", rule, itemName))
                 applyRuleAndQueue(rule, false)
             end
-            ImGui.PopStyleColor(3)
-            
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Set rule only for yourself and process the item immediately")
+                ImGui.SetTooltip("Apply selected rule locally and resolve immediately")
             end
-            
+            ImGui.PopStyleColor(3)
+
             ImGui.Spacing()
             ImGui.Separator()
             ImGui.Spacing()
-            
+
             -- Advanced options section
             ImGui.Text("Advanced Options:")
             ImGui.Spacing()
             
-            -- Bottom row: All three buttons in one row
-            local buttonWidth = (ImGui.GetContentRegionAvail() - 20) / 3 -- Three buttons per row with spacing
-            
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.4, 0.8, 0.8)
+            local advancedWidth = 80
+
+            ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.4, 0.8, 0.85)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.5, 0.9, 1.0)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.3, 0.7, 1.0)
-            
-            if ImGui.Button("Open Peer Rule Editor", buttonWidth, 30) then
-                -- Open the peer item rules popup
+            if ImGui.Button("Peers", advancedWidth, buttonHeight) then
                 lootUI.peerItemRulesPopup = lootUI.peerItemRulesPopup or {}
                 lootUI.peerItemRulesPopup.isOpen = true
                 lootUI.peerItemRulesPopup.itemName = itemName
                 lootUI.peerItemRulesPopup.itemID = lootUI.currentItem.itemID or 0
                 lootUI.peerItemRulesPopup.iconID = lootUI.currentItem.iconID or 0
-                
-                logging.log(string.format("Opening peer rule editor for item: %s (itemID=%d, iconID=%d)", 
+                logging.log(string.format("Opening peer rule editor for item: %s (itemID=%d, iconID=%d)",
                     itemName, lootUI.currentItem.itemID or 0, lootUI.currentItem.iconID or 0))
             end
-            ImGui.PopStyleColor(3)
-            
             if ImGui.IsItemHovered() then
                 ImGui.SetTooltip("Configure rules individually per character")
             end
-            
-            ImGui.SameLine()
-            
-            -- Process with Ignore option
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.6, 0.2, 0.8)
+            ImGui.PopStyleColor(3)
+
+            ImGui.SameLine(0, spacing)
+
+            ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.6, 0.2, 0.85)
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.9, 0.7, 0.3, 1.0)
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.7, 0.5, 0.1, 1.0)
-            
-            if ImGui.Button("Process as Ignored", buttonWidth, 30) then
+            if ImGui.Button("Ignore", advancedWidth, buttonHeight) then
                 local rule = "Ignore"
                 logging.log(string.format("Processing '%s' as ignored - will trigger peer chain", itemName))
                 applyRuleAndQueue(rule, false)
             end
-            ImGui.PopStyleColor(3)
-            
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Set to 'Ignore' for yourself and trigger peer chain")
+                ImGui.SetTooltip("Resolve this item as ignored and continue chain")
             end
-            
-            ImGui.SameLine()
-            
-            -- Skip item button
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.6, 0.6, 0.8)
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.7, 0.7, 1.0)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.5, 0.5, 1.0)
-            
-            if ImGui.Button("Skip Item (Leave Unset)", buttonWidth, 30) then
+            ImGui.PopStyleColor(3)
+
+            ImGui.SameLine(0, spacing)
+
+            ImGui.PushStyleColor(ImGuiCol.Button, 0.55, 0.55, 0.55, 0.85)
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.65, 0.65, 0.65, 1.0)
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.4, 0.4, 0.4, 1.0)
+            if ImGui.Button("Skip", advancedWidth, buttonHeight) then
                 logging.log("Skipping item " .. itemName .. " - leaving rule unset, moving to next item")
-                
-                -- Resolve the pending decision with Ignore to move to next item
-                -- But don't save a rule to the database
                 local itemID_from_current = lootUI.currentItem.itemID or 0
                 local iconID_from_current = lootUI.currentItem.iconID or 0
-                
-                -- Queue an ignore action without saving a rule
                 lootUI.pendingLootAction = {
                     item = lootUI.currentItem,
                     itemID = itemID_from_current,
@@ -681,30 +693,22 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                     rule = "Ignore",
                     numericCorpseID = lootUI.currentItem.numericCorpseID,
                     startTime = lootUI.currentItem.decisionStartTime,
-                    skipRuleSave = true  -- Flag to skip saving the rule
+                    skipRuleSave = true
                 }
-                
-                -- Clear UI state
                 lootUI.currentItem = nil
                 lootUI.pendingDecisionRule = nil
                 lootUI.pendingThreshold = 1
             end
-            ImGui.PopStyleColor(3)
-            
             if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Skip this item without setting any rule")
+                ImGui.SetTooltip("Skip without setting any rule (temporary ignore)")
             end
-            
+            ImGui.PopStyleColor(3)
+
             -- Pop the rounding style at the very end, after all buttons
             ImGui.PopStyleVar()
-            
+
             ImGui.Spacing()
             ImGui.Separator()
-            
-            -- Help text at bottom
-            ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 0.7, 1)
-            ImGui.TextWrapped("Tip: Use 'Peer Rule Editor' to set different rules per character, then 'Process as Ignored' to trigger the peer chain.")
-            ImGui.PopStyleColor()
             
         end
         ImGui.End()

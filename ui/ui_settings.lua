@@ -538,6 +538,29 @@ local function draw_core_performance_settings(settings, config, showHeader)
         if ImGui.IsItemHovered() then ImGui.SetTooltip("Corpse search radius") end
         ImGui.PopItemWidth()
 
+        ImGui.AlignTextToFramePadding()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Nav Path Limit:")
+        ImGui.PopStyleColor()
+        ImGui.SameLine(106)
+        ImGui.PushItemWidth(150)
+        local navLimit = settings.navPathMaxDistance or config.navPathMaxDistance or 0
+        local newNavLimit, navChanged = ImGui.InputInt("##Nav Path Limit", navLimit)
+        if navChanged then
+            newNavLimit = math.max(0, newNavLimit)
+            settings.navPathMaxDistance = newNavLimit
+            if config.setNavPathMaxDistance then
+                config.setNavPathMaxDistance(newNavLimit)
+            else
+                config.navPathMaxDistance = newNavLimit
+                if config.save then config.save() end
+            end
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Maximum navigation path distance (0 = unlimited). Corpses beyond this path length are skipped even if within loot radius.")
+        end
+        ImGui.PopItemWidth()
+
         ImGui.NextColumn()
         ImGui.AlignTextToFramePadding()
         ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)

@@ -463,6 +463,7 @@ SmartLootEngine.config = {
     lootRadius = 200,
     lootRange = 15,
     lootRangeTolerance = 2,
+    navPathMaxDistance = 0,
     maxNavTimeMs = 30000,
     maxOpenLootAttempts = 3,
     navRetryDelayMs = 500,
@@ -1320,6 +1321,7 @@ function SmartLootEngine.findNearestCorpse()
 
     local closestCorpse = nil
     local closestDistance = radius
+    local navPathLimit = SmartLootEngine.config.navPathMaxDistance or 0
 
     for i = 1, corpseCount do
         local corpse = mq.TLO.NearestSpawn(i, query)
@@ -1328,6 +1330,12 @@ function SmartLootEngine.findNearestCorpse()
 
             -- Use navigation path distance instead of straight-line distance
             local distance, isPathDist = getPathLengthToSpawn(corpseID)
+            local exceedsNavLimit = false
+            if isPathDist and navPathLimit and navPathLimit > 0 and distance > navPathLimit then
+                exceedsNavLimit = true
+                logging.debug(string.format("[Engine] Skipping corpse '%s' (ID: %d) path distance %.1f exceeds limit %.1f",
+                    corpse.Name() or "Unknown", corpseID, distance, navPathLimit))
+            end
 
             -- Skip if already processed
             if not SmartLootEngine.isCorpseProcessed(corpseID) then
@@ -1346,7 +1354,7 @@ function SmartLootEngine.findNearestCorpse()
 
                 -- Only consider corpses within the configured radius
                 -- This prevents looting corpses that are close as the crow flies but far to walk
-                if isNPCCorpse and distance <= radius and distance < closestDistance then
+                if isNPCCorpse and not exceedsNavLimit and distance <= radius and distance < closestDistance then
                     closestCorpse = {
                         spawnID = corpseID,
                         corpseID = corpseID,
@@ -3618,6 +3626,7 @@ function SmartLootEngine.setLootUIReference(lootUI, settings)
     if settings then
         SmartLootEngine.config.lootRadius = settings.lootRadius or SmartLootEngine.config.lootRadius
         SmartLootEngine.config.lootRange = settings.lootRange or SmartLootEngine.config.lootRange
+        SmartLootEngine.config.navPathMaxDistance = settings.navPathMaxDistance or SmartLootEngine.config.navPathMaxDistance
         SmartLootEngine.config.combatWaitDelayMs = settings.combatWaitDelay or SmartLootEngine.config.combatWaitDelayMs
         if settings.peerSelectionStrategy then
             SmartLootEngine.config.peerSelectionStrategy = settings.peerSelectionStrategy
@@ -3684,6 +3693,16 @@ function SmartLootEngine.setLootRange(range)
         SmartLootEngine.state.settings.lootRange = range
     end
     return range
+end
+
+function SmartLootEngine.setNavPathMaxDistance(distance)
+    distance = tonumber(distance) or (SmartLootEngine.config.navPathMaxDistance or 0)
+    distance = math.max(0, distance)
+    SmartLootEngine.config.navPathMaxDistance = distance
+    if SmartLootEngine.state and SmartLootEngine.state.settings then
+        SmartLootEngine.state.settings.navPathMaxDistance = distance
+    end
+    return distance
 end
 
 return SmartLootEngine
