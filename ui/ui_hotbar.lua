@@ -410,13 +410,6 @@ function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
                 config.setHotbarShow(false)
             end
             
-            if ImGui.MenuItem("Switch to Floating Button") then
-                config.setHotbarShow(false)
-                lootUI.useFloatingButton = true
-            end
-            
-            ImGui.Separator()
-            
             -- Status display
             ImGui.TextColored(0.7, 0.7, 0.7, 1, "Status:")
             ImGui.Text("Peers Connected: " .. #(util.getConnectedPeers()))

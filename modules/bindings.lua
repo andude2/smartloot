@@ -41,7 +41,7 @@ local function bindHotbarToggle()
         if lootUI then
             lootUI.showHotbar = not lootUI.showHotbar
             config.uiVisibility.showHotbar = lootUI.showHotbar
-            if config.save then config.save() end
+            config.setHotbarShow(lootUI.showHotbar)
             util.printSmartLoot("Hotbar " .. (lootUI.showHotbar and "shown" or "hidden"), "info")
         end
     end)
