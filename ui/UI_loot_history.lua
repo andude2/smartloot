@@ -416,9 +416,9 @@ function uiLootHistory.draw(historyUI, database)
             ImGui.SetNextWindowSize(400, 300, ImGuiCond.FirstUseEver)
             local itemDetails = historyUI.selectedItemDetails
             local windowTitle = "Item Details: " .. (itemDetails.item_name or "Unknown Item")
-            local windowOpen, p_open = ImGui.Begin(windowTitle, true, ImGuiWindowFlags.AlwaysAutoResize)
+            local visible, keepOpen = ImGui.Begin(windowTitle, historyUI.showItemDetailsPopup, ImGuiWindowFlags.AlwaysAutoResize)
 
-            if windowOpen then
+            if visible then
                 ImGui.BeginGroup()
                 local iconIdNum = tonumber(itemDetails.icon_id)
                 if iconIdNum and iconIdNum > 0 then
@@ -464,8 +464,11 @@ function uiLootHistory.draw(historyUI, database)
                     historyUI.showItemDetailsPopup = false
                     historyUI.selectedItemDetails = nil
                 end
-                ImGui.End()
-            else
+            end
+            ImGui.End()
+
+            -- Update state based on close button
+            if not (keepOpen and visible) then
                 historyUI.showItemDetailsPopup = false
                 historyUI.selectedItemDetails = nil
             end
