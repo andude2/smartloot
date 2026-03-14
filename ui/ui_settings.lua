@@ -444,6 +444,102 @@ local function draw_character_settings(lootUI, config)
     end
 
     ImGui.Spacing()
+    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+    ImGui.Text("Pending Decision Action Layout:")
+    ImGui.PopStyleColor()
+
+    local actionLayout = "selector"
+    if config.getPendingDecisionActionLayout then
+        actionLayout = config.getPendingDecisionActionLayout(toonName) or "selector"
+    end
+
+    local actionLayoutLabels = {
+        selector = "Rule Selector + All/Me",
+        quick_buttons = "Quick Action Buttons",
+    }
+
+    ImGui.PushItemWidth(220)
+    if ImGui.BeginCombo("##PendingDecisionActionLayout", actionLayoutLabels[actionLayout] or actionLayout) then
+        for _, option in ipairs({"selector", "quick_buttons"}) do
+            local isSelected = option == actionLayout
+            if ImGui.Selectable(actionLayoutLabels[option], isSelected) then
+                if config.setPendingDecisionActionLayout then
+                    local success, err = config.setPendingDecisionActionLayout(toonName, option)
+                    if success then
+                        logging.log("Pending decision action layout set to: " .. actionLayoutLabels[option] .. " for " .. toonName)
+                        actionLayout = option
+                    else
+                        logging.log("Error setting pending decision action layout: " .. tostring(err))
+                    end
+                end
+            end
+            if isSelected then ImGui.SetItemDefaultFocus() end
+        end
+        ImGui.EndCombo()
+    end
+    ImGui.PopItemWidth()
+
+    if ImGui.IsItemHovered() then
+        ImGui.SetTooltip("Choose whether the popup uses the current selected-rule flow or direct action buttons like All Keep / Me Ignore.")
+    end
+
+    if actionLayout == "quick_buttons" and config.getPendingDecisionQuickButtons and config.setPendingDecisionQuickButtons then
+        local quickButtons = config.getPendingDecisionQuickButtons(toonName)
+
+        local function updateQuickButton(key, value, label)
+            quickButtons[key] = value
+            local enabledCount = 0
+            for _, enabled in pairs(quickButtons) do
+                if enabled then
+                    enabledCount = enabledCount + 1
+                end
+            end
+
+            if enabledCount == 0 then
+                quickButtons[key] = true
+                logging.log("At least one quick action button must remain enabled")
+                return
+            end
+
+            config.setPendingDecisionQuickButtons(toonName, quickButtons)
+            logging.log(string.format("Pending decision quick button '%s' %s for %s",
+                label, value and "enabled" or "disabled", toonName))
+        end
+
+        local allKeep, changedAllKeep = ImGui.Checkbox("Show All Keep", quickButtons.allKeep)
+        if changedAllKeep then
+            updateQuickButton("allKeep", allKeep, "All Keep")
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Show a button that applies Keep to all connected peers.")
+        end
+
+        local allIgnore, changedAllIgnore = ImGui.Checkbox("Show All Ignore", quickButtons.allIgnore)
+        if changedAllIgnore then
+            updateQuickButton("allIgnore", allIgnore, "All Ignore")
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Show a button that applies Ignore to all connected peers.")
+        end
+
+        local meKeep, changedMeKeep = ImGui.Checkbox("Show Me Keep", quickButtons.meKeep)
+        if changedMeKeep then
+            updateQuickButton("meKeep", meKeep, "Me Keep")
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Show a button that applies Keep only to this character.")
+        end
+
+        local meIgnore, changedMeIgnore = ImGui.Checkbox("Show Me Ignore", quickButtons.meIgnore)
+        if changedMeIgnore then
+            updateQuickButton("meIgnore", meIgnore, "Me Ignore")
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Show a button that applies Ignore only to this character.")
+        end
+    end
+
+    ImGui.Spacing()
     ImGui.Separator()
     ImGui.Spacing()
 

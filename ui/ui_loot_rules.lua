@@ -94,6 +94,38 @@ local function sendReloadMessageToPeer(peer)
     util.sendPeerCommandViaActor(peer, "reload_rules", {})
 end
 
+local function getBulkSelectionScope(lootUI)
+    local targetCharacter = lootUI.selectedCharacterForRules or mq.TLO.Me.Name() or "unknown"
+    return string.format("%s::%s::%s", targetCharacter, lootUI.searchFilter or "", lootUI.ruleFilter or "All")
+end
+
+local function ensureBulkSelectionState(lootUI)
+    lootUI.bulkRuleSelection = lootUI.bulkRuleSelection or {}
+    lootUI.bulkRuleValue = lootUI.bulkRuleValue or "Keep"
+    lootUI.bulkRuleThreshold = lootUI.bulkRuleThreshold or 1
+    lootUI.bulkSelectionScope = lootUI.bulkSelectionScope or getBulkSelectionScope(lootUI)
+
+    local currentScope = getBulkSelectionScope(lootUI)
+    if lootUI.bulkSelectionScope ~= currentScope then
+        lootUI.bulkRuleSelection = {}
+        lootUI.bulkSelectionScope = currentScope
+    end
+end
+
+local function getSelectedRuleCount(lootUI)
+    local count = 0
+    for _, selected in pairs(lootUI.bulkRuleSelection or {}) do
+        if selected then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function clearBulkSelection(lootUI)
+    lootUI.bulkRuleSelection = {}
+end
+
 -- Helper function to update rule and handle all the database operations
 local function updateItemRule(itemName, newRuleValue, targetCharacter, database, util, forceRefresh, providedItemID, providedIconID)
     -- Get current rule data to preserve ItemID and IconID
@@ -751,9 +783,146 @@ local function drawUniversalRuleSection(lootUI, database, util, allRules)
     end
 end
 
+local function drawBulkRuleToolbar(lootUI, database, util, filteredItems, allRules)
+    ensureBulkSelectionState(lootUI)
+
+    local selectedCount = getSelectedRuleCount(lootUI)
+    local totalFiltered = #filteredItems
+
+    ImGui.Separator()
+    ImGui.TextColored(0.8, 0.9, 1.0, 1.0, "Bulk Edit")
+    ImGui.SameLine()
+    ImGui.Text(string.format("Selected: %d / %d filtered", selectedCount, totalFiltered))
+
+    if totalFiltered > 0 then
+        if ImGui.Button("Select Filtered") then
+            for _, itemKey in ipairs(filteredItems) do
+                lootUI.bulkRuleSelection[itemKey] = true
+            end
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Select every rule in the current filtered view")
+        end
+
+        ImGui.SameLine()
+    end
+
+    if ImGui.Button("Clear Selection") then
+        clearBulkSelection(lootUI)
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.SetTooltip("Clear all selected rules for this filtered view")
+    end
+
+    ImGui.SameLine()
+    ImGui.Text("Set selected to:")
+    ImGui.SameLine()
+
+    ImGui.SetNextItemWidth(150)
+    if ImGui.BeginCombo("##bulkRule", lootUI.bulkRuleValue or "Keep") then
+        for _, rule in ipairs(RULE_TYPES) do
+            local isSelected = (lootUI.bulkRuleValue == rule)
+            local color = getRuleColor(rule)
+            ImGui.PushStyleColor(ImGuiCol.Text, color[1], color[2], color[3], color[4])
+            if ImGui.Selectable(rule, isSelected) then
+                lootUI.bulkRuleValue = rule
+                if rule == "KeepIfFewerThan" or rule == "KeepThenIgnore" then
+                    lootUI.bulkRuleThreshold = lootUI.bulkRuleThreshold or 1
+                end
+            end
+            ImGui.PopStyleColor()
+            if isSelected then
+                ImGui.SetItemDefaultFocus()
+            end
+        end
+        ImGui.EndCombo()
+    end
+
+    if lootUI.bulkRuleValue == "KeepIfFewerThan" or lootUI.bulkRuleValue == "KeepThenIgnore" then
+        ImGui.SameLine()
+        ImGui.Text("Threshold:")
+        ImGui.SameLine()
+        ImGui.SetNextItemWidth(60)
+        local newThreshold, changedThreshold = ImGui.InputInt("##bulkRuleThreshold", lootUI.bulkRuleThreshold or 1, 0, 0)
+        if changedThreshold then
+            lootUI.bulkRuleThreshold = math.max(1, newThreshold)
+        end
+    end
+
+    ImGui.SameLine()
+    local applyDisabled = selectedCount == 0
+    if applyDisabled then
+        ImGui.BeginDisabled()
+    end
+    if ImGui.Button("Apply Bulk Rule") then
+        local targetCharacter = lootUI.selectedCharacterForRules or mq.TLO.Me.Name()
+        local finalRule = lootUI.bulkRuleValue or "Keep"
+        if finalRule == "KeepIfFewerThan" then
+            finalRule = "KeepIfFewerThan:" .. (lootUI.bulkRuleThreshold or 1)
+        elseif finalRule == "KeepThenIgnore" then
+            finalRule = "KeepIfFewerThan:" .. (lootUI.bulkRuleThreshold or 1) .. ":AutoIgnore"
+        end
+
+        local changedCount = 0
+        local failedCount = 0
+
+        for _, itemKey in ipairs(filteredItems) do
+            if lootUI.bulkRuleSelection[itemKey] then
+                local ruleData = allRules[itemKey]
+                local itemName = ruleData and ruleData.item_name or itemKey
+                local itemID = ruleData and ruleData.item_id or 0
+                local iconID = ruleData and ruleData.icon_id or 0
+                local success = false
+
+                if ruleData and ruleData.tableSource == "lootrules_name_fallback" then
+                    success = database.saveNameBasedRuleFor(targetCharacter, itemName, finalRule)
+                    if success then
+                        pendingCacheRefresh = true
+                        cacheRefreshTimer = mq.gettime() + 100
+                    end
+                else
+                    success = updateItemRule(itemName, finalRule, targetCharacter, database, util, true, itemID, iconID)
+                end
+
+                if success then
+                    changedCount = changedCount + 1
+                else
+                    failedCount = failedCount + 1
+                end
+            end
+        end
+
+        if targetCharacter ~= mq.TLO.Me.Name() then
+            database.refreshLootRuleCacheForPeer(targetCharacter)
+            local connectedPeers = util.getConnectedPeers()
+            for _, peer in ipairs(connectedPeers) do
+                if peer == targetCharacter then
+                    sendReloadMessageToPeer(targetCharacter)
+                    break
+                end
+            end
+        end
+
+        logging.log(string.format("Bulk updated %d rule(s) to '%s' for %s%s",
+            changedCount,
+            finalRule,
+            targetCharacter,
+            failedCount > 0 and string.format(" (%d failed)", failedCount) or ""))
+
+        clearBulkSelection(lootUI)
+    end
+    if applyDisabled then
+        ImGui.EndDisabled()
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.SetTooltip("Apply the selected rule to every checked row in the current filtered view")
+    end
+end
+
 -- Draw the main rules table section (simplified)
 local function drawRulesTable(lootUI, database, util, filteredItems)
-    
+    ensureBulkSelectionState(lootUI)
+
     -- Pagination calculation
     local itemsPerPage = lootUI.itemsPerPage or 15
     local totalItems = #filteredItems
@@ -777,7 +946,8 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
     ImGui.BeginChild("LootRulesScrollableTable", 0, 420, ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar)
     
     local tableFlags = ImGuiTableFlags.Borders + ImGuiTableFlags.RowBg + ImGuiTableFlags.Resizable + ImGuiTableFlags.ScrollY
-    if ImGui.BeginTable("LootRulesTable", 6, tableFlags) then
+    if ImGui.BeginTable("LootRulesTable", 7, tableFlags) then
+        ImGui.TableSetupColumn("Sel", ImGuiTableColumnFlags.WidthFixed, 35)
         ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 35)
         ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
         ImGui.TableSetupColumn("Item ID", ImGuiTableColumnFlags.WidthFixed, 80)
@@ -823,12 +993,23 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                 ruleData = {rule = "Unset", item_id = itemID, icon_id = iconID, item_name = itemName}
             end
             
-            -- Column 1: Icon
+            -- Column 1: Selection
             ImGui.TableSetColumnIndex(0)
+            local isSelectedForBulk = lootUI.bulkRuleSelection[itemKey] == true
+            local newSelectedForBulk, changedSelection = ImGui.Checkbox("##bulkSelect_" .. i, isSelectedForBulk)
+            if changedSelection then
+                lootUI.bulkRuleSelection[itemKey] = newSelectedForBulk or nil
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Select this rule for bulk editing")
+            end
+
+            -- Column 2: Icon
+            ImGui.TableSetColumnIndex(1)
             uiUtils.drawItemIcon(iconID)
             
-            -- Column 2: Item Name
-            ImGui.TableSetColumnIndex(1)
+            -- Column 3: Item Name
+            ImGui.TableSetColumnIndex(2)
             local selectableId = itemName .. "##item_" .. i
             if ImGui.Selectable(selectableId, false, ImGuiSelectableFlags.SpanAllColumns + ImGuiSelectableFlags.AllowOverlap) then
                 -- Handle selection if needed
@@ -856,15 +1037,15 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                 ImGui.EndPopup()
             end
             
-            -- Column 3: Item ID
-            ImGui.TableSetColumnIndex(2)
+            -- Column 4: Item ID
+            ImGui.TableSetColumnIndex(3)
             ImGui.Text(tostring(itemID))
             if ImGui.IsItemHovered() then
                 ImGui.SetTooltip("Database Item ID (Primary Key)")
             end
             
-            -- Column 4: Rule dropdown
-            ImGui.TableSetColumnIndex(3)
+            -- Column 5: Rule dropdown
+            ImGui.TableSetColumnIndex(4)
             
             -- Use the already fetched ruleData from earlier - don't re-fetch
             local displayRule, threshold, autoIgnore = parseRule(ruleData.rule)
@@ -985,8 +1166,8 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
                 ImGui.PopID()
             end
             
-            -- Column 5: Peers button
-            ImGui.TableSetColumnIndex(4)
+            -- Column 6: Peers button
+            ImGui.TableSetColumnIndex(5)
             ImGui.PushID(itemName)
             
             if ImGui.Button("Peers") then
@@ -1100,8 +1281,8 @@ local function drawRulesTable(lootUI, database, util, filteredItems)
             
             ImGui.PopID()
             
-            -- Column 6: Actions (Delete button)
-            ImGui.TableSetColumnIndex(5)
+            -- Column 7: Actions (Delete button)
+            ImGui.TableSetColumnIndex(6)
             ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.2, 0.2, 0.8)
             if ImGui.Button("Delete##" .. i) then
                 local targetCharacter = lootUI.selectedCharacterForRules or mq.TLO.Me.Name()
@@ -1262,6 +1443,9 @@ function uiLootRules.draw(lootUI, database, settings, util, uiPopups)
         
         -- Filter and search items
         local filteredItems = getFilteredItems(allRules, lootUI.searchFilter, lootUI.ruleFilter)
+
+        -- Bulk edit toolbar for the current filtered result set
+        drawBulkRuleToolbar(lootUI, database, util, filteredItems, allRules)
         
         -- Draw the main rules table
         drawRulesTable(lootUI, database, util, filteredItems)

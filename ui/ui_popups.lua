@@ -461,6 +461,13 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             local config = require("modules.config")
             local toonName = mq.TLO.Me.Name() or "unknown"
             local useButtons = config.isUsePendingDecisionButtons and config.isUsePendingDecisionButtons(toonName) or false
+            local actionLayout = config.getPendingDecisionActionLayout and config.getPendingDecisionActionLayout(toonName) or "selector"
+            local quickButtons = config.getPendingDecisionQuickButtons and config.getPendingDecisionQuickButtons(toonName) or {
+                allKeep = true,
+                allIgnore = true,
+                meKeep = true,
+                meIgnore = true,
+            }
 
             if useButtons then
                 -- Button mode: row of small buttons
@@ -544,9 +551,15 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             local currentRuleLabel = getRuleDisplayLabel()
 
             ImGui.Spacing()
-            ImGui.TextColored(0.9, 0.9, 0.6, 1.0, string.format("Selected rule: %s", currentRuleLabel))
-            ImGui.SameLine()
-            ImGui.TextDisabled("(Click the buttons above to change)")
+            if actionLayout == "selector" then
+                ImGui.TextColored(0.9, 0.9, 0.6, 1.0, string.format("Selected rule: %s", currentRuleLabel))
+                ImGui.SameLine()
+                ImGui.TextDisabled("(Click the buttons above to change)")
+            else
+                ImGui.TextColored(0.9, 0.9, 0.6, 1.0, "Quick action mode")
+                ImGui.SameLine()
+                ImGui.TextDisabled("(Configured in Settings)")
+            end
             
             -- Helper function to apply rule and queue loot action
             local function applyRuleAndQueue(rule, skipAction)
@@ -576,26 +589,13 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 lootUI.pendingDecisionRule = nil
                 lootUI.pendingThreshold = 1
             end
-            
-            -- Main action buttons - compact layout
-            local buttonHeight = 22
-            local roundingRadius = 5
-            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, roundingRadius)
-            local style = ImGui.GetStyle()
-            local spacing = style.ItemSpacing.x
-            local contentWidth = ImGui.GetContentRegionAvail()
-            local primaryWidth = 100
 
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.7, 0.2, 0.95)
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.8, 0.3, 1.0)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.5, 0.1, 1.0)
-            local applyAllLabel = string.format("All (%s)", currentRuleLabel)
-            if ImGui.Button(applyAllLabel, primaryWidth, buttonHeight) then
-                local rule = getFinalRule()
+            local function applyRuleToAllPeers(rule)
                 local connectedPeers = util.getConnectedPeers()
                 local currentCharacter = mq.TLO.Me.Name()
                 local itemID_from_current = lootUI.currentItem.itemID or 0
                 local iconID_from_current = lootUI.currentItem.iconID or 0
+
                 logging.debug(string.format("[Popup] Apply All: itemName=%s, itemID=%d, iconID=%d",
                     itemName, itemID_from_current, iconID_from_current))
 
@@ -614,26 +614,114 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 database.refreshLootRuleCache()
                 applyRuleAndQueue(rule)
             end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Apply selected rule to every connected peer and resolve the item")
+            
+            -- Main action buttons - compact layout
+            local buttonHeight = 22
+            local roundingRadius = 5
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, roundingRadius)
+            local style = ImGui.GetStyle()
+            local spacing = style.ItemSpacing.x
+            local primaryWidth = 100
+            local function drawActionButton(label, width, colors, onClick, tooltip)
+                ImGui.PushStyleColor(ImGuiCol.Button, colors[1], colors[2], colors[3], colors[4])
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, colors[5], colors[6], colors[7], colors[8])
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, colors[9], colors[10], colors[11], colors[12])
+                if ImGui.Button(label, width, buttonHeight) then
+                    onClick()
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip(tooltip)
+                end
+                ImGui.PopStyleColor(3)
             end
-            ImGui.PopStyleColor(3)
 
-            ImGui.SameLine(0, spacing)
+            if actionLayout == "quick_buttons" then
+                local quickActionButtons = {
+                    {
+                        enabled = quickButtons.allKeep,
+                        label = "All Keep",
+                        width = 90,
+                        colors = {0.2, 0.7, 0.2, 0.95, 0.3, 0.8, 0.3, 1.0, 0.1, 0.5, 0.1, 1.0},
+                        onClick = function()
+                            applyRuleToAllPeers("Keep")
+                        end,
+                        tooltip = "Apply Keep to every connected peer and resolve the item",
+                    },
+                    {
+                        enabled = quickButtons.allIgnore,
+                        label = "All Ignore",
+                        width = 92,
+                        colors = {0.75, 0.55, 0.2, 0.95, 0.85, 0.65, 0.3, 1.0, 0.6, 0.45, 0.1, 1.0},
+                        onClick = function()
+                            applyRuleToAllPeers("Ignore")
+                        end,
+                        tooltip = "Apply Ignore to every connected peer and resolve the item",
+                    },
+                    {
+                        enabled = quickButtons.meKeep,
+                        label = "Me Keep",
+                        width = 88,
+                        colors = {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
+                        onClick = function()
+                            logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Keep", itemName))
+                            applyRuleAndQueue("Keep", false)
+                        end,
+                        tooltip = "Apply Keep locally and resolve immediately",
+                    },
+                    {
+                        enabled = quickButtons.meIgnore,
+                        label = "Me Ignore",
+                        width = 92,
+                        colors = {0.55, 0.45, 0.75, 0.95, 0.65, 0.55, 0.85, 1.0, 0.45, 0.35, 0.65, 1.0},
+                        onClick = function()
+                            logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Ignore", itemName))
+                            applyRuleAndQueue("Ignore", false)
+                        end,
+                        tooltip = "Apply Ignore locally and resolve immediately",
+                    },
+                }
 
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.5, 0.8, 0.95)
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.3, 0.6, 0.9, 1.0)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.1, 0.4, 0.7, 1.0)
-            local applyMeLabel = string.format("Me (%s)", currentRuleLabel)
-            if ImGui.Button(applyMeLabel, primaryWidth, buttonHeight) then
-                local rule = getFinalRule()
-                logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", rule, itemName))
-                applyRuleAndQueue(rule, false)
+                local drewButton = false
+                for _, button in ipairs(quickActionButtons) do
+                    if button.enabled then
+                        if drewButton then
+                            ImGui.SameLine(0, spacing)
+                        end
+                        drawActionButton(button.label, button.width, button.colors, button.onClick, button.tooltip)
+                        drewButton = true
+                    end
+                end
+
+                if not drewButton then
+                    drawActionButton("Me Keep", 88,
+                        {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
+                        function()
+                            logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Keep", itemName))
+                            applyRuleAndQueue("Keep", false)
+                        end,
+                        "Apply Keep locally and resolve immediately")
+                end
+            else
+                local applyAllLabel = string.format("All (%s)", currentRuleLabel)
+                drawActionButton(applyAllLabel, primaryWidth,
+                    {0.2, 0.7, 0.2, 0.95, 0.3, 0.8, 0.3, 1.0, 0.1, 0.5, 0.1, 1.0},
+                    function()
+                        applyRuleToAllPeers(getFinalRule())
+                    end,
+                    "Apply selected rule to every connected peer and resolve the item")
+
+                ImGui.SameLine(0, spacing)
+
+                local applyMeLabel = string.format("Me (%s)", currentRuleLabel)
+                drawActionButton(applyMeLabel, primaryWidth,
+                    {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
+                    function()
+                        local rule = getFinalRule()
+                        logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", rule, itemName))
+                        applyRuleAndQueue(rule, false)
+                    end,
+                    "Apply selected rule locally and resolve immediately")
             end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Apply selected rule locally and resolve immediately")
-            end
-            ImGui.PopStyleColor(3)
 
             ImGui.Spacing()
             ImGui.Separator()

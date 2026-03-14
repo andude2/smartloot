@@ -629,6 +629,79 @@ function config.isUsePendingDecisionButtons(toonName)
     return charCfg and charCfg.usePendingDecisionButtons == true
 end
 
+function config.setPendingDecisionActionLayout(toonName, layout)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+
+    local validLayouts = {
+        selector = true,
+        quick_buttons = true,
+    }
+
+    if not validLayouts[layout] then
+        return false, "Invalid layout. Valid options: selector, quick_buttons"
+    end
+
+    charCfg.pendingDecisionActionLayout = layout
+    config.save()
+    return charCfg.pendingDecisionActionLayout
+end
+
+function config.getPendingDecisionActionLayout(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName]
+    return charCfg and charCfg.pendingDecisionActionLayout or "selector"
+end
+
+function config.setPendingDecisionQuickButtons(toonName, quickButtons)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+
+    local normalized = {
+        allKeep = quickButtons.allKeep ~= false,
+        allIgnore = quickButtons.allIgnore ~= false,
+        meKeep = quickButtons.meKeep ~= false,
+        meIgnore = quickButtons.meIgnore ~= false,
+    }
+
+    local hasEnabledButton = false
+    for _, enabled in pairs(normalized) do
+        if enabled then
+            hasEnabledButton = true
+            break
+        end
+    end
+    if not hasEnabledButton then
+        normalized.meKeep = true
+    end
+
+    charCfg.pendingDecisionQuickButtons = normalized
+
+    config.save()
+    return charCfg.pendingDecisionQuickButtons
+end
+
+function config.getPendingDecisionQuickButtons(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    local configured = charCfg.pendingDecisionQuickButtons or {}
+
+    return {
+        allKeep = configured.allKeep ~= false,
+        allIgnore = configured.allIgnore ~= false,
+        meKeep = configured.meKeep ~= false,
+        meIgnore = configured.meIgnore ~= false,
+    }
+end
+
 function config.setPeerSelectionStrategy(strategy)
     local normalized = "items_first"
     if type(strategy) == "string" then
