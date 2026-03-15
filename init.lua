@@ -40,6 +40,24 @@ local function getCurrentToon()
     return mq.TLO.Me.Name() or "unknown"
 end
 
+local function parseStartupFlags(args)
+    local filteredArgs = {}
+    local flags = {
+        deferred = false,
+    }
+
+    for _, arg in ipairs(args or {}) do
+        local normalized = tostring(arg):lower()
+        if normalized == "deferred" then
+            flags.deferred = true
+        else
+            table.insert(filteredArgs, arg)
+        end
+    end
+
+    return filteredArgs, flags
+end
+
 local function processStartupArguments(args)
     modeHandler.initialize("main")
 
@@ -99,7 +117,15 @@ local function initializeSmartLootEngine(args)
         return false
     end
 
-    local initialMode = processStartupArguments(args or {})
+    local parsedArgs, startupFlags = parseStartupFlags(args or {})
+    local toonName = mq.TLO.Me.Name() or "unknown"
+
+    if startupFlags.deferred and config.setBatchUnknownReviewEnabled then
+        config.setBatchUnknownReviewEnabled(toonName, true)
+        logging.log("[SmartLoot] Startup flag enabled batch unknown item review for " .. toonName)
+    end
+
+    local initialMode = processStartupArguments(parsedArgs)
 
     local modeMapping = {
         ["main"] = SmartLootEngine.LootMode.Main,
@@ -185,6 +211,13 @@ local lootUI = {
     peerItemRulesPopup = {
         isOpen = false,
         itemName = ""
+    },
+
+    unknownItemsReviewPopup = {
+        isOpen = false,
+        ruleSelections = {},
+        ruleThresholds = {},
+        lastStatus = "",
     },
 
     updateIDsPopup = {
@@ -1730,6 +1763,7 @@ mq.imgui.init("SmartLoot", function()
 
     -- Always show popups
     if uiPopups then
+        uiPopups.drawUnknownItemsReviewPopup(lootUI, database, util)
         uiPopups.drawLootDecisionPopup(lootUI, settings, nil)
         uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
         uiPopups.drawLootStatsPopup(lootUI, lootStats)

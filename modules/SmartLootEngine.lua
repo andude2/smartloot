@@ -11,6 +11,12 @@ local json = require("dkjson")
 local actors = require("actors")
 local tempRules = require("modules.temp_rules")
 
+local getUnknownReviewKey
+local clearUnknownReviewState
+local parseKeepThreshold
+local setState
+local scheduleNextTick
+
 -- Lazy load waterfallTracker to break circular dependency
 local waterfallTracker = nil
 local function getWaterfallTracker()
@@ -289,6 +295,7 @@ SmartLootEngine.LootState = {
     EmergencyStop = 12,
     WaitingForWaterfallCompletion = 13,
     WaitingForInventorySpace = 14,
+    ReviewingUnknowns = 15,
 }
 
 -- Engine Modes (compatible with existing system)
@@ -360,6 +367,8 @@ SmartLootEngine.state = {
         iconID = 0,
         quantity = 1,
         slot = 0,
+        itemValue = 0,
+        tributeValue = 0,
         rule = "",
         action = SmartLootEngine.LootAction.None
     },
@@ -416,6 +425,12 @@ SmartLootEngine.state = {
         currentTask = nil,
         navStartTime = 0,
         navMethod = nil,
+    },
+    unknownReview = {
+        active = false,
+        itemsByKey = {},
+        orderedKeys = {},
+        pendingTaskCount = 0,
     },
 
     -- Emergency state
@@ -572,6 +587,154 @@ end
 
 function SmartLootEngine.clearDirectedCandidates()
     SmartLootEngine.state.directed.candidates = {}
+end
+
+function SmartLootEngine.queueUnknownReviewItem(itemInfo)
+    if type(itemInfo) ~= "table" or not itemInfo.itemName or itemInfo.itemName == "" then
+        return false
+    end
+
+    local review = SmartLootEngine.state.unknownReview
+    local key = getUnknownReviewKey(itemInfo.itemName, itemInfo.itemID)
+    local existing = review.itemsByKey[key]
+
+    if not existing then
+        existing = {
+            key = key,
+            itemName = itemInfo.itemName,
+            itemID = itemInfo.itemID or 0,
+            iconID = itemInfo.iconID or 0,
+            quantity = itemInfo.quantity or 1,
+            itemValue = itemInfo.itemValue or 0,
+            tributeValue = itemInfo.tributeValue or 0,
+            occurrenceCount = 0,
+            corpseRefs = {},
+        }
+        review.itemsByKey[key] = existing
+        table.insert(review.orderedKeys, key)
+    else
+        if (existing.itemID or 0) == 0 and (itemInfo.itemID or 0) > 0 then
+            existing.itemID = itemInfo.itemID
+        end
+        if (existing.iconID or 0) == 0 and (itemInfo.iconID or 0) > 0 then
+            existing.iconID = itemInfo.iconID
+        end
+        existing.itemValue = math.max(existing.itemValue or 0, itemInfo.itemValue or 0)
+        existing.tributeValue = math.max(existing.tributeValue or 0, itemInfo.tributeValue or 0)
+    end
+
+    existing.occurrenceCount = (existing.occurrenceCount or 0) + 1
+    table.insert(existing.corpseRefs, {
+        corpseSpawnID = itemInfo.corpseSpawnID or 0,
+        corpseID = itemInfo.corpseID or itemInfo.corpseSpawnID or 0,
+        corpseName = itemInfo.corpseName or "",
+        quantity = itemInfo.quantity or 1,
+        itemValue = itemInfo.itemValue or 0,
+        tributeValue = itemInfo.tributeValue or 0,
+    })
+
+    logging.debug(string.format("[Engine] Deferred unknown item for batch review: %s (occurrence %d)",
+        existing.itemName, existing.occurrenceCount))
+    return true
+end
+
+function SmartLootEngine.hasQueuedUnknownReviewItems()
+    return #(SmartLootEngine.state.unknownReview.orderedKeys or {}) > 0
+end
+
+function SmartLootEngine.getUnknownReviewItems()
+    local items = {}
+    local review = SmartLootEngine.state.unknownReview
+    for _, key in ipairs(review.orderedKeys or {}) do
+        local item = review.itemsByKey[key]
+        if item then
+            table.insert(items, item)
+        end
+    end
+    return items
+end
+
+function SmartLootEngine.beginUnknownReview()
+    if not SmartLootEngine.hasQueuedUnknownReviewItems() then
+        return false
+    end
+
+    SmartLootEngine.state.unknownReview.active = true
+    if SmartLootEngine.state.lootUI then
+        SmartLootEngine.state.lootUI.unknownItemsReviewPopup = SmartLootEngine.state.lootUI.unknownItemsReviewPopup or {}
+        SmartLootEngine.state.lootUI.unknownItemsReviewPopup.isOpen = true
+        SmartLootEngine.state.lootUI.showUI = true
+    end
+    setState(SmartLootEngine.LootState.ReviewingUnknowns, "Awaiting batch unknown item review")
+    scheduleNextTick(100)
+    return true
+end
+
+function SmartLootEngine.completeUnknownReview()
+    local review = SmartLootEngine.state.unknownReview
+    local replayTasks = {}
+
+    for _, key in ipairs(review.orderedKeys or {}) do
+        local item = review.itemsByKey[key]
+        if item then
+            local localRule = database.getLootRule(item.itemName, true, item.itemID)
+            local allowed = 0
+
+            if localRule == "Keep" then
+                allowed = #(item.corpseRefs or {})
+            elseif type(localRule) == "string" and localRule:find("^KeepIfFewerThan") then
+                local threshold = parseKeepThreshold(localRule) or 0
+                local currentCount = mq.TLO.FindItemCount(item.itemName)() or 0
+                allowed = math.max(0, threshold - currentCount)
+            end
+
+            if allowed > 0 then
+                for idx, corpseRef in ipairs(item.corpseRefs or {}) do
+                    if idx > allowed then
+                        break
+                    end
+
+                    table.insert(replayTasks, {
+                        corpseSpawnID = corpseRef.corpseSpawnID or corpseRef.corpseID or 0,
+                        corpseID = corpseRef.corpseID or corpseRef.corpseSpawnID or 0,
+                        itemName = item.itemName,
+                        itemID = item.itemID or 0,
+                        iconID = item.iconID or 0,
+                        quantity = corpseRef.quantity or item.quantity or 1,
+                    })
+                end
+            end
+        end
+    end
+
+    review.pendingTaskCount = #replayTasks
+    review.active = false
+
+    if SmartLootEngine.state.lootUI and SmartLootEngine.state.lootUI.unknownItemsReviewPopup then
+        SmartLootEngine.state.lootUI.unknownItemsReviewPopup.isOpen = false
+    end
+
+    if #replayTasks > 0 then
+        SmartLootEngine.enqueueDirectedTasks(replayTasks)
+        logging.log(string.format("[Engine] Queued %d replay task(s) from batch unknown review", #replayTasks))
+    else
+        logging.log("[Engine] Batch unknown review completed with no replay tasks")
+    end
+
+    clearUnknownReviewState()
+    setState(SmartLootEngine.LootState.ProcessingPeers, "Batch unknown review complete")
+    scheduleNextTick(50)
+    return #replayTasks
+end
+
+function SmartLootEngine.cancelUnknownReview()
+    if SmartLootEngine.state.lootUI and SmartLootEngine.state.lootUI.unknownItemsReviewPopup then
+        SmartLootEngine.state.lootUI.unknownItemsReviewPopup.isOpen = false
+    end
+    clearUnknownReviewState()
+    setState(SmartLootEngine.LootState.ProcessingPeers, "Batch unknown review cancelled")
+    scheduleNextTick(50)
+    return true
 end
 
 function SmartLootEngine.shouldShowDirectedAssignment()
@@ -791,6 +954,18 @@ function SmartLootEngine.processDirectedTasksTick()
             end
 
             -- Configure currentItem and execute loot
+            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(foundItemInfo.name, targetSlot)
+            if hasLoreConflict then
+                util.printSmartLoot(
+                    string.format("Directed: skipping lore-conflicting item '%s' (%s)",
+                        foundItemInfo.name or "?", loreReason or "Lore conflict"),
+                    "warning")
+                SmartLootEngine.state.directedProcessing.currentTask = nil
+                _beginNextDirectedTask()
+                _dirScheduleNextTick(50)
+                return true
+            end
+
             SmartLootEngine.state.currentItem.name = foundItemInfo.name
             SmartLootEngine.state.currentItem.itemID = foundItemInfo.itemID
             SmartLootEngine.state.currentItem.iconID = foundItemInfo.iconID
@@ -890,7 +1065,7 @@ local function logStateTransition(fromState, toState, reason)
     logging.debug(string.format("[Engine] State: %s -> %s (%s)", fromName, toName, reason or ""))
 end
 
-local function setState(newState, reason)
+setState = function(newState, reason)
     local oldState = SmartLootEngine.state.currentState
     if oldState ~= newState then
         logStateTransition(oldState, newState, reason)
@@ -898,7 +1073,7 @@ local function setState(newState, reason)
     end
 end
 
-local function scheduleNextTick(delayMs)
+scheduleNextTick = function(delayMs)
     SmartLootEngine.state.nextActionTime = mq.gettime() + (delayMs or SmartLootEngine.config.tickIntervalMs)
 end
 
@@ -919,6 +1094,8 @@ local function resetCurrentItem()
         quantity = 1,
         slot = 0,
         itemLink = "",
+        itemValue = 0,
+        tributeValue = 0,
         rule = "",
         action = SmartLootEngine.LootAction.None
     }
@@ -1498,6 +1675,8 @@ function SmartLootEngine.getCorpseItem(index)
         itemID = item.ID() or 0,
         iconID = item.Icon() or 0,
         quantity = item.Stack() or 1,
+        itemValue = item.Value() or 0,
+        tributeValue = item.Tribute() or 0,
         itemLink = itemLink,
         valid = true
     }
@@ -1598,6 +1777,15 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
         local defaultAction = "Prompt"
         if config and config.getDefaultNewItemAction then
             defaultAction = config.getDefaultNewItemAction(toonName)
+        end
+
+        local batchUnknownReviewEnabled = false
+        if config and config.isBatchUnknownReviewEnabled then
+            batchUnknownReviewEnabled = config.isBatchUnknownReviewEnabled(toonName)
+        end
+
+        if batchUnknownReviewEnabled and shouldShowPrompt(defaultAction) then
+            return "DeferredUnknown", itemID, iconID
         end
 
         -- If default action does not require prompting, apply it directly
@@ -2460,6 +2648,11 @@ function SmartLootEngine.processFindingCorpseState()
     local corpse = SmartLootEngine.findNearestCorpse()
 
     if not corpse then
+        if SmartLootEngine.hasQueuedUnknownReviewItems() and not SmartLootEngine.state.unknownReview.active then
+            SmartLootEngine.beginUnknownReview()
+            return
+        end
+
         -- No corpses found - handle based on mode
         if SmartLootEngine.state.mode == SmartLootEngine.LootMode.Once or
             SmartLootEngine.state.mode == SmartLootEngine.LootMode.RGOnce or
@@ -2694,6 +2887,8 @@ function SmartLootEngine.processProcessingItemsState()
     SmartLootEngine.state.currentItem.iconID = itemInfo.iconID
     SmartLootEngine.state.currentItem.quantity = itemInfo.quantity
     SmartLootEngine.state.currentItem.slot = SmartLootEngine.state.currentItemIndex
+    SmartLootEngine.state.currentItem.itemValue = itemInfo.itemValue or 0
+    SmartLootEngine.state.currentItem.tributeValue = itemInfo.tributeValue or 0
     SmartLootEngine.state.currentItem.itemLink = itemInfo.itemLink or ""
 
     logging.debug(string.format("[Engine] Item from corpse: %s (itemID=%d, iconID=%d)",
@@ -2733,7 +2928,24 @@ function SmartLootEngine.processProcessingItemsState()
         SmartLootEngine.state.currentItemIndex, itemInfo.name, tostring(rule)))
 
     -- Handle rule outcomes
-    if not rule or rule == "" or rule == "Unset" then
+    if rule == "DeferredUnknown" then
+        SmartLootEngine.queueUnknownReviewItem({
+            itemName = itemInfo.name,
+            itemID = finalItemID,
+            iconID = finalIconID,
+            quantity = itemInfo.quantity,
+            itemValue = itemInfo.itemValue or 0,
+            tributeValue = itemInfo.tributeValue or 0,
+            corpseSpawnID = SmartLootEngine.state.currentCorpseSpawnID,
+            corpseID = SmartLootEngine.state.currentCorpseID,
+            corpseName = SmartLootEngine.state.currentCorpseName,
+        })
+
+        SmartLootEngine.state.currentItem.rule = ""
+        SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
+        scheduleNextTick(SmartLootEngine.config.ignoredItemDelayMs)
+        return
+    elseif not rule or rule == "" or rule == "Unset" then
         SmartLootEngine.createPendingDecision(itemInfo.name, finalItemID, finalIconID, itemInfo.quantity)
         setState(SmartLootEngine.LootState.WaitingForPendingDecision, "Pending decision required")
         return
@@ -3243,6 +3455,15 @@ function SmartLootEngine.processWaitingForInventorySpaceState()
     end
 end
 
+function SmartLootEngine.processReviewingUnknownsState()
+    SmartLootEngine.state.unknownReview.active = true
+    if SmartLootEngine.state.lootUI then
+        SmartLootEngine.state.lootUI.unknownItemsReviewPopup = SmartLootEngine.state.lootUI.unknownItemsReviewPopup or {}
+        SmartLootEngine.state.lootUI.unknownItemsReviewPopup.isOpen = true
+    end
+    scheduleNextTick(250)
+end
+
 -- ============================================================================
 -- MAIN TICK PROCESSOR
 -- ============================================================================
@@ -3338,6 +3559,8 @@ function SmartLootEngine.processTick()
         SmartLootEngine.processWaitingForWaterfallCompletionState()
     elseif currentState == SmartLootEngine.LootState.WaitingForInventorySpace then
         SmartLootEngine.processWaitingForInventorySpaceState()
+    elseif currentState == SmartLootEngine.LootState.ReviewingUnknowns then
+        SmartLootEngine.processReviewingUnknownsState()
     elseif currentState == SmartLootEngine.LootState.OnceModeCompletion then
         SmartLootEngine.processOnceModeCompletionState()
     elseif currentState == SmartLootEngine.LootState.CombatDetected then
@@ -3545,6 +3768,29 @@ function SmartLootEngine.resolvePendingDecision(itemName, itemID, selectedRule, 
     return true
 end
 
+getUnknownReviewKey = function(itemName, itemID)
+    if itemID and itemID > 0 then
+        return string.format("%s_%d", itemName or "", itemID)
+    end
+    return string.lower(itemName or "")
+end
+
+clearUnknownReviewState = function()
+    SmartLootEngine.state.unknownReview = {
+        active = false,
+        itemsByKey = {},
+        orderedKeys = {},
+        pendingTaskCount = 0,
+    }
+end
+
+parseKeepThreshold = function(rule)
+    if type(rule) ~= "string" then
+        return nil
+    end
+    return tonumber(rule:match("^KeepIfFewerThan:(%d+)"))
+end
+
 function SmartLootEngine.getState()
     local waterfallStatus = getWaterfallTracker().getStatus()
 
@@ -3557,6 +3803,8 @@ function SmartLootEngine.getState()
         currentItemIndex = SmartLootEngine.state.currentItemIndex,
         currentItemName = SmartLootEngine.state.currentItem.name,
         needsPendingDecision = SmartLootEngine.state.needsPendingDecision,
+        unknownReviewActive = SmartLootEngine.state.unknownReview.active,
+        unknownReviewItemCount = #(SmartLootEngine.state.unknownReview.orderedKeys or {}),
         pendingItemDetails = {
             itemName = SmartLootEngine.state.currentItem.name,
             itemID = SmartLootEngine.state.currentItem.itemID,
@@ -3587,6 +3835,7 @@ function SmartLootEngine.resetProcessedCorpses()
     SmartLootEngine.state.processedCorpsesThisSession = {}
     SmartLootEngine.state.ignoredItemsThisSession = {}
     SmartLootEngine.state.recordedDropsThisSession = {}
+    clearUnknownReviewState()
     logging.debug("[Engine] Corpse cache manually cleared")
     SmartLootEngine.state.sessionCorpseCount = 0
 
@@ -3674,6 +3923,7 @@ function SmartLootEngine.cleanup()
     SmartLootEngine.state.needsPendingDecision = false
     SmartLootEngine.state.lootActionInProgress = false
     SmartLootEngine.state.waitingForLootAction = false
+    clearUnknownReviewState()
 
     -- Clear UI references to prevent dangling pointers
     SmartLootEngine.state.lootUI = nil

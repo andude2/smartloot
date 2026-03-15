@@ -534,6 +534,24 @@ function config.getDefaultNewItemAction(toonName)
     return charCfg and charCfg.defaultNewItemAction or "Prompt"
 end
 
+function config.setBatchUnknownReviewEnabled(toonName, enabled)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.batchUnknownReviewEnabled = enabled and true or false
+    config.save()
+    return charCfg.batchUnknownReviewEnabled
+end
+
+function config.isBatchUnknownReviewEnabled(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    return charCfg.batchUnknownReviewEnabled == true
+end
+
 -- Default prompt dropdown selection for new item prompt (per character)
 function config.setDefaultPromptDropdown(toonName, selection)
     local charCfg

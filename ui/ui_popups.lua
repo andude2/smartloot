@@ -7,9 +7,78 @@ local util = require("modules.util")
 local database = require("modules.database")
 local config = require("modules.config")
 local json = require("dkjson")
+local SmartLootEngine = require("modules.SmartLootEngine")
 
 local uiPopups = {}
 local uiUtils = require("ui.ui_utils")
+
+local function formatCopperValue(value)
+    value = tonumber(value) or 0
+    local platValue = math.floor(value / 1000)
+    local goldValue = math.floor((value % 1000) / 100)
+    local silverValue = math.floor((value % 100) / 10)
+    local copperValue = value % 10
+
+    if platValue > 0 then
+        if goldValue > 0 then
+            return string.format("%dp %dg", platValue, goldValue)
+        end
+        return string.format("%dp", platValue)
+    end
+    if goldValue > 0 then
+        if silverValue > 0 then
+            return string.format("%dg %ds", goldValue, silverValue)
+        end
+        return string.format("%dg", goldValue)
+    end
+    if silverValue > 0 then
+        if copperValue > 0 then
+            return string.format("%ds %dc", silverValue, copperValue)
+        end
+        return string.format("%ds", silverValue)
+    end
+    return string.format("%dc", copperValue)
+end
+
+local function getFinalRuleForSelection(rule, threshold)
+    if rule == "KeepIfFewerThan" then
+        return "KeepIfFewerThan:" .. tostring(math.max(1, tonumber(threshold) or 1))
+    elseif rule == "KeepThenIgnore" then
+        return "KeepIfFewerThan:" .. tostring(math.max(1, tonumber(threshold) or 1)) .. ":AutoIgnore"
+    end
+    return rule
+end
+
+local function getRuleLabel(rule)
+    if not rule or rule == "" then
+        return "Unset"
+    end
+    local threshold = tonumber(rule:match("^KeepIfFewerThan:(%d+)"))
+    if threshold then
+        if rule:find(":AutoIgnore") then
+            return string.format("KeepThenIgnore (%d)", threshold)
+        end
+        return string.format("KeepIfFewerThan (%d)", threshold)
+    end
+    return rule
+end
+
+local function saveUnknownReviewRule(item, targetCharacter, finalRule)
+    local success = false
+    if targetCharacter == (mq.TLO.Me.Name() or "unknown") then
+        success = database.saveLootRule(item.itemName, item.itemID or 0, finalRule, item.iconID or 0)
+        if success then
+            database.refreshLootRuleCache()
+        end
+    else
+        success = database.saveLootRuleFor(targetCharacter, item.itemName, item.itemID or 0, finalRule, item.iconID or 0)
+        if success then
+            database.refreshLootRuleCacheForPeer(targetCharacter)
+            util.sendPeerCommandViaActor(targetCharacter, "reload_rules")
+        end
+    end
+    return success
+end
 
 -- Session Report Popup
 function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
@@ -290,6 +359,177 @@ function uiPopups.drawWhitelistManagerPopup(lootUI, database, util)
         ImGui.EndTable()
     else
         ImGui.Text("No whitelist entries.")
+    end
+
+    ImGui.End()
+end
+
+function uiPopups.drawUnknownItemsReviewPopup(lootUI, databaseRef, utilRef)
+    local popup = lootUI.unknownItemsReviewPopup
+    if not popup or not popup.isOpen then return end
+
+    popup.ruleSelections = popup.ruleSelections or {}
+    popup.ruleThresholds = popup.ruleThresholds or {}
+
+    local items = SmartLootEngine.getUnknownReviewItems and SmartLootEngine.getUnknownReviewItems() or {}
+    if #items == 0 then
+        popup.isOpen = false
+        return
+    end
+
+    ImGui.SetNextWindowSize(1180, 540, ImGuiCond.FirstUseEver)
+    local open = ImGui.Begin("SmartLoot - Unknown Item Batch Review", true)
+    if not open then
+        popup.isOpen = false
+        SmartLootEngine.cancelUnknownReview()
+        ImGui.End()
+        return
+    end
+
+    ImGui.TextWrapped("SmartLoot finished scanning nearby corpses. Review rules for unknown items below, including vendor plat value and tribute value, then replay only the items whose new local rule keeps them.")
+    ImGui.Separator()
+
+    local localToon = mq.TLO.Me.Name() or "unknown"
+    local unresolvedLocal = 0
+    local flags = bit32.bor(
+        ImGuiTableFlags.Borders,
+        ImGuiTableFlags.RowBg,
+        ImGuiTableFlags.Resizable,
+        ImGuiTableFlags.ScrollY,
+        ImGuiTableFlags.SizingStretchProp
+    )
+
+    if ImGui.BeginTable("SL_UnknownItemsReview", 8, flags, 0, 360) then
+        ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 34)
+        ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch, 2.2)
+        ImGui.TableSetupColumn("Corpses", ImGuiTableColumnFlags.WidthStretch, 1.8)
+        ImGui.TableSetupColumn("Seen", ImGuiTableColumnFlags.WidthFixed, 42)
+        ImGui.TableSetupColumn("Vendor", ImGuiTableColumnFlags.WidthFixed, 78)
+        ImGui.TableSetupColumn("Tribute", ImGuiTableColumnFlags.WidthFixed, 72)
+        ImGui.TableSetupColumn("Local Rule", ImGuiTableColumnFlags.WidthFixed, 132)
+        ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthStretch, 2.5)
+        ImGui.TableHeadersRow()
+
+        for _, item in ipairs(items) do
+            local key = item.key or item.itemName
+            local localRule = databaseRef.getLootRule(item.itemName, true, item.itemID)
+            if not localRule or localRule == "" or localRule == "Unset" then
+                unresolvedLocal = unresolvedLocal + 1
+            end
+
+            popup.ruleSelections[key] = popup.ruleSelections[key] or
+                (config.getDefaultPromptDropdown and config.getDefaultPromptDropdown(localToon) or "Keep")
+            popup.ruleThresholds[key] = popup.ruleThresholds[key] or 1
+
+            local corpseSummary = "Unknown corpse"
+            if item.corpseRefs and #item.corpseRefs > 0 then
+                corpseSummary = item.corpseRefs[1].corpseName or "Unknown corpse"
+                if #item.corpseRefs > 1 then
+                    corpseSummary = string.format("%s (+%d more)", corpseSummary, #item.corpseRefs - 1)
+                end
+            end
+
+            ImGui.TableNextRow()
+            ImGui.TableSetColumnIndex(0)
+            uiUtils.drawItemIcon(item.iconID or 0)
+
+            ImGui.TableSetColumnIndex(1)
+            ImGui.Text(item.itemName or "")
+            ImGui.TextDisabled(string.format("ID: %d", tonumber(item.itemID) or 0))
+
+            ImGui.TableSetColumnIndex(2)
+            ImGui.TextWrapped(corpseSummary)
+
+            ImGui.TableSetColumnIndex(3)
+            ImGui.Text(tostring(item.occurrenceCount or #(item.corpseRefs or {})))
+
+            ImGui.TableSetColumnIndex(4)
+            ImGui.Text(formatCopperValue(item.itemValue or 0))
+
+            ImGui.TableSetColumnIndex(5)
+            ImGui.Text(tostring(item.tributeValue or 0))
+
+            ImGui.TableSetColumnIndex(6)
+            local localRuleLabel = getRuleLabel(localRule)
+            if localRule and localRule ~= "" and localRule ~= "Unset" then
+                ImGui.TextColored(0.55, 0.9, 0.55, 1.0, localRuleLabel)
+            else
+                ImGui.TextColored(0.95, 0.75, 0.35, 1.0, "Unset")
+            end
+
+            ImGui.TableSetColumnIndex(7)
+            ImGui.SetNextItemWidth(118)
+            if ImGui.BeginCombo("##UnknownRule_" .. key, popup.ruleSelections[key]) then
+                for _, option in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
+                    local isSelected = popup.ruleSelections[key] == option
+                    if ImGui.Selectable(option, isSelected) then
+                        popup.ruleSelections[key] = option
+                    end
+                    if isSelected then ImGui.SetItemDefaultFocus() end
+                end
+                ImGui.EndCombo()
+            end
+
+            if popup.ruleSelections[key] == "KeepIfFewerThan" or popup.ruleSelections[key] == "KeepThenIgnore" then
+                ImGui.SameLine()
+                ImGui.SetNextItemWidth(50)
+                local newThreshold, changed = ImGui.InputInt("##UnknownThreshold_" .. key, popup.ruleThresholds[key], 0, 0)
+                if changed then
+                    popup.ruleThresholds[key] = math.max(1, newThreshold)
+                end
+            end
+
+            local finalRule = getFinalRuleForSelection(popup.ruleSelections[key], popup.ruleThresholds[key])
+
+            ImGui.SameLine()
+            if ImGui.SmallButton("Me##Unknown_" .. key) then
+                if saveUnknownReviewRule(item, localToon, finalRule) then
+                    popup.lastStatus = string.format("Saved %s locally for %s", getRuleLabel(finalRule), item.itemName)
+                end
+            end
+
+            ImGui.SameLine()
+            if ImGui.SmallButton("All##Unknown_" .. key) then
+                local successCount = 0
+                if saveUnknownReviewRule(item, localToon, finalRule) then
+                    successCount = successCount + 1
+                end
+                for _, peer in ipairs(utilRef.getConnectedPeers()) do
+                    if peer ~= localToon and saveUnknownReviewRule(item, peer, finalRule) then
+                        successCount = successCount + 1
+                    end
+                end
+                popup.lastStatus = string.format("Saved %s for %d character(s) on %s",
+                    getRuleLabel(finalRule), successCount, item.itemName)
+            end
+
+            ImGui.SameLine()
+            if ImGui.SmallButton("Peers##Unknown_" .. key) then
+                lootUI.peerItemRulesPopup = lootUI.peerItemRulesPopup or {}
+                lootUI.peerItemRulesPopup.isOpen = true
+                lootUI.peerItemRulesPopup.itemName = item.itemName
+                lootUI.peerItemRulesPopup.itemID = item.itemID or 0
+                lootUI.peerItemRulesPopup.iconID = item.iconID or 0
+            end
+        end
+
+        ImGui.EndTable()
+    end
+
+    ImGui.Separator()
+    ImGui.Text(string.format("Items awaiting local rule: %d", unresolvedLocal))
+    if popup.lastStatus and popup.lastStatus ~= "" then
+        ImGui.SameLine()
+        ImGui.TextColored(0.6, 0.85, 1.0, 1.0, popup.lastStatus)
+    end
+
+    if ImGui.Button("Loot Newly Kept Items", 200, 28) then
+        SmartLootEngine.completeUnknownReview()
+    end
+
+    ImGui.SameLine()
+    if ImGui.Button("Skip Review", 140, 28) then
+        SmartLootEngine.cancelUnknownReview()
     end
 
     ImGui.End()

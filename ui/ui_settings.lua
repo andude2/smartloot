@@ -428,6 +428,21 @@ local function draw_character_settings(lootUI, config)
         ImGui.SetTooltip("When Default Action auto-creates a Keep/Ignore rule for a new item, automatically copy that rule to connected peers and refresh their caches.")
     end
 
+    local batchUnknownReview = false
+    if config.isBatchUnknownReviewEnabled then
+        batchUnknownReview = config.isBatchUnknownReviewEnabled(toonName)
+    end
+    local newBatchUnknownReview, batchChanged = ImGui.Checkbox(
+        "Batch review unknown items after scanning corpses",
+        batchUnknownReview)
+    if batchChanged and config.setBatchUnknownReviewEnabled then
+        config.setBatchUnknownReviewEnabled(toonName, newBatchUnknownReview)
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.SetTooltip(
+            "When enabled, SmartLoot will defer unknown-item prompts, finish scanning nearby corpses, then open a batch review window with item, corpse, vendor value, and tribute value before replaying newly-kept loot.")
+    end
+
     -- Use buttons instead of dropdown for pending decisions
     local useButtons = false
     if config.isUsePendingDecisionButtons then

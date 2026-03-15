@@ -70,6 +70,29 @@ local function bindPauseResume()
     end)
 end
 
+local function bindUnknownReviewCommands()
+    mq.bind("/sl_reviewunknowns", function(action)
+        if not SmartLootEngine then
+            util.printSmartLoot("SmartLootEngine not available", "error")
+            return
+        end
+
+        local a = (action or ""):lower()
+        if a == "cancel" or a == "skip" then
+            SmartLootEngine.cancelUnknownReview()
+            util.printSmartLoot("Unknown item batch review cancelled", "warning")
+            return
+        end
+
+        if SmartLootEngine.hasQueuedUnknownReviewItems and SmartLootEngine.hasQueuedUnknownReviewItems() then
+            SmartLootEngine.beginUnknownReview()
+            util.printSmartLoot("Opening unknown item batch review", "info")
+        else
+            util.printSmartLoot("No queued unknown items to review", "info")
+        end
+    end)
+end
+
 -- Directed mode helpers
 local function bindDirectedMode()
     mq.bind("/sl_directed", function(action)
@@ -1428,6 +1451,7 @@ local function bindUtilityCommands()
             util.printSmartLoot("  /sl_resume - Resume from emergency stop", "info")
             util.printSmartLoot("UI Control:", "info")
             util.printSmartLoot("  /sl_toggle_hotbar - Toggle hotbar visibility", "info")
+            util.printSmartLoot("  /sl_reviewunknowns [cancel] - Open/cancel batch unknown-item review", "info")
             util.printSmartLoot("  /sl_debug - Toggle debug window", "info")
             util.printSmartLoot("  /sl_debug level [X] - Set/show debug level (0-5 or name)", "info")
             util.printSmartLoot("  /sl_stats [show|hide|toggle|reset|compact] - Live stats", "info")
@@ -1552,6 +1576,7 @@ function bindings.registerAllBindings()
     bindDirectedMode()
     bindHotbarToggle()
     bindPauseResume()
+    bindUnknownReviewCommands()
     bindLiveStats()
     bindPeerCommands()
     bindWhitelistOnly()
@@ -1622,7 +1647,7 @@ end
 function bindings.listBindings()
     local commands = {
         "/sl_pause", "/sl_doloot", "/sl_combatloot", "/sl_rg_trigger", "/sl_emergency_stop", "/sl_resume",
-        "/sl_toggle_hotbar", "/sl_debug", "/sl_stats",
+        "/sl_toggle_hotbar", "/sl_reviewunknowns", "/sl_debug", "/sl_stats",
         "/sl_engine_status", "/sl_mode_status", "/sl_waterfall_status", "/sl_waterfall_debug", "/sl_waterfall_complete",
         "/sl_test_peer_complete",
         "/sl_check_peers", "/sl_refresh_mode", "/sl_mode", "/sl_peer_monitor",
