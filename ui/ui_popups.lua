@@ -5,6 +5,7 @@ local logging = require("modules.logging")
 local uiUtils = require("ui.ui_utils")
 local util = require("modules.util")
 local database = require("modules.database")
+local config = require("modules.config")
 local json = require("dkjson")
 
 local uiPopups = {}
@@ -308,11 +309,13 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             
             -- Get item value from corpse (in copper)
             local itemValue = 0
+            local tributeValue = lootUI.currentItem.tributeValue or 0
             local itemIndex = lootUI.currentItem.index
             if itemIndex then
                 local corpseItem = mq.TLO.Corpse.Item(itemIndex)
                 if corpseItem and corpseItem() then
                     itemValue = corpseItem.Value() or 0
+                    tributeValue = corpseItem.Tribute() or tributeValue
                 end
             end
             
@@ -376,6 +379,9 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             ImGui.TextDisabled(string.format("Item ID: %d", itemID))
             ImGui.SameLine()
             ImGui.TextDisabled(string.format("Corpse Slot: %s", tostring(itemIndex or "?")))
+            local config = require("modules.config")
+            local toonName = mq.TLO.Me.Name() or "unknown"
+            local showTribute = config.isShowPendingDecisionTribute and config.isShowPendingDecisionTribute(toonName) or true
             ImGui.Text("Value:")
             ImGui.SameLine()
             local valueColor = {0.6, 0.4, 0.3, 1}
@@ -383,6 +389,14 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             elseif goldValue > 0 then valueColor = {0.9, 0.7, 0.3, 1}
             elseif silverValue > 0 then valueColor = {0.7, 0.7, 0.7, 1} end
             ImGui.TextColored(valueColor[1], valueColor[2], valueColor[3], valueColor[4], valueStr)
+            if showTribute then
+                ImGui.SameLine()
+                ImGui.TextDisabled("|")
+                ImGui.SameLine()
+                ImGui.Text("Tribute:")
+                ImGui.SameLine()
+                ImGui.TextColored(0.7, 0.9, 1.0, 1.0, tostring(tributeValue or 0))
+            end
             ImGui.EndGroup()
             
             ImGui.Spacing()
@@ -458,7 +472,6 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             lootUI.pendingThreshold = lootUI.pendingThreshold or 1
             
             -- Rule selection (dropdown or buttons based on config)
-            local config = require("modules.config")
             local toonName = mq.TLO.Me.Name() or "unknown"
             local useButtons = config.isUsePendingDecisionButtons and config.isUsePendingDecisionButtons(toonName) or false
             local actionLayout = config.getPendingDecisionActionLayout and config.getPendingDecisionActionLayout(toonName) or "selector"
@@ -3250,8 +3263,32 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
             }
         end
     end
+
+    local function formatCurrencyValue(valueInCopper)
+        local value = tonumber(valueInCopper) or 0
+        local platinum = math.floor(value / 1000)
+        local gold = math.floor((value % 1000) / 100)
+        local silver = math.floor((value % 100) / 10)
+        local copper = value % 10
+
+        if platinum > 0 then
+            local text = string.format("%dp", platinum)
+            if gold > 0 then text = text .. string.format(" %dg", gold) end
+            return text
+        elseif gold > 0 then
+            local text = string.format("%dg", gold)
+            if silver > 0 then text = text .. string.format(" %ds", silver) end
+            return text
+        elseif silver > 0 then
+            local text = string.format("%ds", silver)
+            if copper > 0 then text = text .. string.format(" %dc", copper) end
+            return text
+        end
+
+        return string.format("%dc", copper)
+    end
     
-    ImGui.SetNextWindowSize(850, 450, ImGuiCond.FirstUseEver)
+    ImGui.SetNextWindowSize(1080, 450, ImGuiCond.FirstUseEver)
     local keepOpen, shown = ImGui.Begin("SmartLoot - Remote Pending Decisions", true)
     
     if shown then
@@ -3264,19 +3301,30 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
         local remoteListVisible = ImGui.BeginChild("RemotePendingList", 0, -50)
         if remoteListVisible then
             local tableFlags = ImGuiTableFlags.Borders + ImGuiTableFlags.RowBg + ImGuiTableFlags.ScrollY
-            if ImGui.BeginTable("RemotePendingTable", 6, tableFlags) then
+            local toonName = mq.TLO.Me.Name() or "unknown"
+            local useButtons = config.isUseRemotePendingDecisionButtons and config.isUseRemotePendingDecisionButtons(toonName) or false
+            local showValue = config.isShowRemotePendingDecisionValue and config.isShowRemotePendingDecisionValue(toonName) or true
+            local showTribute = config.isShowRemotePendingDecisionTribute and config.isShowRemotePendingDecisionTribute(toonName) or true
+            local columnCount = 6
+            if showValue then columnCount = columnCount + 1 end
+            if showTribute then columnCount = columnCount + 1 end
+
+            if ImGui.BeginTable("RemotePendingTable", columnCount, tableFlags) then
                 ImGui.TableSetupColumn("Peer", ImGuiTableColumnFlags.WidthFixed, 100)
                 ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 35)
                 ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
                 ImGui.TableSetupColumn("Item ID", ImGuiTableColumnFlags.WidthFixed, 80)
+                if showValue then
+                    ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthFixed, 90)
+                end
+                if showTribute then
+                    ImGui.TableSetupColumn("Tribute", ImGuiTableColumnFlags.WidthFixed, 80)
+                end
                 ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 180)
                 ImGui.TableSetupColumn("Threshold", ImGuiTableColumnFlags.WidthFixed, 90)
                 ImGui.TableHeadersRow()
                 
                 local uiUtils = require("smartloot.ui.ui_utils")
-                local config = require("modules.config")
-                local toonName = mq.TLO.Me.Name() or "unknown"
-                local useButtons = config.isUsePendingDecisionButtons and config.isUsePendingDecisionButtons(toonName) or false
 
                 for i, decision in ipairs(remoteDecisions) do
                     ImGui.TableNextRow()
@@ -3299,8 +3347,21 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                     ImGui.TableSetColumnIndex(3)
                     ImGui.Text(tostring(decision.itemID or 0))
 
-                    -- Column 5: Rule selection (dropdown or buttons based on config)
-                    ImGui.TableSetColumnIndex(4)
+                    local ruleColumnIndex = 4
+                    if showValue then
+                        ImGui.TableSetColumnIndex(ruleColumnIndex)
+                        ImGui.Text(formatCurrencyValue(decision.itemValue or 0))
+                        ruleColumnIndex = ruleColumnIndex + 1
+                    end
+
+                    if showTribute then
+                        ImGui.TableSetColumnIndex(ruleColumnIndex)
+                        ImGui.Text(tostring(decision.tributeValue or 0))
+                        ruleColumnIndex = ruleColumnIndex + 1
+                    end
+
+                    -- Rule selection (dropdown or buttons based on config)
+                    ImGui.TableSetColumnIndex(ruleColumnIndex)
 
                     if useButtons then
                         -- Button mode: row of small buttons
@@ -3344,8 +3405,7 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                         end
                     end
                     
-                    -- Column 6: Threshold input
-                    ImGui.TableSetColumnIndex(5)
+                    ImGui.TableSetColumnIndex(ruleColumnIndex + 1)
                     if assignment.rule == "KeepIfFewerThan" or assignment.rule == "KeepThenIgnore" then
                         ImGui.SetNextItemWidth(-1)
                         local newThreshold, changed = ImGui.InputInt("##remoteThreshold_" .. i, assignment.threshold)
@@ -3377,22 +3437,35 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
         
         -- Action buttons
         local Icons = require("mq.Icons")
-        
-        -- Apply All button
-        if ImGui.Button(Icons.FA_CHECK_CIRCLE .. " Apply All Rules", 180, 30) then
+
+        local toonName = mq.TLO.Me.Name() or "unknown"
+        local actionLayout = config.getRemotePendingDecisionActionLayout and config.getRemotePendingDecisionActionLayout(toonName) or "selector"
+        local quickButtons = config.getRemotePendingDecisionQuickButtons and config.getRemotePendingDecisionQuickButtons(toonName) or {
+            allKeep = true,
+            allIgnore = true,
+            meKeep = true,
+            meIgnore = true,
+        }
+
+        local function processRemoteDecisions(ruleResolver, applyToAllPeers)
             local actors = require("actors")
             local json = require("dkjson")
-            
-            -- Process each decision with its assignment
+            local connectedPeers = applyToAllPeers and util.getConnectedPeers() or nil
+
             for i, decision in ipairs(remoteDecisions) do
                 local assignment = lootUI.remotePendingAssignments[i]
-                local rule = getFinalRule(assignment)
-                
-                -- Apply to requester
-                database.saveLootRuleFor(decision.requester, decision.itemName, decision.itemID, rule, decision.iconID)
-                util.sendPeerCommandViaActor(decision.requester, "reload_rules")
-                
-                -- Send decision response to the requester
+                local rule = ruleResolver(assignment, decision)
+
+                if applyToAllPeers then
+                    for _, peer in ipairs(connectedPeers) do
+                        database.saveLootRuleFor(peer, decision.itemName, decision.itemID, rule, decision.iconID)
+                        util.sendPeerCommandViaActor(peer, "reload_rules")
+                    end
+                else
+                    database.saveLootRuleFor(decision.requester, decision.itemName, decision.itemID, rule, decision.iconID)
+                    util.sendPeerCommandViaActor(decision.requester, "reload_rules")
+                end
+
                 pcall(function()
                     local responseData = {
                         cmd = "pending_decision_response",
@@ -3407,8 +3480,7 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                         json.encode(responseData)
                     )
                 end)
-                
-                -- Broadcast to all characters to clear this decision from their queues
+
                 pcall(function()
                     local clearData = {
                         cmd = "clear_remote_decision",
@@ -3422,71 +3494,107 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
                         json.encode(clearData)
                     )
                 end)
-                
-                logging.debug(string.format("Applied rule '%s' for '%s' to %s", rule, decision.itemName, decision.requester))
+
+                if applyToAllPeers then
+                    logging.debug(string.format("Applied rule '%s' for '%s' to all peers", rule, decision.itemName))
+                else
+                    logging.debug(string.format("Applied rule '%s' for '%s' to %s", rule, decision.itemName, decision.requester))
+                end
             end
-            
-            -- Clear queue
+
             _G.SMARTLOOT_REMOTE_DECISIONS = {}
             lootUI.remotePendingAssignments = {}
         end
-        
-        ImGui.SameLine()
-        
-        -- Apply to All Peers button
-        if ImGui.Button(Icons.FA_USERS .. " Apply To All Peers", 180, 30) then
-            local actors = require("actors")
-            local json = require("dkjson")
-            local connectedPeers = util.getConnectedPeers()
-            
-            -- Process each decision with its assignment
-            for i, decision in ipairs(remoteDecisions) do
-                local assignment = lootUI.remotePendingAssignments[i]
-                local rule = getFinalRule(assignment)
-                
-                -- Apply to all peers
-                for _, peer in ipairs(connectedPeers) do
-                    database.saveLootRuleFor(peer, decision.itemName, decision.itemID, rule, decision.iconID)
-                    util.sendPeerCommandViaActor(peer, "reload_rules")
-                end
-                
-                -- Send decision response to the requester
-                pcall(function()
-                    local responseData = {
-                        cmd = "pending_decision_response",
-                        sender = mq.TLO.Me.Name(),
-                        itemName = decision.itemName,
-                        itemID = decision.itemID,
-                        iconID = decision.iconID,
-                        rule = rule
-                    }
-                    actors.send(
-                        { mailbox = "smartloot_mailbox" },
-                        json.encode(responseData)
-                    )
-                end)
-                
-                -- Broadcast to all characters to clear this decision from their queues
-                pcall(function()
-                    local clearData = {
-                        cmd = "clear_remote_decision",
-                        sender = mq.TLO.Me.Name(),
-                        requester = decision.requester,
-                        itemName = decision.itemName,
-                        itemID = decision.itemID
-                    }
-                    actors.send(
-                        { mailbox = "smartloot_mailbox" },
-                        json.encode(clearData)
-                    )
-                end)
-                
-                logging.debug(string.format("Applied rule '%s' for '%s' to all peers", rule, decision.itemName))
+
+        local function drawStyledActionButton(label, width, colors, onClick, tooltip)
+            ImGui.PushStyleColor(ImGuiCol.Button, colors[1], colors[2], colors[3], colors[4])
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, colors[5], colors[6], colors[7], colors[8])
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, colors[9], colors[10], colors[11], colors[12])
+            if ImGui.Button(label, width, 30) then
+                onClick()
             end
-            
-            -- Clear queue
-            _G.SMARTLOOT_REMOTE_DECISIONS = {}
-            lootUI.remotePendingAssignments = {}
+            if tooltip and ImGui.IsItemHovered() then
+                ImGui.SetTooltip(tooltip)
+            end
+            ImGui.PopStyleColor(3)
+        end
+
+        if actionLayout == "quick_buttons" then
+            local quickActionButtons = {
+                {
+                    enabled = quickButtons.allKeep,
+                    label = "All Keep",
+                    width = 120,
+                    colors = {0.2, 0.7, 0.2, 0.95, 0.3, 0.8, 0.3, 1.0, 0.1, 0.5, 0.1, 1.0},
+                    onClick = function()
+                        processRemoteDecisions(function()
+                            return "Keep"
+                        end, true)
+                    end,
+                    tooltip = "Apply Keep to all pending items for every connected peer",
+                },
+                {
+                    enabled = quickButtons.allIgnore,
+                    label = "All Ignore",
+                    width = 125,
+                    colors = {0.75, 0.55, 0.2, 0.95, 0.85, 0.65, 0.3, 1.0, 0.6, 0.45, 0.1, 1.0},
+                    onClick = function()
+                        processRemoteDecisions(function()
+                            return "Ignore"
+                        end, true)
+                    end,
+                    tooltip = "Apply Ignore to all pending items for every connected peer",
+                },
+                {
+                    enabled = quickButtons.meKeep,
+                    label = "Peer Keep",
+                    width = 120,
+                    colors = {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
+                    onClick = function()
+                        processRemoteDecisions(function()
+                            return "Keep"
+                        end, false)
+                    end,
+                    tooltip = "Apply Keep to each requesting peer only",
+                },
+                {
+                    enabled = quickButtons.meIgnore,
+                    label = "Peer Ignore",
+                    width = 125,
+                    colors = {0.55, 0.45, 0.75, 0.95, 0.65, 0.55, 0.85, 1.0, 0.45, 0.35, 0.65, 1.0},
+                    onClick = function()
+                        processRemoteDecisions(function()
+                            return "Ignore"
+                        end, false)
+                    end,
+                    tooltip = "Apply Ignore to each requesting peer only",
+                },
+            }
+
+            local drewButton = false
+            for _, button in ipairs(quickActionButtons) do
+                if button.enabled then
+                    if drewButton then
+                        ImGui.SameLine()
+                    end
+                    drawStyledActionButton(button.label, button.width, button.colors, button.onClick, button.tooltip)
+                    drewButton = true
+                end
+            end
+        else
+            if ImGui.Button(Icons.FA_CHECK_CIRCLE .. " Apply All Rules", 180, 30) then
+                processRemoteDecisions(function(assignment)
+                    return getFinalRule(assignment)
+                end, false)
+            end
+
+            ImGui.SameLine()
+
+            if ImGui.Button(Icons.FA_USERS .. " Apply To All Peers", 180, 30) then
+                processRemoteDecisions(function(assignment)
+                    return getFinalRule(assignment)
+                end, true)
+            end
         end
         
         ImGui.SameLine()

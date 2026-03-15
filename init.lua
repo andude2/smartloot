@@ -538,6 +538,8 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
             itemID = data.itemID or 0,
             iconID = data.iconID or 0,
             quantity = data.quantity or 1,
+            itemValue = data.itemValue or 0,
+            tributeValue = data.tributeValue or 0,
             timestamp = mq.gettime()
         })
 

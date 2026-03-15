@@ -2302,6 +2302,17 @@ function SmartLootEngine.createPendingDecision(itemName, itemID, iconID, quantit
     SmartLootEngine.state.pendingDecisionStartTime = mq.gettime()
     SmartLootEngine.state.pendingDecisionForwarded = false
 
+    local itemValue = 0
+    local tributeValue = 0
+    local itemIndex = SmartLootEngine.state.currentItemIndex
+    if itemIndex then
+        local corpseItem = mq.TLO.Corpse.Item(itemIndex)
+        if corpseItem and corpseItem() then
+            itemValue = corpseItem.Value() or 0
+            tributeValue = corpseItem.Tribute() or 0
+        end
+    end
+
     -- Update UI if available
     if SmartLootEngine.state.lootUI then
         SmartLootEngine.state.lootUI.currentItem = {
@@ -2310,7 +2321,9 @@ function SmartLootEngine.createPendingDecision(itemName, itemID, iconID, quantit
             numericCorpseID = SmartLootEngine.state.currentCorpseID,
             decisionStartTime = mq.gettime(),
             itemID = itemID,
-            iconID = iconID
+            iconID = iconID,
+            itemValue = itemValue,
+            tributeValue = tributeValue,
         }
     end
 
@@ -2330,7 +2343,9 @@ function SmartLootEngine.createPendingDecision(itemName, itemID, iconID, quantit
             itemName = itemName,
             itemID = itemID or 0,
             iconID = iconID or 0,
-            quantity = quantity or 1
+            quantity = quantity or 1,
+            itemValue = itemValue,
+            tributeValue = tributeValue,
         }
         local messageJson = json.encode(messageData)
         

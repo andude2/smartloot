@@ -702,6 +702,160 @@ function config.getPendingDecisionQuickButtons(toonName)
     }
 end
 
+function config.setShowPendingDecisionTribute(toonName, enabled)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.showPendingDecisionTribute = enabled ~= false
+    config.save()
+    return charCfg.showPendingDecisionTribute
+end
+
+function config.isShowPendingDecisionTribute(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    return charCfg.showPendingDecisionTribute ~= false
+end
+
+function config.setUseRemotePendingDecisionButtons(toonName, enabled)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.useRemotePendingDecisionButtons = enabled and true or false
+    config.save()
+    return charCfg.useRemotePendingDecisionButtons
+end
+
+function config.isUseRemotePendingDecisionButtons(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    if charCfg.useRemotePendingDecisionButtons == nil then
+        return config.isUsePendingDecisionButtons(toonName)
+    end
+    return charCfg.useRemotePendingDecisionButtons == true
+end
+
+function config.setRemotePendingDecisionActionLayout(toonName, layout)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+
+    local validLayouts = {
+        selector = true,
+        quick_buttons = true,
+    }
+
+    if not validLayouts[layout] then
+        return false, "Invalid layout. Valid options: selector, quick_buttons"
+    end
+
+    charCfg.remotePendingDecisionActionLayout = layout
+    config.save()
+    return charCfg.remotePendingDecisionActionLayout
+end
+
+function config.getRemotePendingDecisionActionLayout(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    if not charCfg.remotePendingDecisionActionLayout then
+        return config.getPendingDecisionActionLayout(toonName)
+    end
+    return charCfg.remotePendingDecisionActionLayout
+end
+
+function config.setRemotePendingDecisionQuickButtons(toonName, quickButtons)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+
+    local normalized = {
+        allKeep = quickButtons.allKeep ~= false,
+        allIgnore = quickButtons.allIgnore ~= false,
+        meKeep = quickButtons.meKeep ~= false,
+        meIgnore = quickButtons.meIgnore ~= false,
+    }
+
+    local hasEnabledButton = false
+    for _, enabled in pairs(normalized) do
+        if enabled then
+            hasEnabledButton = true
+            break
+        end
+    end
+    if not hasEnabledButton then
+        normalized.meKeep = true
+    end
+
+    charCfg.remotePendingDecisionQuickButtons = normalized
+
+    config.save()
+    return charCfg.remotePendingDecisionQuickButtons
+end
+
+function config.getRemotePendingDecisionQuickButtons(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    local configured = charCfg.remotePendingDecisionQuickButtons
+    if not configured then
+        return config.getPendingDecisionQuickButtons(toonName)
+    end
+
+    return {
+        allKeep = configured.allKeep ~= false,
+        allIgnore = configured.allIgnore ~= false,
+        meKeep = configured.meKeep ~= false,
+        meIgnore = configured.meIgnore ~= false,
+    }
+end
+
+function config.setShowRemotePendingDecisionValue(toonName, enabled)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.showRemotePendingDecisionValue = enabled ~= false
+    config.save()
+    return charCfg.showRemotePendingDecisionValue
+end
+
+function config.isShowRemotePendingDecisionValue(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    return charCfg.showRemotePendingDecisionValue ~= false
+end
+
+function config.setShowRemotePendingDecisionTribute(toonName, enabled)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.showRemotePendingDecisionTribute = enabled ~= false
+    config.save()
+    return charCfg.showRemotePendingDecisionTribute
+end
+
+function config.isShowRemotePendingDecisionTribute(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    return charCfg.showRemotePendingDecisionTribute ~= false
+end
+
 function config.setPeerSelectionStrategy(strategy)
     local normalized = "items_first"
     if type(strategy) == "string" then
