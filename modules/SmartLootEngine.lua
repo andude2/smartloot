@@ -663,7 +663,6 @@ function SmartLootEngine.beginUnknownReview()
     if SmartLootEngine.state.lootUI then
         SmartLootEngine.state.lootUI.unknownItemsReviewPopup = SmartLootEngine.state.lootUI.unknownItemsReviewPopup or {}
         SmartLootEngine.state.lootUI.unknownItemsReviewPopup.isOpen = true
-        SmartLootEngine.state.lootUI.showUI = true
     end
     setState(SmartLootEngine.LootState.ReviewingUnknowns, "Awaiting batch unknown item review")
     scheduleNextTick(100)
@@ -672,7 +671,7 @@ end
 
 function SmartLootEngine.completeUnknownReview()
     local review = SmartLootEngine.state.unknownReview
-    local replayTasks = {}
+    local corpseTasks = {}
 
     for _, key in ipairs(review.orderedKeys or {}) do
         local item = review.itemsByKey[key]
@@ -694,9 +693,19 @@ function SmartLootEngine.completeUnknownReview()
                         break
                     end
 
-                    table.insert(replayTasks, {
-                        corpseSpawnID = corpseRef.corpseSpawnID or corpseRef.corpseID or 0,
-                        corpseID = corpseRef.corpseID or corpseRef.corpseSpawnID or 0,
+                    local corpseSpawnID = corpseRef.corpseSpawnID or corpseRef.corpseID or 0
+                    local corpseTask = corpseTasks[corpseSpawnID]
+                    if not corpseTask then
+                        corpseTask = {
+                            corpseSpawnID = corpseSpawnID,
+                            corpseID = corpseRef.corpseID or corpseSpawnID,
+                            corpseName = corpseRef.corpseName or "",
+                            items = {},
+                        }
+                        corpseTasks[corpseSpawnID] = corpseTask
+                    end
+
+                    table.insert(corpseTask.items, {
                         itemName = item.itemName,
                         itemID = item.itemID or 0,
                         iconID = item.iconID or 0,
@@ -704,6 +713,13 @@ function SmartLootEngine.completeUnknownReview()
                     })
                 end
             end
+        end
+    end
+
+    local replayTasks = {}
+    for _, corpseTask in pairs(corpseTasks) do
+        if corpseTask.items and #corpseTask.items > 0 then
+            table.insert(replayTasks, corpseTask)
         end
     end
 
@@ -754,15 +770,41 @@ function SmartLootEngine.enqueueDirectedTasks(tasks)
 
     local validTasks = 0
     for _, t in ipairs(tasks) do
-        if type(t) == "table" and t.itemName and t.itemName ~= "" then
+        if type(t) == "table" and ((t.items and #t.items > 0) or (t.itemName and t.itemName ~= "")) then
+            local normalizedItems = {}
+            if t.items and #t.items > 0 then
+                for _, item in ipairs(t.items) do
+                    if type(item) == "table" and item.itemName and item.itemName ~= "" then
+                        table.insert(normalizedItems, {
+                            itemName = tostring(item.itemName),
+                            itemID = tonumber(item.itemID) or 0,
+                            iconID = tonumber(item.iconID) or 0,
+                            quantity = math.max(1, tonumber(item.quantity) or 1),
+                        })
+                    end
+                end
+            else
+                table.insert(normalizedItems, {
+                    itemName = tostring(t.itemName),
+                    itemID = tonumber(t.itemID) or 0,
+                    iconID = tonumber(t.iconID) or 0,
+                    quantity = math.max(1, tonumber(t.quantity) or 1),
+                })
+            end
+
+            if #normalizedItems == 0 then
+                logging.debug("[Directed] Skipped task with no valid items")
+            else
             table.insert(SmartLootEngine.state.directedTasksQueue, {
                 corpseSpawnID = tonumber(t.corpseSpawnID) or tonumber(t.corpseID) or 0,
-                itemName = tostring(t.itemName),
-                itemID = tonumber(t.itemID) or 0,
-                iconID = tonumber(t.iconID) or 0,
-                quantity = math.max(1, tonumber(t.quantity) or 1),
+                corpseID = tonumber(t.corpseID) or tonumber(t.corpseSpawnID) or 0,
+                corpseName = tostring(t.corpseName or ""),
+                itemName = tostring(normalizedItems[1].itemName),
+                items = normalizedItems,
+                activeItemIndex = nil,
             })
             validTasks = validTasks + 1
+            end
         else
             logging.debug("[Directed] Skipped invalid task: " .. tostring(t and t.itemName or "unknown"))
         end
@@ -792,18 +834,9 @@ local function _beginNextDirectedTask()
     "idle"
     if SmartLootEngine.state.directedProcessing.currentTask then
         local t = SmartLootEngine.state.directedProcessing.currentTask
-        -- Initialize attempts and baseline inventory count for verification
-        t.attempts = (t.attempts or 0)
-        local baseCount = 0
-        local okBase, val = pcall(function()
-            return (mq.TLO.FindItemCount(t.itemName)() or 0)
-        end)
-        if okBase and type(val) == "number" then baseCount = val end
-        t.baseCount = baseCount
-
         util.printSmartLoot(
-        string.format("Directed: starting task for %s at corpse %d (have=%d)", t.itemName or "?", t.corpseSpawnID or 0,
-            baseCount), "info")
+        string.format("Directed: starting corpse task %d with %d item(s)", t.corpseSpawnID or 0, #(t.items or {})),
+            "info")
         SmartLootEngine.state.navStartTime = mq.gettime()
         SmartLootEngine.state.directedProcessing.navStartTime = SmartLootEngine.state.navStartTime
         SmartLootEngine.state.directedProcessing.navMethod = smartNavigate(t.corpseSpawnID, "directed task")
@@ -928,42 +961,75 @@ function SmartLootEngine.processDirectedTasksTick()
             SmartLootEngine.state.currentCorpseDistance = corpse.Distance() or 0
             SmartLootEngine.state.currentItemIndex = 1
 
-            -- Find the target item on the corpse by ID first then name
-            local itemCount = SmartLootEngine.getCorpseItemCount()
-            local targetSlot = nil
-            local foundItemInfo = nil
-            for i = 1, itemCount do
-                local it = SmartLootEngine.getCorpseItem(i)
-                if it then
-                    if (task.itemID and task.itemID > 0 and it.itemID == task.itemID) or (it.name == task.itemName) then
-                        targetSlot = i
-                        foundItemInfo = it
-                        break
-                    end
+            if not task.items or #task.items == 0 then
+                if SmartLootEngine.isLootWindowOpen() then
+                    mq.cmd("/notify LootWnd DoneButton leftmouseup")
                 end
-            end
-
-            if not targetSlot then
-                util.printSmartLoot(
-                string.format("Directed: item '%s' not found on corpse %d - skipping", task.itemName or "?",
-                    task.corpseSpawnID or 0), "warning")
                 SmartLootEngine.state.directedProcessing.currentTask = nil
                 _beginNextDirectedTask()
                 _dirScheduleNextTick(50)
                 return true
             end
 
-            -- Configure currentItem and execute loot
+            -- Find the next target item on the corpse by desired item list
+            local itemCount = SmartLootEngine.getCorpseItemCount()
+            local targetSlot = nil
+            local foundItemInfo = nil
+            local desiredIndex = nil
+            for idx, desired in ipairs(task.items) do
+                for i = 1, itemCount do
+                    local it = SmartLootEngine.getCorpseItem(i)
+                    if it then
+                        local matches = ((desired.itemID and desired.itemID > 0 and it.itemID == desired.itemID) or
+                            (it.name == desired.itemName))
+                        if matches then
+                            targetSlot = i
+                            foundItemInfo = it
+                            desiredIndex = idx
+                            break
+                        end
+                    end
+                end
+
+                if targetSlot then
+                    break
+                end
+            end
+
+            if not targetSlot then
+                util.printSmartLoot(
+                string.format("Directed: no remaining target items found on corpse %d - finishing", task.corpseSpawnID or 0),
+                    "warning")
+                if SmartLootEngine.isLootWindowOpen() then
+                    mq.cmd("/notify LootWnd DoneButton leftmouseup")
+                end
+                SmartLootEngine.state.directedProcessing.currentTask = nil
+                _beginNextDirectedTask()
+                _dirScheduleNextTick(50)
+                return true
+            end
+
             local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(foundItemInfo.name, targetSlot)
             if hasLoreConflict then
                 util.printSmartLoot(
                     string.format("Directed: skipping lore-conflicting item '%s' (%s)",
                         foundItemInfo.name or "?", loreReason or "Lore conflict"),
                     "warning")
-                SmartLootEngine.state.directedProcessing.currentTask = nil
-                _beginNextDirectedTask()
-                _dirScheduleNextTick(50)
-                return true
+                if desiredIndex then
+                    table.remove(task.items, desiredIndex)
+                end
+                if task.items and #task.items > 0 then
+                    _dirScheduleNextTick(50)
+                    return true
+                else
+                    if SmartLootEngine.isLootWindowOpen() then
+                        mq.cmd("/notify LootWnd DoneButton leftmouseup")
+                    end
+                    SmartLootEngine.state.directedProcessing.currentTask = nil
+                    _beginNextDirectedTask()
+                    _dirScheduleNextTick(50)
+                    return true
+                end
             end
 
             SmartLootEngine.state.currentItem.name = foundItemInfo.name
@@ -973,6 +1039,7 @@ function SmartLootEngine.processDirectedTasksTick()
             SmartLootEngine.state.currentItem.slot = targetSlot
             SmartLootEngine.state.currentItem.itemLink = foundItemInfo.itemLink or ""
             SmartLootEngine.state.currentItem.action = SmartLootEngine.LootAction.Loot
+            task.activeItemIndex = desiredIndex
 
             SmartLootEngine.state.directedProcessing.step = "looting"
             util.printSmartLoot(
@@ -996,39 +1063,23 @@ function SmartLootEngine.processDirectedTasksTick()
 
     if SmartLootEngine.state.directedProcessing.step == "looting" then
         if SmartLootEngine.checkLootActionCompletion() then
-            -- Done with this task
-            -- Close loot window if open
-            if SmartLootEngine.isLootWindowOpen() then
-                mq.cmd("/notify LootWnd DoneButton leftmouseup")
+            if task.activeItemIndex and task.items and task.items[task.activeItemIndex] then
+                table.remove(task.items, task.activeItemIndex)
             end
+            task.activeItemIndex = nil
 
-            -- Verify we actually looted the item by comparing inventory count
-            local t = SmartLootEngine.state.directedProcessing.currentTask or {}
-            local newCount = t.baseCount or 0
-            local okNew, valNew = pcall(function()
-                return (mq.TLO.FindItemCount(t.itemName or "")() or 0)
-            end)
-            if okNew and type(valNew) == "number" then newCount = valNew end
-
-            if newCount > (t.baseCount or 0) then
-                util.printSmartLoot("Directed: task complete (verified)", "success")
+            if task.items and #task.items > 0 then
+                SmartLootEngine.state.directedProcessing.step = "opening"
+                _dirScheduleNextTick(75)
+                return true
+            else
+                if SmartLootEngine.isLootWindowOpen() then
+                    mq.cmd("/notify LootWnd DoneButton leftmouseup")
+                end
+                util.printSmartLoot("Directed: corpse task complete", "success")
                 SmartLootEngine.state.directedProcessing.currentTask = nil
                 _beginNextDirectedTask()
                 _dirScheduleNextTick(100)
-                return true
-            else
-                -- Did not verify loot; requeue once for another attempt
-                t.attempts = (t.attempts or 0) + 1
-                if t.attempts <= 1 then
-                    util.printSmartLoot("Directed: verification failed - retrying once", "warning")
-                    -- Requeue at front
-                    table.insert(SmartLootEngine.state.directedTasksQueue, 1, t)
-                else
-                    util.printSmartLoot("Directed: verification failed after retry - giving up", "error")
-                end
-                SmartLootEngine.state.directedProcessing.currentTask = nil
-                _beginNextDirectedTask()
-                _dirScheduleNextTick(150)
                 return true
             end
         end
