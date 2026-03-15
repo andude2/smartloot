@@ -443,274 +443,367 @@ local function draw_character_settings(lootUI, config)
             "When enabled, SmartLoot will defer unknown-item prompts, finish scanning nearby corpses, then open a batch review window with item, corpse, vendor value, and tribute value before replaying newly-kept loot.")
     end
 
-    -- Use buttons instead of dropdown for pending decisions
-    local useButtons = false
-    if config.isUsePendingDecisionButtons then
-        useButtons = config.isUsePendingDecisionButtons(toonName)
-    end
-    local newUseButtons, ubChanged = ImGui.Checkbox("Use buttons for pending decisions (instead of dropdown)", useButtons)
-    if ubChanged then
-        if config.setUsePendingDecisionButtons then
-            config.setUsePendingDecisionButtons(toonName, newUseButtons)
-        end
-    end
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("When enabled, shows a row of small buttons (Keep, Ignore, Destroy, etc.) instead of a dropdown selector in the pending decisions window.")
-    end
+    if batchUnknownReview and ImGui.CollapsingHeader("Deferred Review Window", ImGuiTreeNodeFlags.DefaultOpen) then
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Deferred Review Action Layout:")
+        ImGui.PopStyleColor()
 
-    local showTribute = true
-    if config.isShowPendingDecisionTribute then
-        showTribute = config.isShowPendingDecisionTribute(toonName)
-    end
-    local newShowTribute, tributeChanged = ImGui.Checkbox("Show tribute value in pending decision popup", showTribute)
-    if tributeChanged then
-        if config.setShowPendingDecisionTribute then
-            config.setShowPendingDecisionTribute(toonName, newShowTribute)
-        end
-    end
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("When enabled, displays the item's tribute value next to vendor value in the local pending decision popup.")
-    end
+        local deferredActionLayout = config.getDeferredReviewActionLayout(toonName) or "selector"
+        local deferredLayoutLabels = {
+            selector = "Rule Selector + Apply Buttons",
+            quick_buttons = "Quick Action Buttons",
+        }
 
-    ImGui.Spacing()
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
-    ImGui.Text("Pending Decision Action Layout:")
-    ImGui.PopStyleColor()
-
-    local actionLayout = "selector"
-    if config.getPendingDecisionActionLayout then
-        actionLayout = config.getPendingDecisionActionLayout(toonName) or "selector"
-    end
-
-    local actionLayoutLabels = {
-        selector = "Rule Selector + All/Me",
-        quick_buttons = "Quick Action Buttons",
-    }
-
-    ImGui.PushItemWidth(220)
-    if ImGui.BeginCombo("##PendingDecisionActionLayout", actionLayoutLabels[actionLayout] or actionLayout) then
-        for _, option in ipairs({"selector", "quick_buttons"}) do
-            local isSelected = option == actionLayout
-            if ImGui.Selectable(actionLayoutLabels[option], isSelected) then
-                if config.setPendingDecisionActionLayout then
-                    local success, err = config.setPendingDecisionActionLayout(toonName, option)
+        ImGui.PushItemWidth(220)
+        if ImGui.BeginCombo("##DeferredReviewActionLayout", deferredLayoutLabels[deferredActionLayout] or deferredActionLayout) then
+            for _, option in ipairs({"selector", "quick_buttons"}) do
+                local isSelected = option == deferredActionLayout
+                if ImGui.Selectable(deferredLayoutLabels[option], isSelected) then
+                    local success, err = config.setDeferredReviewActionLayout(toonName, option)
                     if success then
-                        logging.log("Pending decision action layout set to: " .. actionLayoutLabels[option] .. " for " .. toonName)
-                        actionLayout = option
+                        logging.log("Deferred review action layout set to: " .. deferredLayoutLabels[option] .. " for " .. toonName)
+                        deferredActionLayout = option
                     else
-                        logging.log("Error setting pending decision action layout: " .. tostring(err))
+                        logging.log("Error setting deferred review action layout: " .. tostring(err))
                     end
                 end
+                if isSelected then ImGui.SetItemDefaultFocus() end
             end
-            if isSelected then ImGui.SetItemDefaultFocus() end
+            ImGui.EndCombo()
         end
-        ImGui.EndCombo()
-    end
-    ImGui.PopItemWidth()
+        ImGui.PopItemWidth()
 
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Choose whether the popup uses the current selected-rule flow or direct action buttons like All Keep / Me Ignore.")
-    end
-
-    if actionLayout == "quick_buttons" and config.getPendingDecisionQuickButtons and config.setPendingDecisionQuickButtons then
-        local quickButtons = config.getPendingDecisionQuickButtons(toonName)
-
-        local function updateQuickButton(key, value, label)
-            quickButtons[key] = value
-            local enabledCount = 0
-            for _, enabled in pairs(quickButtons) do
-                if enabled then
-                    enabledCount = enabledCount + 1
-                end
-            end
-
-            if enabledCount == 0 then
-                quickButtons[key] = true
-                logging.log("At least one quick action button must remain enabled")
-                return
-            end
-
-            config.setPendingDecisionQuickButtons(toonName, quickButtons)
-            logging.log(string.format("Pending decision quick button '%s' %s for %s",
-                label, value and "enabled" or "disabled", toonName))
-        end
-
-        local allKeep, changedAllKeep = ImGui.Checkbox("Show All Keep", quickButtons.allKeep)
-        if changedAllKeep then
-            updateQuickButton("allKeep", allKeep, "All Keep")
-        end
         if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Show a button that applies Keep to all connected peers.")
+            ImGui.SetTooltip("Choose whether the deferred unknown-item review uses a rule selector or direct quick-action buttons like Keep Me / Ignore All.")
         end
 
-        local allIgnore, changedAllIgnore = ImGui.Checkbox("Show All Ignore", quickButtons.allIgnore)
-        if changedAllIgnore then
-            updateQuickButton("allIgnore", allIgnore, "All Ignore")
-        end
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Show a button that applies Ignore to all connected peers.")
-        end
+        if deferredActionLayout == "quick_buttons" and config.getDeferredReviewQuickButtons and config.setDeferredReviewQuickButtons then
+            local deferredQuickButtons = config.getDeferredReviewQuickButtons(toonName)
 
-        local meKeep, changedMeKeep = ImGui.Checkbox("Show Me Keep", quickButtons.meKeep)
-        if changedMeKeep then
-            updateQuickButton("meKeep", meKeep, "Me Keep")
-        end
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Show a button that applies Keep only to this character.")
-        end
-
-        local meIgnore, changedMeIgnore = ImGui.Checkbox("Show Me Ignore", quickButtons.meIgnore)
-        if changedMeIgnore then
-            updateQuickButton("meIgnore", meIgnore, "Me Ignore")
-        end
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Show a button that applies Ignore only to this character.")
-        end
-    end
-
-    ImGui.Spacing()
-    ImGui.Separator()
-    ImGui.Spacing()
-
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
-    ImGui.Text("Remote Pending Decision Window:")
-    ImGui.PopStyleColor()
-
-    local remoteUseButtons = false
-    if config.isUseRemotePendingDecisionButtons then
-        remoteUseButtons = config.isUseRemotePendingDecisionButtons(toonName)
-    end
-    local newRemoteUseButtons, rubChanged = ImGui.Checkbox("Use buttons for remote pending decisions (instead of dropdown)", remoteUseButtons)
-    if rubChanged then
-        if config.setUseRemotePendingDecisionButtons then
-            config.setUseRemotePendingDecisionButtons(toonName, newRemoteUseButtons)
-        end
-    end
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("When enabled, shows small rule buttons in the Remote Pending Decisions window instead of a dropdown for each row.")
-    end
-
-    local showRemoteValue = true
-    if config.isShowRemotePendingDecisionValue then
-        showRemoteValue = config.isShowRemotePendingDecisionValue(toonName)
-    end
-    local newShowRemoteValue, remoteValueChanged = ImGui.Checkbox("Show vendor value column in remote pending decisions", showRemoteValue)
-    if remoteValueChanged then
-        if config.setShowRemotePendingDecisionValue then
-            config.setShowRemotePendingDecisionValue(toonName, newShowRemoteValue)
-        end
-    end
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("When enabled, displays the item vendor value column in the Remote Pending Decisions window.")
-    end
-
-    local showRemoteTribute = true
-    if config.isShowRemotePendingDecisionTribute then
-        showRemoteTribute = config.isShowRemotePendingDecisionTribute(toonName)
-    end
-    local newShowRemoteTribute, remoteTributeChanged = ImGui.Checkbox("Show tribute value column in remote pending decisions", showRemoteTribute)
-    if remoteTributeChanged then
-        if config.setShowRemotePendingDecisionTribute then
-            config.setShowRemotePendingDecisionTribute(toonName, newShowRemoteTribute)
-        end
-    end
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("When enabled, displays the item tribute value column in the Remote Pending Decisions window.")
-    end
-
-    ImGui.Spacing()
-    ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
-    ImGui.Text("Remote Pending Decision Action Layout:")
-    ImGui.PopStyleColor()
-
-    local remoteActionLayout = "selector"
-    if config.getRemotePendingDecisionActionLayout then
-        remoteActionLayout = config.getRemotePendingDecisionActionLayout(toonName) or "selector"
-    end
-
-    local actionLayoutLabels = {
-        selector = "Rule Selector + Apply Buttons",
-        quick_buttons = "Quick Action Buttons",
-    }
-
-    ImGui.PushItemWidth(220)
-    if ImGui.BeginCombo("##RemotePendingDecisionActionLayout", actionLayoutLabels[remoteActionLayout] or remoteActionLayout) then
-        for _, option in ipairs({"selector", "quick_buttons"}) do
-            local isSelected = option == remoteActionLayout
-            if ImGui.Selectable(actionLayoutLabels[option], isSelected) then
-                if config.setRemotePendingDecisionActionLayout then
-                    local success, err = config.setRemotePendingDecisionActionLayout(toonName, option)
-                    if success then
-                        logging.log("Remote pending decision action layout set to: " .. actionLayoutLabels[option] .. " for " .. toonName)
-                        remoteActionLayout = option
-                    else
-                        logging.log("Error setting remote pending decision action layout: " .. tostring(err))
+            local function updateDeferredQuickButton(key, value, label)
+                deferredQuickButtons[key] = value
+                local enabledCount = 0
+                for _, enabled in pairs(deferredQuickButtons) do
+                    if enabled then
+                        enabledCount = enabledCount + 1
                     end
                 end
+
+                if enabledCount == 0 then
+                    deferredQuickButtons[key] = true
+                    logging.log("At least one deferred quick action button must remain enabled")
+                    return
+                end
+
+                config.setDeferredReviewQuickButtons(toonName, deferredQuickButtons)
+                logging.log(string.format("Deferred review quick button '%s' %s for %s",
+                    label, value and "enabled" or "disabled", toonName))
             end
-            if isSelected then ImGui.SetItemDefaultFocus() end
+
+            local allKeep, changedAllKeep = ImGui.Checkbox("Show Deferred All Keep", deferredQuickButtons.allKeep)
+            if changedAllKeep then
+                updateDeferredQuickButton("allKeep", allKeep, "All Keep")
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show a button that applies Keep to all connected peers in the deferred review window.")
+            end
+
+            local allIgnore, changedAllIgnore = ImGui.Checkbox("Show Deferred All Ignore", deferredQuickButtons.allIgnore)
+            if changedAllIgnore then
+                updateDeferredQuickButton("allIgnore", allIgnore, "All Ignore")
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show a button that applies Ignore to all connected peers in the deferred review window.")
+            end
+
+            local meKeep, changedMeKeep = ImGui.Checkbox("Show Deferred Me Keep", deferredQuickButtons.meKeep)
+            if changedMeKeep then
+                updateDeferredQuickButton("meKeep", meKeep, "Me Keep")
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show a button that applies Keep only to this character in the deferred review window.")
+            end
+
+            local meIgnore, changedMeIgnore = ImGui.Checkbox("Show Deferred Me Ignore", deferredQuickButtons.meIgnore)
+            if changedMeIgnore then
+                updateDeferredQuickButton("meIgnore", meIgnore, "Me Ignore")
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show a button that applies Ignore only to this character in the deferred review window.")
+            end
         end
-        ImGui.EndCombo()
-    end
-    ImGui.PopItemWidth()
-
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Choose whether the remote window uses per-row rule selection with Apply buttons or direct Peer/All quick action buttons.")
     end
 
-    if remoteActionLayout == "quick_buttons" and config.getRemotePendingDecisionQuickButtons and config.setRemotePendingDecisionQuickButtons then
-        local remoteQuickButtons = config.getRemotePendingDecisionQuickButtons(toonName)
+    if ImGui.CollapsingHeader("Pending Decision Window", ImGuiTreeNodeFlags.DefaultOpen) then
+        ImGui.Spacing()
 
-        local function updateRemoteQuickButton(key, value, label)
-            remoteQuickButtons[key] = value
-            local enabledCount = 0
-            for _, enabled in pairs(remoteQuickButtons) do
-                if enabled then
-                    enabledCount = enabledCount + 1
+        local useButtons = false
+        if config.isUsePendingDecisionButtons then
+            useButtons = config.isUsePendingDecisionButtons(toonName)
+        end
+        local newUseButtons, ubChanged = ImGui.Checkbox("Use buttons for pending decisions (instead of dropdown)", useButtons)
+        if ubChanged then
+            if config.setUsePendingDecisionButtons then
+                config.setUsePendingDecisionButtons(toonName, newUseButtons)
+            end
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("When enabled, shows a row of small buttons (Keep, Ignore, Destroy, etc.) instead of a dropdown selector in the pending decisions window.")
+        end
+
+        local showTribute = true
+        if config.isShowPendingDecisionTribute then
+            showTribute = config.isShowPendingDecisionTribute(toonName)
+        end
+        local newShowTribute, tributeChanged = ImGui.Checkbox("Show tribute value in pending decision popup", showTribute)
+        if tributeChanged then
+            if config.setShowPendingDecisionTribute then
+                config.setShowPendingDecisionTribute(toonName, newShowTribute)
+            end
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("When enabled, displays the item's tribute value next to vendor value in the local pending decision popup.")
+        end
+
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+        ImGui.Text("Pending Decision Action Layout:")
+        ImGui.PopStyleColor()
+
+        local actionLayout = "selector"
+        if config.getPendingDecisionActionLayout then
+            actionLayout = config.getPendingDecisionActionLayout(toonName) or "selector"
+        end
+
+        local actionLayoutLabels = {
+            selector = "Rule Selector + All/Me",
+            quick_buttons = "Quick Action Buttons",
+        }
+
+        ImGui.PushItemWidth(220)
+        if ImGui.BeginCombo("##PendingDecisionActionLayout", actionLayoutLabels[actionLayout] or actionLayout) then
+            for _, option in ipairs({"selector", "quick_buttons"}) do
+                local isSelected = option == actionLayout
+                if ImGui.Selectable(actionLayoutLabels[option], isSelected) then
+                    if config.setPendingDecisionActionLayout then
+                        local success, err = config.setPendingDecisionActionLayout(toonName, option)
+                        if success then
+                            logging.log("Pending decision action layout set to: " .. actionLayoutLabels[option] .. " for " .. toonName)
+                            actionLayout = option
+                        else
+                            logging.log("Error setting pending decision action layout: " .. tostring(err))
+                        end
+                    end
+                end
+                if isSelected then ImGui.SetItemDefaultFocus() end
+            end
+            ImGui.EndCombo()
+        end
+        ImGui.PopItemWidth()
+
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Choose whether the popup uses the current selected-rule flow or direct action buttons like All Keep / Me Ignore.")
+        end
+
+        if actionLayout == "quick_buttons" and config.getPendingDecisionQuickButtons and config.setPendingDecisionQuickButtons then
+            local quickButtons = config.getPendingDecisionQuickButtons(toonName)
+
+            local function updateQuickButton(key, value, label)
+                quickButtons[key] = value
+                local enabledCount = 0
+                for _, enabled in pairs(quickButtons) do
+                    if enabled then
+                        enabledCount = enabledCount + 1
+                    end
+                end
+
+                if enabledCount == 0 then
+                    quickButtons[key] = true
+                    logging.log("At least one quick action button must remain enabled")
+                    return
+                end
+
+                config.setPendingDecisionQuickButtons(toonName, quickButtons)
+                logging.log(string.format("Pending decision quick button '%s' %s for %s",
+                    label, value and "enabled" or "disabled", toonName))
+            end
+
+            local allKeep, changedAllKeep = ImGui.Checkbox("Show All Keep", quickButtons.allKeep)
+            if changedAllKeep then
+                updateQuickButton("allKeep", allKeep, "All Keep")
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show a button that applies Keep to all connected peers.")
+            end
+
+            local allIgnore, changedAllIgnore = ImGui.Checkbox("Show All Ignore", quickButtons.allIgnore)
+            if changedAllIgnore then
+                updateQuickButton("allIgnore", allIgnore, "All Ignore")
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show a button that applies Ignore to all connected peers.")
+            end
+
+            local meKeep, changedMeKeep = ImGui.Checkbox("Show Me Keep", quickButtons.meKeep)
+            if changedMeKeep then
+                updateQuickButton("meKeep", meKeep, "Me Keep")
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show a button that applies Keep only to this character.")
+            end
+
+            local meIgnore, changedMeIgnore = ImGui.Checkbox("Show Me Ignore", quickButtons.meIgnore)
+            if changedMeIgnore then
+                updateQuickButton("meIgnore", meIgnore, "Me Ignore")
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show a button that applies Ignore only to this character.")
+            end
+        end
+    end
+
+    if ImGui.CollapsingHeader("Remote Pending Decision Window", ImGuiTreeNodeFlags.DefaultOpen) then
+        ImGui.Spacing()
+
+        local remoteUseButtons = false
+        if config.isUseRemotePendingDecisionButtons then
+            remoteUseButtons = config.isUseRemotePendingDecisionButtons(toonName)
+        end
+        local newRemoteUseButtons, rubChanged = ImGui.Checkbox("Use buttons for remote pending decisions (instead of dropdown)", remoteUseButtons)
+        if rubChanged then
+            if config.setUseRemotePendingDecisionButtons then
+                config.setUseRemotePendingDecisionButtons(toonName, newRemoteUseButtons)
+            end
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("When enabled, shows small rule buttons in the Remote Pending Decisions window instead of a dropdown for each row.")
+        end
+
+        local showRemoteValue = true
+        if config.isShowRemotePendingDecisionValue then
+            showRemoteValue = config.isShowRemotePendingDecisionValue(toonName)
+        end
+        local newShowRemoteValue, remoteValueChanged = ImGui.Checkbox("Show vendor value column in remote pending decisions", showRemoteValue)
+        if remoteValueChanged then
+            if config.setShowRemotePendingDecisionValue then
+                config.setShowRemotePendingDecisionValue(toonName, newShowRemoteValue)
+            end
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("When enabled, displays the item vendor value column in the Remote Pending Decisions window.")
+        end
+
+        local showRemoteTribute = true
+        if config.isShowRemotePendingDecisionTribute then
+            showRemoteTribute = config.isShowRemotePendingDecisionTribute(toonName)
+        end
+        local newShowRemoteTribute, remoteTributeChanged = ImGui.Checkbox("Show tribute value column in remote pending decisions", showRemoteTribute)
+        if remoteTributeChanged then
+            if config.setShowRemotePendingDecisionTribute then
+                config.setShowRemotePendingDecisionTribute(toonName, newShowRemoteTribute)
+            end
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("When enabled, displays the item tribute value column in the Remote Pending Decisions window.")
+        end
+
+        if ImGui.CollapsingHeader("Remote Pending Decision Action Layout", ImGuiTreeNodeFlags.DefaultOpen) then
+            ImGui.Spacing()
+            ImGui.PushStyleColor(ImGuiCol.Text, 0.9, 0.9, 0.6, 1.0)
+            ImGui.Text("Remote Pending Decision Action Layout:")
+            ImGui.PopStyleColor()
+
+            local remoteActionLayout = "selector"
+            if config.getRemotePendingDecisionActionLayout then
+                remoteActionLayout = config.getRemotePendingDecisionActionLayout(toonName) or "selector"
+            end
+
+            local actionLayoutLabels = {
+                selector = "Rule Selector + Apply Buttons",
+                quick_buttons = "Quick Action Buttons",
+            }
+
+            ImGui.PushItemWidth(220)
+            if ImGui.BeginCombo("##RemotePendingDecisionActionLayout", actionLayoutLabels[remoteActionLayout] or remoteActionLayout) then
+                for _, option in ipairs({"selector", "quick_buttons"}) do
+                    local isSelected = option == remoteActionLayout
+                    if ImGui.Selectable(actionLayoutLabels[option], isSelected) then
+                        if config.setRemotePendingDecisionActionLayout then
+                            local success, err = config.setRemotePendingDecisionActionLayout(toonName, option)
+                            if success then
+                                logging.log("Remote pending decision action layout set to: " .. actionLayoutLabels[option] .. " for " .. toonName)
+                                remoteActionLayout = option
+                            else
+                                logging.log("Error setting remote pending decision action layout: " .. tostring(err))
+                            end
+                        end
+                    end
+                    if isSelected then ImGui.SetItemDefaultFocus() end
+                end
+                ImGui.EndCombo()
+            end
+            ImGui.PopItemWidth()
+
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Choose whether the remote window uses per-row rule selection with Apply buttons or direct Peer/All quick action buttons.")
+            end
+
+            if remoteActionLayout == "quick_buttons" and config.getRemotePendingDecisionQuickButtons and config.setRemotePendingDecisionQuickButtons then
+                local remoteQuickButtons = config.getRemotePendingDecisionQuickButtons(toonName)
+
+                local function updateRemoteQuickButton(key, value, label)
+                    remoteQuickButtons[key] = value
+                    local enabledCount = 0
+                    for _, enabled in pairs(remoteQuickButtons) do
+                        if enabled then
+                            enabledCount = enabledCount + 1
+                        end
+                    end
+
+                    if enabledCount == 0 then
+                        remoteQuickButtons[key] = true
+                        logging.log("At least one remote quick action button must remain enabled")
+                        return
+                    end
+
+                    config.setRemotePendingDecisionQuickButtons(toonName, remoteQuickButtons)
+                    logging.log(string.format("Remote pending decision quick button '%s' %s for %s",
+                        label, value and "enabled" or "disabled", toonName))
+                end
+
+                local allKeep, changedAllKeep = ImGui.Checkbox("Show Remote All Keep", remoteQuickButtons.allKeep)
+                if changedAllKeep then
+                    updateRemoteQuickButton("allKeep", allKeep, "All Keep")
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Show a button that applies Keep to all connected peers for all remote pending items.")
+                end
+
+                local allIgnore, changedAllIgnore = ImGui.Checkbox("Show Remote All Ignore", remoteQuickButtons.allIgnore)
+                if changedAllIgnore then
+                    updateRemoteQuickButton("allIgnore", allIgnore, "All Ignore")
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Show a button that applies Ignore to all connected peers for all remote pending items.")
+                end
+
+                local peerKeep, changedPeerKeep = ImGui.Checkbox("Show Remote Peer Keep", remoteQuickButtons.meKeep)
+                if changedPeerKeep then
+                    updateRemoteQuickButton("meKeep", peerKeep, "Peer Keep")
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Show a button that applies Keep only back to the requesting peer for each item.")
+                end
+
+                local peerIgnore, changedPeerIgnore = ImGui.Checkbox("Show Remote Peer Ignore", remoteQuickButtons.meIgnore)
+                if changedPeerIgnore then
+                    updateRemoteQuickButton("meIgnore", peerIgnore, "Peer Ignore")
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Show a button that applies Ignore only back to the requesting peer for each item.")
                 end
             end
-
-            if enabledCount == 0 then
-                remoteQuickButtons[key] = true
-                logging.log("At least one remote quick action button must remain enabled")
-                return
-            end
-
-            config.setRemotePendingDecisionQuickButtons(toonName, remoteQuickButtons)
-            logging.log(string.format("Remote pending decision quick button '%s' %s for %s",
-                label, value and "enabled" or "disabled", toonName))
-        end
-
-        local allKeep, changedAllKeep = ImGui.Checkbox("Show Remote All Keep", remoteQuickButtons.allKeep)
-        if changedAllKeep then
-            updateRemoteQuickButton("allKeep", allKeep, "All Keep")
-        end
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Show a button that applies Keep to all connected peers for all remote pending items.")
-        end
-
-        local allIgnore, changedAllIgnore = ImGui.Checkbox("Show Remote All Ignore", remoteQuickButtons.allIgnore)
-        if changedAllIgnore then
-            updateRemoteQuickButton("allIgnore", allIgnore, "All Ignore")
-        end
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Show a button that applies Ignore to all connected peers for all remote pending items.")
-        end
-
-        local peerKeep, changedPeerKeep = ImGui.Checkbox("Show Remote Peer Keep", remoteQuickButtons.meKeep)
-        if changedPeerKeep then
-            updateRemoteQuickButton("meKeep", peerKeep, "Peer Keep")
-        end
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Show a button that applies Keep only back to the requesting peer for each item.")
-        end
-
-        local peerIgnore, changedPeerIgnore = ImGui.Checkbox("Show Remote Peer Ignore", remoteQuickButtons.meIgnore)
-        if changedPeerIgnore then
-            updateRemoteQuickButton("meIgnore", peerIgnore, "Peer Ignore")
-        end
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Show a button that applies Ignore only back to the requesting peer for each item.")
         end
     end
 

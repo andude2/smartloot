@@ -80,6 +80,23 @@ local function saveUnknownReviewRule(item, targetCharacter, finalRule)
     return success
 end
 
+local function applyUnknownReviewRuleToAll(item, finalRule, utilRef)
+    local localToon = mq.TLO.Me.Name() or "unknown"
+    local successCount = 0
+
+    if saveUnknownReviewRule(item, localToon, finalRule) then
+        successCount = successCount + 1
+    end
+
+    for _, peer in ipairs(utilRef.getConnectedPeers()) do
+        if peer ~= localToon and saveUnknownReviewRule(item, peer, finalRule) then
+            successCount = successCount + 1
+        end
+    end
+
+    return successCount
+end
+
 -- Session Report Popup
 function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
     if not lootUI.sessionReportPopup or not lootUI.sessionReportPopup.isOpen then return end
@@ -391,6 +408,14 @@ function uiPopups.drawUnknownItemsReviewPopup(lootUI, databaseRef, utilRef)
 
     local localToon = mq.TLO.Me.Name() or "unknown"
     local unresolvedLocal = 0
+    local deferredActionLayout = config.getDeferredReviewActionLayout and config.getDeferredReviewActionLayout(localToon) or
+        "selector"
+    local deferredQuickButtons = config.getDeferredReviewQuickButtons and config.getDeferredReviewQuickButtons(localToon) or {
+        allKeep = true,
+        allIgnore = true,
+        meKeep = true,
+        meIgnore = true,
+    }
     local flags = bit32.bor(
         ImGuiTableFlags.Borders,
         ImGuiTableFlags.RowBg,
@@ -458,58 +483,98 @@ function uiPopups.drawUnknownItemsReviewPopup(lootUI, databaseRef, utilRef)
             end
 
             ImGui.TableSetColumnIndex(7)
-            ImGui.SetNextItemWidth(118)
-            if ImGui.BeginCombo("##UnknownRule_" .. key, popup.ruleSelections[key]) then
-                for _, option in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
-                    local isSelected = popup.ruleSelections[key] == option
-                    if ImGui.Selectable(option, isSelected) then
-                        popup.ruleSelections[key] = option
-                    end
-                    if isSelected then ImGui.SetItemDefaultFocus() end
-                end
-                ImGui.EndCombo()
-            end
-
-            if popup.ruleSelections[key] == "KeepIfFewerThan" or popup.ruleSelections[key] == "KeepThenIgnore" then
-                ImGui.SameLine()
-                ImGui.SetNextItemWidth(50)
-                local newThreshold, changed = ImGui.InputInt("##UnknownThreshold_" .. key, popup.ruleThresholds[key], 0, 0)
-                if changed then
-                    popup.ruleThresholds[key] = math.max(1, newThreshold)
+            local function applyLocalRule(rule)
+                if saveUnknownReviewRule(item, localToon, rule) then
+                    popup.lastStatus = string.format("Saved %s locally for %s", getRuleLabel(rule), item.itemName)
                 end
             end
 
-            local finalRule = getFinalRuleForSelection(popup.ruleSelections[key], popup.ruleThresholds[key])
-
-            ImGui.SameLine()
-            if ImGui.SmallButton("Me##Unknown_" .. key) then
-                if saveUnknownReviewRule(item, localToon, finalRule) then
-                    popup.lastStatus = string.format("Saved %s locally for %s", getRuleLabel(finalRule), item.itemName)
-                end
-            end
-
-            ImGui.SameLine()
-            if ImGui.SmallButton("All##Unknown_" .. key) then
-                local successCount = 0
-                if saveUnknownReviewRule(item, localToon, finalRule) then
-                    successCount = successCount + 1
-                end
-                for _, peer in ipairs(utilRef.getConnectedPeers()) do
-                    if peer ~= localToon and saveUnknownReviewRule(item, peer, finalRule) then
-                        successCount = successCount + 1
-                    end
-                end
+            local function applyAllRule(rule)
+                local successCount = applyUnknownReviewRuleToAll(item, rule, utilRef)
                 popup.lastStatus = string.format("Saved %s for %d character(s) on %s",
-                    getRuleLabel(finalRule), successCount, item.itemName)
+                    getRuleLabel(rule), successCount, item.itemName)
             end
 
-            ImGui.SameLine()
-            if ImGui.SmallButton("Peers##Unknown_" .. key) then
-                lootUI.peerItemRulesPopup = lootUI.peerItemRulesPopup or {}
-                lootUI.peerItemRulesPopup.isOpen = true
-                lootUI.peerItemRulesPopup.itemName = item.itemName
-                lootUI.peerItemRulesPopup.itemID = item.itemID or 0
-                lootUI.peerItemRulesPopup.iconID = item.iconID or 0
+            if deferredActionLayout == "quick_buttons" then
+                local drewButton = false
+                if deferredQuickButtons.meKeep then
+                    if drewButton then ImGui.SameLine() end
+                    if ImGui.SmallButton("Me Keep##Unknown_" .. key) then
+                        applyLocalRule("Keep")
+                    end
+                    drewButton = true
+                end
+                if deferredQuickButtons.meIgnore then
+                    if drewButton then ImGui.SameLine() end
+                    if ImGui.SmallButton("Me Ignore##Unknown_" .. key) then
+                        applyLocalRule("Ignore")
+                    end
+                    drewButton = true
+                end
+                if deferredQuickButtons.allKeep then
+                    if drewButton then ImGui.SameLine() end
+                    if ImGui.SmallButton("All Keep##Unknown_" .. key) then
+                        applyAllRule("Keep")
+                    end
+                    drewButton = true
+                end
+                if deferredQuickButtons.allIgnore then
+                    if drewButton then ImGui.SameLine() end
+                    if ImGui.SmallButton("All Ignore##Unknown_" .. key) then
+                        applyAllRule("Ignore")
+                    end
+                end
+
+                ImGui.SameLine()
+                if ImGui.SmallButton("Peers##Unknown_" .. key) then
+                    lootUI.peerItemRulesPopup = lootUI.peerItemRulesPopup or {}
+                    lootUI.peerItemRulesPopup.isOpen = true
+                    lootUI.peerItemRulesPopup.itemName = item.itemName
+                    lootUI.peerItemRulesPopup.itemID = item.itemID or 0
+                    lootUI.peerItemRulesPopup.iconID = item.iconID or 0
+                end
+            else
+                ImGui.SetNextItemWidth(118)
+                if ImGui.BeginCombo("##UnknownRule_" .. key, popup.ruleSelections[key]) then
+                    for _, option in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
+                        local isSelected = popup.ruleSelections[key] == option
+                        if ImGui.Selectable(option, isSelected) then
+                            popup.ruleSelections[key] = option
+                        end
+                        if isSelected then ImGui.SetItemDefaultFocus() end
+                    end
+                    ImGui.EndCombo()
+                end
+
+                if popup.ruleSelections[key] == "KeepIfFewerThan" or popup.ruleSelections[key] == "KeepThenIgnore" then
+                    ImGui.SameLine()
+                    ImGui.SetNextItemWidth(50)
+                    local newThreshold, changed = ImGui.InputInt("##UnknownThreshold_" .. key, popup.ruleThresholds[key], 0, 0)
+                    if changed then
+                        popup.ruleThresholds[key] = math.max(1, newThreshold)
+                    end
+                end
+
+                local finalRule = getFinalRuleForSelection(popup.ruleSelections[key], popup.ruleThresholds[key])
+
+                ImGui.SameLine()
+                if ImGui.SmallButton("Me##Unknown_" .. key) then
+                    applyLocalRule(finalRule)
+                end
+
+                ImGui.SameLine()
+                if ImGui.SmallButton("All##Unknown_" .. key) then
+                    applyAllRule(finalRule)
+                end
+
+                ImGui.SameLine()
+                if ImGui.SmallButton("Peers##Unknown_" .. key) then
+                    lootUI.peerItemRulesPopup = lootUI.peerItemRulesPopup or {}
+                    lootUI.peerItemRulesPopup.isOpen = true
+                    lootUI.peerItemRulesPopup.itemName = item.itemName
+                    lootUI.peerItemRulesPopup.itemID = item.itemID or 0
+                    lootUI.peerItemRulesPopup.iconID = item.iconID or 0
+                end
             end
         end
 

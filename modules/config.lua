@@ -738,6 +738,78 @@ function config.isShowPendingDecisionTribute(toonName)
     return charCfg.showPendingDecisionTribute ~= false
 end
 
+function config.setDeferredReviewActionLayout(toonName, layout)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+
+    local validLayouts = {
+        selector = true,
+        quick_buttons = true,
+    }
+
+    if not validLayouts[layout] then
+        return false, "Invalid layout. Valid options: selector, quick_buttons"
+    end
+
+    charCfg.deferredReviewActionLayout = layout
+    config.save()
+    return charCfg.deferredReviewActionLayout
+end
+
+function config.getDeferredReviewActionLayout(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    return charCfg.deferredReviewActionLayout or "selector"
+end
+
+function config.setDeferredReviewQuickButtons(toonName, quickButtons)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+
+    local normalized = {
+        allKeep = quickButtons.allKeep ~= false,
+        allIgnore = quickButtons.allIgnore ~= false,
+        meKeep = quickButtons.meKeep ~= false,
+        meIgnore = quickButtons.meIgnore ~= false,
+    }
+
+    local hasEnabledButton = false
+    for _, enabled in pairs(normalized) do
+        if enabled then
+            hasEnabledButton = true
+            break
+        end
+    end
+    if not hasEnabledButton then
+        normalized.meKeep = true
+    end
+
+    charCfg.deferredReviewQuickButtons = normalized
+    config.save()
+    return charCfg.deferredReviewQuickButtons
+end
+
+function config.getDeferredReviewQuickButtons(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    local configured = charCfg.deferredReviewQuickButtons or {}
+
+    return {
+        allKeep = configured.allKeep ~= false,
+        allIgnore = configured.allIgnore ~= false,
+        meKeep = configured.meKeep ~= false,
+        meIgnore = configured.meIgnore ~= false,
+    }
+end
+
 function config.setUseRemotePendingDecisionButtons(toonName, enabled)
     local charCfg
     charCfg, toonName = ensureCharacterConfig(toonName)
