@@ -36,6 +36,44 @@ local function initializeDatabase()
     end
 end
 
+local function applyStartupServerDefaults()
+    if not dbInitialized then
+        return
+    end
+
+    local toonName = mq.TLO.Me.Name() or "unknown"
+    if config.isAutoImportServerDefaults and not config.isAutoImportServerDefaults(toonName) then
+        logging.log("[SmartLoot] Startup server defaults import disabled for " .. toonName)
+        return
+    end
+
+    local status = database.getServerDefaultsStatus(toonName)
+    if not status.available then
+        return
+    end
+
+    local success, result = database.initializeCharacterRulesFromDefaults(toonName, status.currentClass, {
+        emptyOnly = true,
+        reason = "startup",
+    })
+
+    if success and type(result) == "table" then
+        logging.log(string.format(
+            "[SmartLoot] Initialized defaults %s for %s (%s/%s): %d inserted, %d skipped existing, %d unresolved",
+            tostring(result.version or "?"),
+            toonName,
+            tostring(result.className or "?"),
+            tostring(result.armorType or "unknown"),
+            result.inserted or 0,
+            result.skipped or 0,
+            result.unresolved or 0
+        ))
+        database.refreshLootRuleCache()
+    elseif result and not tostring(result):find("already has", 1, true) and not tostring(result):find("already initialized", 1, true) then
+        logging.log("[SmartLoot] Server defaults startup initialization skipped: " .. tostring(result))
+    end
+end
+
 local function getCurrentToon()
     return mq.TLO.Me.Name() or "unknown"
 end
@@ -152,6 +190,7 @@ local args = { ... }
 mq.delay(150)
 
 initializeDatabase()
+applyStartupServerDefaults()
 local engineInitialized, runMode = initializeSmartLootEngine(args)
 
 if not engineInitialized then
@@ -252,6 +291,11 @@ local lootUI = {
         allCharacters = {},
         copying = false,
         copyResult = ""
+    },
+
+    serverDefaultsImportState = {
+        lastMessage = "",
+        wasError = false,
     },
 
     searchFilter = "",

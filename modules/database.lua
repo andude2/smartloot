@@ -2,6 +2,7 @@
 local database            = {}
 local mq                  = require("mq")
 local logging             = require("modules.logging")
+local serverDefaults      = require("modules.server_defaults")
 
 -- Ensure SQLite is available in this module too (database.lua uses `sqlite3` directly)
 local PackageMan = require('mq.PackageMan')
@@ -23,6 +24,25 @@ local lootRulesCache = {
 
 -- Database connection
 local db = nil
+
+local CLASS_ARMOR_TYPES = {
+    war = "plate", warrior = "plate",
+    clr = "plate", cleric = "plate",
+    pal = "plate", paladin = "plate",
+    shd = "plate", shadowknight = "plate",
+    brd = "plate", bard = "plate",
+    rng = "chain", ranger = "chain",
+    rog = "chain", rogue = "chain",
+    shm = "chain", shaman = "chain",
+    ber = "chain", berserker = "chain",
+    nec = "cloth", necromancer = "cloth",
+    wiz = "cloth", wizard = "cloth",
+    mag = "cloth", magician = "cloth",
+    enc = "cloth", enchanter = "cloth",
+    dru = "leather", druid = "leather",
+    mnk = "leather", monk = "leather",
+    bst = "leather", beastlord = "leather",
+}
 
 -- Create database tables
 local function createDatabaseTables(conn)
@@ -186,11 +206,30 @@ local function initializeDatabase()
         );
         
         CREATE INDEX IF NOT EXISTS idx_global_loot_order_position ON global_loot_order(order_position);
+
+        CREATE TABLE IF NOT EXISTS seed_metadata (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            toon TEXT NOT NULL,
+            seed_key TEXT NOT NULL,
+            seed_version TEXT NOT NULL,
+            imported_count INTEGER DEFAULT 0,
+            applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(toon, seed_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_seed_metadata_toon_seed ON seed_metadata(toon, seed_key);
         
         CREATE TRIGGER IF NOT EXISTS update_global_loot_order_timestamp 
         AFTER UPDATE ON global_loot_order
         BEGIN
             UPDATE global_loot_order SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS update_seed_metadata_timestamp
+        AFTER UPDATE ON seed_metadata
+        BEGIN
+            UPDATE seed_metadata SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
         END;
     ]]
 
@@ -228,6 +267,21 @@ local function prepareStatement(sql)
     end
     
     return stmt
+end
+
+local function resetStatement(stmt)
+    if not stmt then
+        return
+    end
+
+    stmt:reset()
+
+    -- Some lsqlite3 builds do not expose clear_bindings(); reset is enough for
+    -- our fixed-parameter statement reuse because each placeholder is rebound
+    -- before the next step.
+    if stmt.clear_bindings then
+        stmt:clear_bindings()
+    end
 end
 
 -- ============================================================================
@@ -1122,6 +1176,337 @@ function database.getAllCharactersWithRules()
     end
     
     return characters
+end
+
+function database.getLootRuleCountForCharacter(characterName)
+    characterName = characterName or mq.TLO.Me.Name() or "unknown"
+
+    local total = 0
+
+    local stmt1 = prepareStatement("SELECT COUNT(*) FROM lootrules_v2 WHERE toon = ?")
+    if stmt1 then
+        stmt1:bind(1, characterName)
+        if stmt1:step() == sqlite3.ROW then
+            total = total + (tonumber(stmt1:get_value(0)) or 0)
+        end
+        stmt1:finalize()
+    end
+
+    local stmt2 = prepareStatement("SELECT COUNT(*) FROM lootrules_name_fallback WHERE toon = ?")
+    if stmt2 then
+        stmt2:bind(1, characterName)
+        if stmt2:step() == sqlite3.ROW then
+            total = total + (tonumber(stmt2:get_value(0)) or 0)
+        end
+        stmt2:finalize()
+    end
+
+    return total
+end
+
+function database.getServerDefaultsStatus(characterName)
+    characterName = characterName or mq.TLO.Me.Name() or "unknown"
+
+    local defaultsData, loadErr = serverDefaults.load()
+    if not defaultsData then
+        return {
+            available = false,
+            character = characterName,
+            error = loadErr,
+            server = mq.TLO.EverQuest.Server() or "unknown",
+            serverKey = serverDefaults.getCurrentServerKey(),
+            ruleCount = database.getLootRuleCountForCharacter(characterName),
+        }
+    end
+
+    local status = {
+        available = true,
+        character = characterName,
+        server = defaultsData.server,
+        serverKey = defaultsData.server_key,
+        version = defaultsData.version,
+        description = defaultsData.description,
+        totalRules = #defaultsData.rules,
+        ruleCount = database.getLootRuleCountForCharacter(characterName),
+        alreadyApplied = false,
+        appliedVersion = nil,
+        importedCount = 0,
+        currentClass = mq.TLO.Me.Class.ShortName() or "",
+        currentArmorType = nil,
+    }
+
+    status.currentArmorType = database.getArmorTypeByClass(status.currentClass)
+
+    local stmt = prepareStatement([[
+        SELECT seed_version, imported_count
+        FROM seed_metadata
+        WHERE toon = ? AND seed_key = ?
+        LIMIT 1
+    ]])
+
+    if stmt then
+        stmt:bind(1, characterName)
+        stmt:bind(2, defaultsData.server_key)
+        if stmt:step() == sqlite3.ROW then
+            status.alreadyApplied = true
+            status.appliedVersion = tostring(stmt:get_value(0) or "")
+            status.importedCount = tonumber(stmt:get_value(1)) or 0
+        end
+        stmt:finalize()
+    end
+
+    return status
+end
+
+function database.getArmorTypeByClass(className)
+    if not className or className == "" then
+        return nil
+    end
+
+    local key = tostring(className):gsub("%s+", ""):lower()
+    return CLASS_ARMOR_TYPES[key]
+end
+
+local function hasTag(ruleEntry, tagName)
+    local tags = ruleEntry.tags or {}
+    for _, tag in ipairs(tags) do
+        if tag == tagName then
+            return true
+        end
+    end
+    return false
+end
+
+local function findArmorTag(ruleEntry)
+    local armorTags = { "plate", "chain", "leather", "cloth", "silk" }
+    for _, tagName in ipairs(armorTags) do
+        if hasTag(ruleEntry, tagName) then
+            if tagName == "silk" then
+                return "cloth"
+            end
+            return tagName
+        end
+    end
+    return nil
+end
+
+local function findMatchingClassTag(ruleEntry, className)
+    if not className or className == "" then
+        return nil
+    end
+
+    local normalizedClass = tostring(className):gsub("%s+", ""):lower()
+    local tags = ruleEntry.tags or {}
+    for _, tag in ipairs(tags) do
+        if tag == normalizedClass then
+            return tag
+        end
+    end
+    return nil
+end
+
+local function hasClassSpecificTags(ruleEntry)
+    local tags = ruleEntry.tags or {}
+    for _, tag in ipairs(tags) do
+        if CLASS_ARMOR_TYPES[tag] then
+            return true
+        end
+    end
+    return false
+end
+
+local function resolveBootstrapRule(ruleEntry, className, armorType)
+    local explicitRule = tostring(ruleEntry.rule or "")
+    if explicitRule ~= "" and explicitRule ~= "Unset" then
+        return explicitRule, "explicit"
+    end
+
+    if hasTag(ruleEntry, "armor") then
+        local matchedClassTag = findMatchingClassTag(ruleEntry, className)
+        if matchedClassTag then
+            return "Keep", "class_match"
+        end
+
+        if hasClassSpecificTags(ruleEntry) then
+            return "Ignore", "class_mismatch"
+        end
+
+        local itemArmorType = findArmorTag(ruleEntry)
+        if itemArmorType and armorType then
+            if itemArmorType == armorType then
+                return "Keep", "armor_match"
+            end
+            return "Ignore", "armor_mismatch"
+        end
+    end
+
+    return nil, "unresolved"
+end
+
+function database.initializeCharacterRulesFromDefaults(targetCharacter, className, options)
+    targetCharacter = targetCharacter or mq.TLO.Me.Name() or "unknown"
+    className = className or mq.TLO.Me.Class.ShortName() or ""
+    options = options or {}
+
+    local defaultsData, loadErr = serverDefaults.load()
+    if not defaultsData then
+        return false, loadErr
+    end
+
+    local emptyOnly = options.emptyOnly == true
+    local reason = options.reason or "manual_initialize"
+    local armorType = database.getArmorTypeByClass(className)
+    local existingRuleCount = database.getLootRuleCountForCharacter(targetCharacter)
+
+    if emptyOnly and existingRuleCount > 0 then
+        return false, string.format("Skipped defaults initialization for %s: character already has %d rules", targetCharacter, existingRuleCount)
+    end
+
+    local seedStatus = database.getServerDefaultsStatus(targetCharacter)
+    if seedStatus.alreadyApplied and seedStatus.appliedVersion == defaultsData.version then
+        return false, string.format("Server defaults version %s already initialized for %s", defaultsData.version, targetCharacter)
+    end
+
+    local insertedCount = 0
+    local skippedExistingCount = 0
+    local invalidCount = 0
+    local unresolvedCount = 0
+    local armorMatchCount = 0
+    local armorMismatchCount = 0
+    local classMatchCount = 0
+    local classMismatchCount = 0
+    local explicitCount = 0
+
+    local findExistingStmt = prepareStatement([[
+        SELECT id
+        FROM lootrules_v2
+        WHERE toon = ? AND item_id = ?
+        LIMIT 1
+    ]])
+
+    local insertMappingStmt = prepareStatement([[
+        INSERT OR REPLACE INTO item_id_mappings
+        (item_id, item_name, icon_id, last_seen)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ]])
+
+    local insertRuleStmt = prepareStatement([[
+        INSERT INTO lootrules_v2
+        (toon, item_id, item_name, rule, icon_id, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ]])
+
+    if not findExistingStmt or not insertMappingStmt or not insertRuleStmt then
+        if findExistingStmt then findExistingStmt:finalize() end
+        if insertMappingStmt then insertMappingStmt:finalize() end
+        if insertRuleStmt then insertRuleStmt:finalize() end
+        return false, "Failed to prepare character defaults initialization statements"
+    end
+
+    for _, ruleEntry in ipairs(defaultsData.rules) do
+        local itemID = tonumber(ruleEntry.item_id or ruleEntry.itemID) or 0
+        local itemName = tostring(ruleEntry.item_name or ruleEntry.itemName or "")
+        local iconID = tonumber(ruleEntry.icon_id or ruleEntry.iconID) or 0
+        local resolvedRule, resolutionSource = resolveBootstrapRule(ruleEntry, className, armorType)
+
+        if itemID <= 0 or itemName == "" then
+            invalidCount = invalidCount + 1
+        elseif not resolvedRule then
+            unresolvedCount = unresolvedCount + 1
+        else
+            if resolutionSource == "explicit" then
+                explicitCount = explicitCount + 1
+            elseif resolutionSource == "class_match" then
+                classMatchCount = classMatchCount + 1
+            elseif resolutionSource == "class_mismatch" then
+                classMismatchCount = classMismatchCount + 1
+            elseif resolutionSource == "armor_match" then
+                armorMatchCount = armorMatchCount + 1
+            elseif resolutionSource == "armor_mismatch" then
+                armorMismatchCount = armorMismatchCount + 1
+            end
+
+            insertMappingStmt:bind(1, itemID)
+            insertMappingStmt:bind(2, itemName)
+            insertMappingStmt:bind(3, iconID)
+            insertMappingStmt:step()
+            resetStatement(insertMappingStmt)
+
+            findExistingStmt:bind(1, targetCharacter)
+            findExistingStmt:bind(2, itemID)
+            local hasExisting = findExistingStmt:step() == sqlite3.ROW
+            resetStatement(findExistingStmt)
+
+            if hasExisting then
+                skippedExistingCount = skippedExistingCount + 1
+            else
+                insertRuleStmt:bind(1, targetCharacter)
+                insertRuleStmt:bind(2, itemID)
+                insertRuleStmt:bind(3, itemName)
+                insertRuleStmt:bind(4, resolvedRule)
+                insertRuleStmt:bind(5, iconID)
+                local result = insertRuleStmt:step()
+                resetStatement(insertRuleStmt)
+
+                if result == sqlite3.DONE then
+                    insertedCount = insertedCount + 1
+                end
+            end
+        end
+    end
+
+    findExistingStmt:finalize()
+    insertMappingStmt:finalize()
+    insertRuleStmt:finalize()
+
+    local totalApplied = insertedCount
+
+    local metadataStmt = prepareStatement([[
+        INSERT OR REPLACE INTO seed_metadata
+        (toon, seed_key, seed_version, imported_count, applied_at, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ]])
+
+    if metadataStmt then
+        metadataStmt:bind(1, targetCharacter)
+        metadataStmt:bind(2, defaultsData.server_key)
+        metadataStmt:bind(3, defaultsData.version)
+        metadataStmt:bind(4, totalApplied)
+        metadataStmt:step()
+        metadataStmt:finalize()
+    end
+
+    lootRulesCache.loaded[targetCharacter] = false
+    lootRulesCache.byItemID[targetCharacter] = {}
+    lootRulesCache.byName[targetCharacter] = {}
+
+    logging.info(string.format(
+        "[Database] Character defaults initialization (%s) for %s on %s: %d inserted, %d skipped existing, %d unresolved, %d invalid",
+        reason, targetCharacter, defaultsData.server, insertedCount, skippedExistingCount, unresolvedCount, invalidCount
+    ))
+
+    return true, {
+        character = targetCharacter,
+        className = className,
+        armorType = armorType,
+        server = defaultsData.server,
+        version = defaultsData.version,
+        inserted = insertedCount,
+        updated = 0,
+        skipped = skippedExistingCount,
+        unresolved = unresolvedCount,
+        invalid = invalidCount,
+        totalRules = #defaultsData.rules,
+        explicit = explicitCount,
+        classMatch = classMatchCount,
+        classMismatch = classMismatchCount,
+        armorMatch = armorMatchCount,
+        armorMismatch = armorMismatchCount,
+    }
+end
+
+function database.importCurrentServerDefaults(targetCharacter, options)
+    return database.initializeCharacterRulesFromDefaults(targetCharacter, nil, options)
 end
 
 -- Get all loot rules for a specific character

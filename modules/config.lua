@@ -481,6 +481,27 @@ function config.getCharacterConfig(toonName)
     return chars[toonName] or {}
 end
 
+function config.setAutoImportServerDefaults(toonName, enabled)
+    local charCfg
+    charCfg, toonName = ensureCharacterConfig(toonName)
+    charCfg.autoImportServerDefaults = enabled ~= false
+    config.save()
+    return charCfg.autoImportServerDefaults
+end
+
+function config.isAutoImportServerDefaults(toonName)
+    if not toonName or toonName == "" or toonName == "Local" then
+        toonName = mq.TLO.Me.Name() or "unknown"
+    end
+    local serverConfig = configData.servers[sanitizedServerName] or {}
+    local chars = serverConfig.characters or {}
+    local charCfg = chars[toonName] or {}
+    if charCfg.autoImportServerDefaults == nil then
+        return true
+    end
+    return charCfg.autoImportServerDefaults == true
+end
+
 -- Optional: When in whitelist-only mode, prevent this toon from triggering peers
 function config.setWhitelistNoTriggerPeers(toonName, value)
     local charCfg

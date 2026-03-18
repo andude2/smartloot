@@ -1178,8 +1178,126 @@ end
 
 local function draw_database_tools(lootUI, showHeader)
     local function renderBody()
+        local currentToon = mq.TLO.Me.Name() or "unknown"
+        local defaultsStatus = database.getServerDefaultsStatus(currentToon)
+
         ImGui.Spacing()
         ImGui.Text("Import/Export Tools:")
+        ImGui.Spacing()
+
+        ImGui.Text("Server Defaults:")
+        if defaultsStatus.available then
+            ImGui.TextColored(0.4, 1.0, 0.4, 1, string.format(
+                "Pack available for %s (v%s, %d rules)",
+                defaultsStatus.server or "unknown",
+                tostring(defaultsStatus.version or "?"),
+                tonumber(defaultsStatus.totalRules) or 0
+            ))
+            if defaultsStatus.description and defaultsStatus.description ~= "" then
+                ImGui.TextColored(0.7, 0.7, 0.7, 1, defaultsStatus.description)
+            end
+            if defaultsStatus.currentClass and defaultsStatus.currentClass ~= "" then
+                ImGui.TextColored(0.7, 0.8, 1.0, 1, string.format(
+                    "Current class profile: %s (%s)",
+                    tostring(defaultsStatus.currentClass),
+                    tostring(defaultsStatus.currentArmorType or "no armor profile")
+                ))
+            end
+            if defaultsStatus.alreadyApplied then
+                ImGui.TextColored(0.7, 0.8, 1.0, 1, string.format(
+                    "Initialized for %s: version %s (%d applied rules)",
+                    currentToon,
+                    tostring(defaultsStatus.appliedVersion or "?"),
+                    tonumber(defaultsStatus.importedCount) or 0
+                ))
+            else
+                ImGui.TextColored(0.8, 0.8, 0.4, 1, string.format(
+                    "Not yet applied for %s",
+                    currentToon
+                ))
+            end
+        else
+            ImGui.TextColored(0.8, 0.6, 0.2, 1, defaultsStatus.error or "No server defaults pack found")
+        end
+
+        local autoImportEnabled = config.isAutoImportServerDefaults and config.isAutoImportServerDefaults(currentToon) or true
+        local newAutoImportValue, autoImportChanged = ImGui.Checkbox("Auto-initialize defaults for new characters/databases", autoImportEnabled)
+        if autoImportChanged and config.setAutoImportServerDefaults then
+            config.setAutoImportServerDefaults(currentToon, newAutoImportValue)
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("If enabled, SmartLoot will initialize the current character's rules from the server defaults on startup when this character has no rules yet.")
+        end
+
+        if defaultsStatus.available then
+            if ImGui.Button("Initialize Character Rules", 170, 0) then
+                local success, result = database.initializeCharacterRulesFromDefaults(currentToon, defaultsStatus.currentClass, {
+                    emptyOnly = false,
+                    reason = "manual_initialize",
+                })
+
+                lootUI.serverDefaultsImportState = lootUI.serverDefaultsImportState or {}
+                if success and type(result) == "table" then
+                    lootUI.serverDefaultsImportState.wasError = false
+                    lootUI.serverDefaultsImportState.lastMessage = string.format(
+                        "Initialized %s from defaults (%s/%s): %d inserted, %d skipped existing, %d unresolved, %d invalid",
+                        currentToon,
+                        tostring(result.className or "?"),
+                        tostring(result.armorType or "unknown"),
+                        result.inserted or 0,
+                        result.skipped or 0,
+                        result.unresolved or 0,
+                        result.invalid or 0
+                    )
+                    database.refreshLootRuleCache()
+                else
+                    lootUI.serverDefaultsImportState.wasError = true
+                    lootUI.serverDefaultsImportState.lastMessage = tostring(result or "Initialization failed")
+                end
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Resolve the current server defaults pack into explicit rules for this character, using the current class profile and only filling in missing item-ID rules.")
+            end
+
+            ImGui.SameLine()
+            if ImGui.Button("Initialize Missing Rules", 170, 0) then
+                local success, result = database.initializeCharacterRulesFromDefaults(currentToon, defaultsStatus.currentClass, {
+                    emptyOnly = false,
+                    reason = "manual_fill_missing",
+                })
+
+                lootUI.serverDefaultsImportState = lootUI.serverDefaultsImportState or {}
+                if success and type(result) == "table" then
+                    lootUI.serverDefaultsImportState.wasError = false
+                    lootUI.serverDefaultsImportState.lastMessage = string.format(
+                        "Initialized missing rules for %s (%s/%s): %d inserted, %d skipped existing, %d unresolved, %d invalid",
+                        currentToon,
+                        tostring(result.className or "?"),
+                        tostring(result.armorType or "unknown"),
+                        result.inserted or 0,
+                        result.skipped or 0,
+                        result.unresolved or 0,
+                        result.invalid or 0
+                    )
+                    database.refreshLootRuleCache()
+                else
+                    lootUI.serverDefaultsImportState.wasError = true
+                    lootUI.serverDefaultsImportState.lastMessage = tostring(result or "Rebuild failed")
+                end
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Run the same class-based initialization pass again, but only add missing item-ID rules. Existing rules are never changed.")
+            end
+        end
+
+        if lootUI.serverDefaultsImportState and lootUI.serverDefaultsImportState.lastMessage ~= "" then
+            if lootUI.serverDefaultsImportState.wasError then
+                ImGui.TextColored(1.0, 0.4, 0.4, 1, lootUI.serverDefaultsImportState.lastMessage)
+            else
+                ImGui.TextColored(0.4, 1.0, 0.4, 1, lootUI.serverDefaultsImportState.lastMessage)
+            end
+        end
+
         ImGui.Spacing()
 
         if ImGui.Button("Legacy Import", 120, 0) then
