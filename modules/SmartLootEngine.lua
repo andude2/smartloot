@@ -379,6 +379,8 @@ SmartLootEngine.state = {
     lootActionType = SmartLootEngine.LootAction.None,
     lootActionTimeoutMs = 5000,
     lootRetryCount = 0,
+    lootWindowClosedDuringAction = false,
+    preLootItemCount = 0,
 
     -- Decision state
     needsPendingDecision = false,
@@ -1150,6 +1152,8 @@ local function resetCurrentItem()
         rule = "",
         action = SmartLootEngine.LootAction.None
     }
+    SmartLootEngine.state.lootWindowClosedDuringAction = false
+    SmartLootEngine.state.preLootItemCount = 0
 end
 
 -- ============================================================================
@@ -2047,6 +2051,12 @@ function SmartLootEngine.executeLootAction(action, itemSlot, itemName, itemID, i
     SmartLootEngine.state.lootActionStartTime = mq.gettime()
     SmartLootEngine.state.lootActionType = action
     SmartLootEngine.state.lootRetryCount = 0
+    SmartLootEngine.state.lootWindowClosedDuringAction = false
+    SmartLootEngine.state.preLootItemCount = 0
+
+    if action == SmartLootEngine.LootAction.Loot then
+        SmartLootEngine.state.preLootItemCount = mq.TLO.FindItemCount(itemName)() or 0
+    end
 
     if action == SmartLootEngine.LootAction.Loot then
         -- Use shift+click for stacked items
@@ -2078,12 +2088,30 @@ function SmartLootEngine.checkLootActionCompletion()
     local action       = SmartLootEngine.state.lootActionType
     local item         = SmartLootEngine.state.currentItem
     local itemSlot     = item.slot
+    local lootWindowOpen = SmartLootEngine.isLootWindowOpen()
+    local currentItemCount = 0
 
-    local slotCleared  = isCorpseSlotCleared(itemSlot, item.name)
+    if action == SmartLootEngine.LootAction.Loot then
+        currentItemCount = mq.TLO.FindItemCount(item.name)() or 0
+    end
+
+    local slotCleared  = lootWindowOpen and isCorpseSlotCleared(itemSlot, item.name) or false
     local itemOnCursor = SmartLootEngine.isItemOnCursor()
+    local inventoryCountIncreased = action == SmartLootEngine.LootAction.Loot and
+        currentItemCount > (SmartLootEngine.state.preLootItemCount or 0)
+
+    if not lootWindowOpen and not itemOnCursor and not inventoryCountIncreased then
+        logging.debug(string.format(
+            "[Engine] Loot window closed during %s for %s before completion; skipping slot and reopening corpse",
+            getActionName(action), item.name))
+        SmartLootEngine.state.lootActionInProgress = false
+        SmartLootEngine.state.lootWindowClosedDuringAction = true
+        SmartLootEngine.stats.lootActionFailures = SmartLootEngine.stats.lootActionFailures + 1
+        return true
+    end
 
     -- SUCCESS: item left corpse (slot cleared or shuffled), or it is on cursor
-    if slotCleared or itemOnCursor then
+    if slotCleared or itemOnCursor or inventoryCountIncreased then
         SmartLootEngine.state.lootActionInProgress = false
 
         if action == SmartLootEngine.LootAction.Destroy and itemOnCursor then
@@ -3140,14 +3168,23 @@ function SmartLootEngine.processExecutingLootActionState()
 
     -- Check if action completed
     if SmartLootEngine.checkLootActionCompletion() then
+        local reopenLootWindow = SmartLootEngine.state.lootWindowClosedDuringAction and
+            SmartLootEngine.state.currentCorpseSpawnID ~= 0
+
         -- Clear current item state so a resolved rule doesn't carry over to the next slot
         resetCurrentItem()
 
         -- ALWAYS move to the next item index after an action is completed (or timed out)
         SmartLootEngine.state.currentItemIndex = SmartLootEngine.state.currentItemIndex + 1
 
-        setState(SmartLootEngine.LootState.ProcessingItems, "Action completed")
-        scheduleNextTick(SmartLootEngine.config.itemProcessingDelayMs)
+        if reopenLootWindow then
+            SmartLootEngine.state.openLootAttempts = 0
+            setState(SmartLootEngine.LootState.OpeningLootWindow, "Loot window closed during action")
+            scheduleNextTick(150)
+        else
+            setState(SmartLootEngine.LootState.ProcessingItems, "Action completed")
+            scheduleNextTick(SmartLootEngine.config.itemProcessingDelayMs)
+        end
         return
     end
 
