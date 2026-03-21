@@ -315,14 +315,14 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
         -- Display data status
         local totalItems = tonumber(lootUI.totalItems) or 0
         local statsDataCount = lootUI.statsData and #lootUI.statsData or 0
-        ImGui.Text(string.format("Data Status: %d total items, %d displayed", totalItems, statsDataCount))
+        ImGui.Text("Data Status: %d total items, %d displayed", totalItems, statsDataCount)
 
         -- Pagination info (matching C++ format)
         local currentPage = tonumber(lootUI.currentPage) or 1
         local itemsPerPage = tonumber(lootUI.itemsPerPage) or 20
         local startItem = math.min((currentPage - 1) * itemsPerPage + 1, totalItems)
         local endItem = math.min(currentPage * itemsPerPage, totalItems)
-        ImGui.Text(string.format("Showing %d-%d of %d items", startItem, endItem, totalItems))
+        ImGui.Text("Showing %d-%d of %d items", startItem, endItem, totalItems)
 
         -- Pagination controls (right aligned)
         local windowWidth = ImGui.GetContentRegionAvail()
@@ -344,7 +344,7 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
 
         -- Page indicator
         local totalPages = tonumber(lootUI.totalPages) or 1
-        ImGui.Text(string.format("Page %d of %d", currentPage, totalPages))
+        ImGui.Text("Page %d of %d", currentPage, totalPages)
         ImGui.SameLine()
 
         -- Next page

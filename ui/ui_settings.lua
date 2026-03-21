@@ -2176,7 +2176,7 @@ local function draw_inventory_settings(config)
             local currentFreeSlots = mq.TLO.Me.FreeInventory() or 0
             local minRequired = SmartLootEngine.config.minFreeInventorySlots or 5
             
-            ImGui.Text(string.format("Current free slots: %d / %d required", currentFreeSlots, minRequired))
+            ImGui.Text("Current free slots: %d / %d required", currentFreeSlots, minRequired)
             
             if currentFreeSlots < minRequired then
                 ImGui.TextColored(0.8, 0.2, 0.2, 1.0, "WARNING: Insufficient inventory space!")

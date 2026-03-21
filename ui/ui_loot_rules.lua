@@ -792,7 +792,7 @@ local function drawBulkRuleToolbar(lootUI, database, util, filteredItems, allRul
     ImGui.Separator()
     ImGui.TextColored(0.8, 0.9, 1.0, 1.0, "Bulk Edit")
     ImGui.SameLine()
-    ImGui.Text(string.format("Selected: %d / %d filtered", selectedCount, totalFiltered))
+    ImGui.Text("Selected: %d / %d filtered", selectedCount, totalFiltered)
 
     if totalFiltered > 0 then
         if ImGui.Button("Select Filtered") then

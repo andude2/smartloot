@@ -122,7 +122,7 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
 
     -- Info line
     local startIso = (SmartLootEngine.stats and SmartLootEngine.stats.sessionStartIsoUtc) or os.date("!%Y-%m-%d %H:%M:%S")
-    ImGui.Text(string.format("Session Length: %d min", minutes))
+    ImGui.Text("Session Length: %d min", minutes)
 
     ImGui.Separator()
 
@@ -150,7 +150,7 @@ function uiPopups.drawSessionReportPopup(lootUI, lootHistory, SmartLootEngine)
         popup.lastRefreshAt = nowMs
     end
 
-    ImGui.Text(string.format("Items Looted: %d | Corpses: %d", s.itemsLooted or 0, s.corpsesProcessed or 0))
+    ImGui.Text("Items Looted: %d | Corpses: %d", s.itemsLooted or 0, s.corpsesProcessed or 0)
 
     ImGui.Spacing()
 
@@ -582,7 +582,7 @@ function uiPopups.drawUnknownItemsReviewPopup(lootUI, databaseRef, utilRef)
     end
 
     ImGui.Separator()
-    ImGui.Text(string.format("Items awaiting local rule: %d", unresolvedLocal))
+    ImGui.Text("Items awaiting local rule: %d", unresolvedLocal)
     if popup.lastStatus and popup.lastStatus ~= "" then
         ImGui.SameLine()
         ImGui.TextColored(0.6, 0.85, 1.0, 1.0, popup.lastStatus)
@@ -1941,7 +1941,7 @@ function uiPopups.drawLootStatsPopup(lootUI, lootStats)
                     ImGui.TableSetColumnIndex(2)
                     ImGui.Text(tostring(zoneStat.corpse_count or 0))
                     ImGui.TableSetColumnIndex(3)
-                    ImGui.Text(string.format("%.2f", zoneStat.drop_rate or 0))
+                    ImGui.Text("%.2f", zoneStat.drop_rate or 0)
                 end
                 ImGui.EndTable()
             else
@@ -2509,7 +2509,7 @@ function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
                 if #popup.duplicates == 0 then
                     ImGui.TextColored(0.2, 0.8, 0.2, 1, "No duplicates found! Your database is clean.")
                 else
-                    ImGui.Text(string.format("Found %d groups of duplicate character names:", #popup.duplicates))
+                    ImGui.Text("Found %d groups of duplicate character names:", #popup.duplicates)
                     ImGui.Spacing()
                     
                     -- Group selection table
@@ -2562,7 +2562,7 @@ function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
                         
                         ImGui.Spacing()
                         ImGui.Separator()
-                        ImGui.Text(string.format("Managing rules for: %s", selectedDupe.coreCharacterName))
+                        ImGui.Text("Managing rules for: %s", selectedDupe.coreCharacterName)
                         ImGui.Spacing()
                         
                         -- Target character selection
@@ -2945,9 +2945,9 @@ function uiPopups.drawLegacyImportPopup(lootUI, database, util)
                 ImGui.PushStyleColor(ImGuiCol.ChildBg, 0.1, 0.1, 0.2, 0.8)
                 ImGui.BeginChild("FileInfo", 0, 100, true)
                 ImGui.Text("File: " .. popup.preview.fileName)
-                ImGui.Text(string.format("Total Items: %d", popup.preview.totalItems))
-                ImGui.Text(string.format("AlwaysLoot: %d items, AlwaysLootContains: %d items", 
-                    popup.preview.alwaysLootCount, popup.preview.alwaysLootContainsCount))
+                ImGui.Text("Total Items: %d", popup.preview.totalItems)
+                ImGui.Text("AlwaysLoot: %d items, AlwaysLootContains: %d items", 
+                    popup.preview.alwaysLootCount, popup.preview.alwaysLootContainsCount)
                 
                 -- Show conflict info
                 if popup.preview.conflictCount and popup.preview.conflictCount > 0 then
@@ -3337,7 +3337,7 @@ function uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
         ImGui.TextColored(0.4, 0.8, 1.0, 1, string.format("Confirm Import to: %s", popup.targetCharacter))
         ImGui.Separator()
         
-        ImGui.Text(string.format("Review %d items that will be imported:", #popup.confirmationItems))
+        ImGui.Text("Review %d items that will be imported:", #popup.confirmationItems)
         ImGui.Text("You can uncheck items you don't want to import.")
         ImGui.Spacing()
         
@@ -3446,7 +3446,7 @@ function uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
             end
         end
         
-        ImGui.Text(string.format("Selected: %d of %d items", selectedCount, #popup.confirmationItems))
+        ImGui.Text("Selected: %d of %d items", selectedCount, #popup.confirmationItems)
         
         ImGui.Spacing()
         

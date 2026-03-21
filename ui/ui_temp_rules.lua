@@ -45,8 +45,8 @@ function uiTempRules.draw(lootUI, database, settings, util)
         ImGui.PushStyleColor(ImGuiCol.Text, isActive and COLORS.SUCCESS_COLOR[1] or COLORS.WARNING_COLOR[1],
             isActive and COLORS.SUCCESS_COLOR[2] or COLORS.WARNING_COLOR[2],
             isActive and COLORS.SUCCESS_COLOR[3] or COLORS.WARNING_COLOR[3], 1)
-        ImGui.Text(string.format("AFK Temporaryy Rules Mode: %s (%d temporary rules)",
-            isActive and "ACTIVE" or "INACTIVE", tempCount))
+        ImGui.Text("AFK Temporaryy Rules Mode: %s (%d temporary rules)",
+            isActive and "ACTIVE" or "INACTIVE", tempCount)
         ImGui.PopStyleColor()
 
         ImGui.SameLine()

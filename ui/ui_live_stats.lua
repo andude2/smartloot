@@ -356,7 +356,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                         ImGui.Text("C/min:")
                         ImGui.TableSetColumnIndex(1)
                         ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.8, 0.2, 1.0)
-                        ImGui.Text(string.format("%.1f", corpseRate))
+                        ImGui.Text("%.1f", corpseRate)
                         ImGui.PopStyleColor()
 
                         ImGui.TableNextRow()
@@ -364,7 +364,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                         ImGui.Text("I/min:")
                         ImGui.TableSetColumnIndex(1)
                         ImGui.PushStyleColor(ImGuiCol.Text, 0.2, 0.8, 0.8, 1.0)
-                        ImGui.Text(string.format("%.1f", itemRate))
+                        ImGui.Text("%.1f", itemRate)
                         ImGui.PopStyleColor()
                     end
                 end
@@ -592,8 +592,8 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 -- Show rates if we have data
                 local corpseRate, itemRate = calculateRates(state.stats, state.stats.sessionStart)
                 if corpseRate > 0 then
-                    ImGui.Text(string.format("Corpses/min: %.1f", corpseRate))
-                    ImGui.Text(string.format("Items/min: %.1f", itemRate))
+                    ImGui.Text("Corpses/min: %.1f", corpseRate)
+                    ImGui.Text("Items/min: %.1f", itemRate)
                 end
             end
 

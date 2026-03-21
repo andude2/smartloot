@@ -197,7 +197,7 @@ function debugWindow.draw(SmartLootEngine, lootUI)
                 ImGui.PopStyleColor()
                 ImGui.TextWrapped(rgmercs.lastError)
                 if timeSinceError >= 0 then
-                    ImGui.Text(string.format("(%.1fs ago)", timeSinceError))
+                    ImGui.Text("(%.1fs ago)", timeSinceError)
                 end
             end
             
@@ -304,7 +304,7 @@ function debugWindow.draw(SmartLootEngine, lootUI)
             local totalCorpses = mq.TLO.SpawnCount("npccorpse")() or 0
 
             ImGui.Text("Search Radius: " .. radius)
-            ImGui.Text(string.format("Search Center: %.1f, %.1f, %.1f", center.x, center.y, center.z))
+            ImGui.Text("Search Center: %.1f, %.1f, %.1f", center.x, center.y, center.z)
             ImGui.Text("Corpses in Radius: " .. corpseCount)
             ImGui.Text("Total Zone Corpses: " .. totalCorpses)
             ImGui.Text("Processed This Session: " .. (engineState.sessionCorpseCount or 0))
@@ -320,7 +320,7 @@ function debugWindow.draw(SmartLootEngine, lootUI)
                         local corpseName = corpse.Name() or "Unknown"
                         local processed = engineState.processedCorpsesThisSession[corpseID] and "✓" or "✗"
                         
-                        ImGui.Text(string.format("  %s [%d] %s (%.1f)", processed, corpseID, corpseName, distance))
+                        ImGui.Text("  %s [%d] %s (%.1f)", processed, corpseID, corpseName, distance)
                     end
                 end
             end

@@ -246,10 +246,10 @@ function uiLootHistory.draw(historyUI, database)
         local displayStartItem = math.min(( (historyUI.currentPage or 1) - 1) * (historyUI.itemsPerPage or 0) + 1, (historyUI.totalItems or 0))
         local displayEndItem = math.min((historyUI.currentPage or 1) * (historyUI.itemsPerPage or 0), (historyUI.totalItems or 0))
 
-        ImGui.Text(string.format("Showing %d-%d of %d items",
+        ImGui.Text("Showing %d-%d of %d items",
             displayStartItem,
             displayEndItem,
-            (historyUI.totalItems or 0)))
+            (historyUI.totalItems or 0))
 
         ImGui.SameLine(ImGui.GetWindowWidth() - 250)
 
@@ -263,7 +263,7 @@ function uiLootHistory.draw(historyUI, database)
             historyUI.needsRefetch = true
         end
         ImGui.SameLine()
-        ImGui.Text(string.format("Page %d of %d", (historyUI.currentPage or 1), math.max(1, (historyUI.totalPages or 1))))
+        ImGui.Text("Page %d of %d", (historyUI.currentPage or 1), math.max(1, (historyUI.totalPages or 1)))
         ImGui.SameLine()
         if ImGui.Button(">##nextPage") and (historyUI.currentPage or 1) < (historyUI.totalPages or 1) then
             historyUI.currentPage = (historyUI.currentPage or 1) + 1

@@ -157,7 +157,7 @@ function uiDirectedAssign.draw(SmartLootEngine)
                 
                 -- Corpse column
                 ImGui.TableNextColumn()
-                ImGui.Text(string.format("%s (%d)", c.corpseName or "Corpse", c.corpseSpawnID or 0))
+                ImGui.Text("%s (%d)", c.corpseName or "Corpse", c.corpseSpawnID or 0)
                 
                 -- Assign To column
                 ImGui.TableNextColumn()
