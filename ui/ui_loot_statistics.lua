@@ -472,10 +472,10 @@ function uiLootStatistics.draw(lootUI, lootStatsParam)
                     local itemID = tostring(entry.item_id or "Unknown")
                     local zoneName = tostring(lootUI.selectedZone or "Unknown")
 
-                    ImGui.SetTooltip(string.format(
+                    ImGui.SetTooltip(
                         "Item ID: %s\nZone: %s\n\nZone Stats:\n  Drops: %d\n  Corpses: %d\n  Rate: %s\n\nClick for detailed zone breakdown",
                         itemID, zoneName,
-                        zoneDrops, zoneCorpses, zoneRate, "%"))
+                        zoneDrops, zoneCorpses, zoneRate, "%")
                 end
 
                 -- Zone statistics (green color scheme) - FIXED FIELD NAMES

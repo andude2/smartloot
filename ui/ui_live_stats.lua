@@ -603,7 +603,7 @@ function liveStatsWindow.draw(SmartLootEngine, config)
                 ImGui.Text("Recent States:")
                 for i = 1, math.min(3, #liveStatsWindow.stateDisplay.stateHistory) do
                     local hist = liveStatsWindow.stateDisplay.stateHistory[i]
-                    ImGui.BulletText(string.format("%s (%.1fs)", hist.state, hist.duration / 1000))
+                    ImGui.BulletText("%s (%.1fs)", hist.state, hist.duration / 1000)
                 end
             end
 

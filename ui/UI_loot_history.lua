@@ -330,7 +330,7 @@ function uiLootHistory.draw(historyUI, database)
                         end
                         if ImGui.IsItemHovered() then
                             local idToShow = "N/A"; if entry.item_id ~= nil then idToShow = tostring(entry.item_id) end
-                            ImGui.SetTooltip(string.format("Item ID: %s\nLast Seen: %s\nClick for looter details", idToShow, database.formatTimestamp(entry.unix_timestamp, entry.last_ts) ))
+                            ImGui.SetTooltip("Item ID: %s\nLast Seen: %s\nClick for looter details", idToShow, database.formatTimestamp(entry.unix_timestamp, entry.last_ts) )
                         end
 
                         ImGui.TableSetColumnIndex(2)
@@ -373,7 +373,7 @@ function uiLootHistory.draw(historyUI, database)
                             if entry.item_id ~= nil then
                                 idToShow = tostring(entry.item_id)
                             end
-                            ImGui.SetTooltip(string.format("ID: %s", idToShow))
+                            ImGui.SetTooltip("ID: %s", idToShow)
                         end
 
                         ImGui.TableSetColumnIndex(2)
@@ -395,7 +395,7 @@ function uiLootHistory.draw(historyUI, database)
                         ImGui.TableSetColumnIndex(4)
                         ImGui.Text(entry.corpse_name or "Unknown")
                         if ImGui.IsItemHovered() and entry.corpse_id then
-                            ImGui.SetTooltip(string.format("Corpse ID: %s\nZone: %s", tostring(entry.corpse_id), entry.zone_name or "Unknown"))
+                            ImGui.SetTooltip("Corpse ID: %s\nZone: %s", tostring(entry.corpse_id), entry.zone_name or "Unknown")
                         end
 
                         ImGui.TableSetColumnIndex(5)

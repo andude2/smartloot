@@ -1187,34 +1187,34 @@ local function draw_database_tools(lootUI, showHeader)
 
         ImGui.Text("Server Defaults:")
         if defaultsStatus.available then
-            ImGui.TextColored(0.4, 1.0, 0.4, 1, string.format(
+            ImGui.TextColored(0.4, 1.0, 0.4, 1,
                 "Pack available for %s (v%s, %d rules)",
                 defaultsStatus.server or "unknown",
                 tostring(defaultsStatus.version or "?"),
                 tonumber(defaultsStatus.totalRules) or 0
-            ))
+            )
             if defaultsStatus.description and defaultsStatus.description ~= "" then
                 ImGui.TextColored(0.7, 0.7, 0.7, 1, defaultsStatus.description)
             end
             if defaultsStatus.currentClass and defaultsStatus.currentClass ~= "" then
-                ImGui.TextColored(0.7, 0.8, 1.0, 1, string.format(
+                ImGui.TextColored(0.7, 0.8, 1.0, 1,
                     "Current class profile: %s (%s)",
                     tostring(defaultsStatus.currentClass),
                     tostring(defaultsStatus.currentArmorType or "no armor profile")
-                ))
+                )
             end
             if defaultsStatus.alreadyApplied then
-                ImGui.TextColored(0.7, 0.8, 1.0, 1, string.format(
+                ImGui.TextColored(0.7, 0.8, 1.0, 1,
                     "Initialized for %s: version %s (%d applied rules)",
                     currentToon,
                     tostring(defaultsStatus.appliedVersion or "?"),
                     tonumber(defaultsStatus.importedCount) or 0
-                ))
+                )
             else
-                ImGui.TextColored(0.8, 0.8, 0.4, 1, string.format(
+                ImGui.TextColored(0.8, 0.8, 0.4, 1,
                     "Not yet applied for %s",
                     currentToon
-                ))
+                )
             end
         else
             ImGui.TextColored(0.8, 0.6, 0.2, 1, defaultsStatus.error or "No server defaults pack found")

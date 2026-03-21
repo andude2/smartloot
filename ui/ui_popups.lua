@@ -460,7 +460,7 @@ function uiPopups.drawUnknownItemsReviewPopup(lootUI, databaseRef, utilRef)
 
             ImGui.TableSetColumnIndex(1)
             ImGui.Text(item.itemName or "")
-            ImGui.TextDisabled(string.format("ID: %d", tonumber(item.itemID) or 0))
+            ImGui.TextDisabled("ID: %d", tonumber(item.itemID) or 0)
 
             ImGui.TableSetColumnIndex(2)
             ImGui.TextWrapped(corpseSummary)
@@ -681,9 +681,9 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
             if ImGui.IsItemHovered() then
                 ImGui.SetTooltip("Click to inspect item")
             end
-            ImGui.TextDisabled(string.format("Item ID: %d", itemID))
+            ImGui.TextDisabled("Item ID: %d", itemID)
             ImGui.SameLine()
-            ImGui.TextDisabled(string.format("Corpse Slot: %s", tostring(itemIndex or "?")))
+            ImGui.TextDisabled("Corpse Slot: %s", tostring(itemIndex or "?"))
             local config = require("modules.config")
             local toonName = mq.TLO.Me.Name() or "unknown"
             local showTribute = config.isShowPendingDecisionTribute and config.isShowPendingDecisionTribute(toonName) or true
@@ -870,7 +870,7 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
 
             ImGui.Spacing()
             if actionLayout == "selector" then
-                ImGui.TextColored(0.9, 0.9, 0.6, 1.0, string.format("Selected rule: %s", currentRuleLabel))
+                ImGui.TextColored(0.9, 0.9, 0.6, 1.0, "Selected rule: %s", currentRuleLabel)
                 ImGui.SameLine()
                 ImGui.TextDisabled("(Click the buttons above to change)")
             else
@@ -2110,7 +2110,7 @@ function uiPopups.drawBroadcastNewRulePopup(lootUI, database, util)
     local keepOpen = true
     if ImGui.Begin("Broadcast New Rule?", keepOpen, ImGuiWindowFlags.NoCollapse + ImGuiWindowFlags.AlwaysAutoResize) then
         ImGui.Text("A new rule was created:")
-        ImGui.BulletText(string.format("%s -> %s", pop.itemName or "?", pop.rule or "?"))
+        ImGui.BulletText("%s -> %s", pop.itemName or "?", pop.rule or "?")
         ImGui.Spacing()
         ImGui.Text("Broadcast this rule to all connected peers?")
         ImGui.Spacing()
@@ -2499,8 +2499,8 @@ function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
             end
             
             ImGui.SameLine()
-            ImGui.TextColored(0.7, 0.7, 0.7, 1, string.format("Found %d duplicate groups", 
-                popup.duplicates and #popup.duplicates or 0))
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, "Found %d duplicate groups", 
+                popup.duplicates and #popup.duplicates or 0)
             
             ImGui.Separator()
             
@@ -2662,7 +2662,7 @@ function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
                                             popup.duplicates = database.detectDuplicatePeerNames()
                                         end
                                         if ImGui.IsItemHovered() then
-                                            ImGui.SetTooltip(string.format("Copy '%s' rule to %s", rule.itemName, popup.targetCharacter))
+                                            ImGui.SetTooltip("Copy '%s' rule to %s", rule.itemName, popup.targetCharacter)
                                         end
                                     else
                                         ImGui.TextColored(0.6, 0.6, 0.6, 1, "Target")
@@ -2676,7 +2676,7 @@ function uiPopups.drawDuplicateCleanupPopup(lootUI, database)
                                         popup.duplicates = database.detectDuplicatePeerNames()
                                     end
                                     if ImGui.IsItemHovered() then
-                                        ImGui.SetTooltip(string.format("Delete '%s' rule from %s", rule.itemName, variant.fullName))
+                                        ImGui.SetTooltip("Delete '%s' rule from %s", rule.itemName, variant.fullName)
                                     end
                                 end
                             end
@@ -2885,8 +2885,8 @@ function uiPopups.drawLegacyImportPopup(lootUI, database, util)
             
             ImGui.Spacing()
             ImGui.Text("Auto-generated path for your character:")
-            ImGui.TextColored(0.7, 0.7, 0.7, 1, string.format("Character: %s, Server: %s", currentChar, currentServer))
-            ImGui.TextColored(0.7, 0.7, 0.7, 1, string.format("Config Path: %s", configPath))
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, "Character: %s, Server: %s", currentChar, currentServer)
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, "Config Path: %s", configPath)
             
             ImGui.Spacing()
             ImGui.Text("Recommended file:")
@@ -2951,7 +2951,7 @@ function uiPopups.drawLegacyImportPopup(lootUI, database, util)
                 
                 -- Show conflict info
                 if popup.preview.conflictCount and popup.preview.conflictCount > 0 then
-                    ImGui.TextColored(1.0, 0.8, 0.2, 1, string.format("⚠ Conflicts: %d items already have rules", popup.preview.conflictCount))
+                    ImGui.TextColored(1.0, 0.8, 0.2, 1, "⚠ Conflicts: %d items already have rules", popup.preview.conflictCount)
                 else
                     ImGui.TextColored(0.2, 0.8, 0.2, 1, "✓ No conflicts detected")
                 end
@@ -3033,12 +3033,12 @@ function uiPopups.drawLegacyImportPopup(lootUI, database, util)
                 local conflictCount = popup.preview.conflicts and #popup.preview.conflicts or 0
                 local skippedCount = popup.preview.skipped and #popup.preview.skipped or 0
                 
-                ImGui.TextColored(0.2, 0.8, 0.2, 1, string.format("✓ %d items will be imported", importCount))
+                ImGui.TextColored(0.2, 0.8, 0.2, 1, "✓ %d items will be imported", importCount)
                 if skippedCount > 0 then
-                    ImGui.TextColored(0.7, 0.7, 0.7, 1, string.format("⊘ %d items will be skipped (already have ItemID rules)", skippedCount))
+                    ImGui.TextColored(0.7, 0.7, 0.7, 1, "⊘ %d items will be skipped (already have ItemID rules)", skippedCount)
                 end
                 if conflictCount > 0 then
-                    ImGui.TextColored(1.0, 0.8, 0.2, 1, string.format("⚠ %d items will overwrite existing rules", conflictCount))
+                    ImGui.TextColored(1.0, 0.8, 0.2, 1, "⚠ %d items will overwrite existing rules", conflictCount)
                 end
                 
                 -- Sample items preview
@@ -3334,7 +3334,7 @@ function uiPopups.drawLegacyImportConfirmationPopup(lootUI, database, util)
     
     local confirmKeepOpen = true
     if ImGui.Begin("Confirm Legacy Import", confirmKeepOpen, ImGuiWindowFlags.NoCollapse) then
-        ImGui.TextColored(0.4, 0.8, 1.0, 1, string.format("Confirm Import to: %s", popup.targetCharacter))
+        ImGui.TextColored(0.4, 0.8, 1.0, 1, "Confirm Import to: %s", popup.targetCharacter)
         ImGui.Separator()
         
         ImGui.Text("Review %d items that will be imported:", #popup.confirmationItems)
@@ -3598,7 +3598,7 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
     
     if shown then
         -- Header
-        ImGui.TextColored(1, 0.5, 0, 1, string.format("Pending requests from peers (%d items)", #remoteDecisions))
+        ImGui.TextColored(1, 0.5, 0, 1, "Pending requests from peers (%d items)", #remoteDecisions)
         ImGui.Separator()
         ImGui.Spacing()
         
