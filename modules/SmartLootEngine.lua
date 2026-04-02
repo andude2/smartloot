@@ -661,6 +661,32 @@ function SmartLootEngine.beginUnknownReview()
         return false
     end
 
+    -- Forward to foreground if we're not foreground
+    if not util.isForeground() then
+        local items = SmartLootEngine.getUnknownReviewItems()
+        if items and #items > 0 then
+            local messageData = {
+                cmd = "batch_unknown_review_request",
+                sender = mq.TLO.Me.Name(),
+                items = items,
+                timestamp = mq.gettime()
+            }
+            local success, err = pcall(function()
+                actors.send(
+                    { mailbox = "smartloot_mailbox" },
+                    json.encode(messageData)
+                )
+            end)
+            if success then
+                logging.debug(string.format("[Engine] Forwarded batch unknown review to foreground (%d items)", #items))
+                util.printSmartLoot("Batch unknown review forwarded to foreground character", "info")
+            else
+                logging.debug(string.format("[Engine] Failed to forward batch unknown review: %s", tostring(err)))
+            end
+        end
+        return false
+    end
+
     SmartLootEngine.state.unknownReview.active = true
     if SmartLootEngine.state.lootUI then
         SmartLootEngine.state.lootUI.unknownItemsReviewPopup = SmartLootEngine.state.lootUI.unknownItemsReviewPopup or {}

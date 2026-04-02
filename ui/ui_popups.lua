@@ -3922,6 +3922,227 @@ function uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
     ImGui.End()
 end
 
+-- Remote Batch Unknown Review Popup - for foreground character to handle batch unknown reviews from background peers
+function uiPopups.drawRemoteBatchUnknownReviewPopup(lootUI, databaseRef, utilRef)
+    -- Only show on foreground character
+    if not utilRef.isForeground() then return end
+
+    local remoteBatch = _G.SMARTLOOT_REMOTE_BATCH_UNKNOWN or {}
+    if #remoteBatch == 0 then return end
+
+    -- Build flat list of all items from all requesters, tracking which requester each item came from
+    local allItems = {}
+    for _, batch in ipairs(remoteBatch) do
+        for _, item in ipairs(batch.items or {}) do
+            table.insert(allItems, {
+                requester = batch.requester,
+                item = item,
+                key = (item.itemName or "") .. "_" .. (item.itemID or 0) .. "_" .. batch.requester
+            })
+        end
+    end
+
+    if #allItems == 0 then return end
+
+    -- Initialize selections per unique key
+    lootUI.remoteBatchUnknownSelections = lootUI.remoteBatchUnknownSelections or {}
+    lootUI.remoteBatchUnknownThresholds = lootUI.remoteBatchUnknownThresholds or {}
+
+    for _, entry in ipairs(allItems) do
+        local key = entry.key
+        if not lootUI.remoteBatchUnknownSelections[key] then
+            lootUI.remoteBatchUnknownSelections[key] = config.getDefaultPromptDropdown and config.getDefaultPromptDropdown(mq.TLO.Me.Name()) or "Keep"
+        end
+        if not lootUI.remoteBatchUnknownThresholds[key] then
+            lootUI.remoteBatchUnknownThresholds[key] = 1
+        end
+    end
+
+    ImGui.SetNextWindowSize(1180, 540, ImGuiCond.FirstUseEver)
+    local keepOpen = ImGui.Begin("SmartLoot - Remote Batch Unknown Review", true)
+    if not keepOpen then
+        ImGui.End()
+        return
+    end
+
+    ImGui.TextColored(1, 0.5, 0, 1, "Batch unknown review requests from peers (%d items from %d peer(s))", #allItems, #remoteBatch)
+    ImGui.Separator()
+
+    local flags = bit32.bor(
+        ImGuiTableFlags.Borders,
+        ImGuiTableFlags.RowBg,
+        ImGuiTableFlags.Resizable,
+        ImGuiTableFlags.ScrollY,
+        ImGuiTableFlags.SizingStretchProp
+    )
+
+    if ImGui.BeginTable("SL_RemoteBatchUnknownReview", 9, flags, 0, 360) then
+        ImGui.TableSetupColumn("Peer", ImGuiTableColumnFlags.WidthFixed, 90)
+        ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 34)
+        ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch, 2.0)
+        ImGui.TableSetupColumn("Corpses", ImGuiTableColumnFlags.WidthStretch, 1.6)
+        ImGui.TableSetupColumn("Seen", ImGuiTableColumnFlags.WidthFixed, 42)
+        ImGui.TableSetupColumn("Vendor", ImGuiTableColumnFlags.WidthFixed, 78)
+        ImGui.TableSetupColumn("Tribute", ImGuiTableColumnFlags.WidthFixed, 72)
+        ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthStretch, 1.5)
+        ImGui.TableSetupColumn("Threshold", ImGuiTableColumnFlags.WidthFixed, 80)
+        ImGui.TableHeadersRow()
+
+        for i, entry in ipairs(allItems) do
+            local item = entry.item
+            local key = entry.key
+            local selection = lootUI.remoteBatchUnknownSelections[key] or "Keep"
+            local threshold = lootUI.remoteBatchUnknownThresholds[key] or 1
+
+            ImGui.TableNextRow()
+
+            ImGui.TableSetColumnIndex(0)
+            ImGui.TextColored(0.6, 0.8, 1.0, 1.0, entry.requester or "")
+
+            ImGui.TableSetColumnIndex(1)
+            uiUtils.drawItemIcon(item.iconID or 0)
+
+            ImGui.TableSetColumnIndex(2)
+            ImGui.Text(item.itemName or "")
+            ImGui.TextDisabled("ID: %d", tonumber(item.itemID) or 0)
+
+            ImGui.TableSetColumnIndex(3)
+            local corpseSummary = "Unknown"
+            if item.corpseRefs and #item.corpseRefs > 0 then
+                corpseSummary = item.corpseRefs[1].corpseName or "Unknown"
+                if #item.corpseRefs > 1 then
+                    corpseSummary = string.format("%s (+%d)", corpseSummary, #item.corpseRefs - 1)
+                end
+            end
+            ImGui.TextWrapped(corpseSummary)
+
+            ImGui.TableSetColumnIndex(4)
+            ImGui.Text(tostring(item.occurrenceCount or #(item.corpseRefs or {})))
+
+            ImGui.TableSetColumnIndex(5)
+            ImGui.Text(formatCopperValue(item.itemValue or 0))
+
+            ImGui.TableSetColumnIndex(6)
+            ImGui.Text(tostring(item.tributeValue or 0))
+
+            ImGui.TableSetColumnIndex(7)
+            ImGui.SetNextItemWidth(-1)
+            if ImGui.BeginCombo("##remoteBatchRule_" .. i, selection) then
+                for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
+                    local isSelected = (selection == rule)
+                    if ImGui.Selectable(rule .. "##rb_" .. i, isSelected) then
+                        lootUI.remoteBatchUnknownSelections[key] = rule
+                    end
+                    if isSelected then
+                        ImGui.SetItemDefaultFocus()
+                    end
+                end
+                ImGui.EndCombo()
+
+            ImGui.TableSetColumnIndex(8)
+            local currentSelection = lootUI.remoteBatchUnknownSelections[key]
+            if currentSelection == "KeepIfFewerThan" or currentSelection == "KeepThenIgnore" then
+                ImGui.SetNextItemWidth(-1)
+                local newThresh, changed = ImGui.InputInt("##rbThresh_" .. i, threshold)
+                if changed then
+                    lootUI.remoteBatchUnknownThresholds[key] = math.max(1, newThresh)
+                end
+            else
+                ImGui.TextDisabled("N/A")
+            end
+        end
+
+        ImGui.EndTable()
+    end
+
+    ImGui.Separator()
+
+    -- Helper to build final rule string
+    local function getFinalRule(key)
+        local sel = lootUI.remoteBatchUnknownSelections[key] or "Keep"
+        local thresh = lootUI.remoteBatchUnknownThresholds[key] or 1
+        if sel == "KeepIfFewerThan" then
+            return "KeepIfFewerThan:" .. thresh
+        elseif sel == "KeepThenIgnore" then
+            return "KeepIfFewerThan:" .. thresh .. ":AutoIgnore"
+        else
+            return sel
+        end
+    end
+
+    -- Quick action buttons
+    if ImGui.Button("Apply All Keep", 140, 30) then
+        for key, _ in pairs(lootUI.remoteBatchUnknownSelections) do
+            lootUI.remoteBatchUnknownSelections[key] = "Keep"
+        end
+    end
+    ImGui.SameLine()
+    if ImGui.Button("Apply All Ignore", 150, 30) then
+        for key, _ in pairs(lootUI.remoteBatchUnknownSelections) do
+            lootUI.remoteBatchUnknownSelections[key] = "Ignore"
+        end
+    end
+
+    ImGui.SameLine()
+
+    -- Complete button - send responses to each requester
+    if ImGui.Button("Complete & Send Decisions", 200, 30) then
+        local actors = require("actors")
+        local json = require("dkjson")
+
+        -- Group items by requester
+        local decisionsByRequester = {}
+        for _, entry in ipairs(allItems) do
+            local requester = entry.requester
+            local item = entry.item
+            local key = entry.key
+            if not decisionsByRequester[requester] then
+                decisionsByRequester[requester] = {}
+            end
+            table.insert(decisionsByRequester[requester], {
+                itemName = item.itemName,
+                itemID = item.itemID,
+                iconID = item.iconID,
+                rule = getFinalRule(key)
+            })
+        end
+
+        -- Send response to each requester
+        for requester, decisions in pairs(decisionsByRequester) do
+            pcall(function()
+                local responseData = {
+                    cmd = "batch_unknown_review_response",
+                    sender = mq.TLO.Me.Name(),
+                    requester = requester,
+                    decisions = decisions
+                }
+                actors.send(
+                    { mailbox = "smartloot_mailbox" },
+                    json.encode(responseData)
+                )
+            end)
+            logging.debug(string.format("[RemoteBatch] Sent %d decisions to %s", #decisions, requester))
+        end
+
+        _G.SMARTLOOT_REMOTE_BATCH_UNKNOWN = {}
+        lootUI.remoteBatchUnknownSelections = {}
+        lootUI.remoteBatchUnknownThresholds = {}
+        utilRef.printSmartLoot("Remote batch unknown review completed and decisions sent", "success")
+    end
+
+    ImGui.SameLine()
+
+    -- Cancel / Clear button
+    if ImGui.Button("Cancel & Clear", 140, 30) then
+        _G.SMARTLOOT_REMOTE_BATCH_UNKNOWN = {}
+        lootUI.remoteBatchUnknownSelections = {}
+        lootUI.remoteBatchUnknownThresholds = {}
+        utilRef.printSmartLoot("Remote batch unknown review cancelled", "warning")
+    end
+
+    ImGui.End()
+end
+
 function uiPopups.drawGettingStartedPopup(lootUI)
     if lootUI.showGettingStartedPopup then
         ImGui.SetNextWindowSize(700, 600, ImGuiCond.FirstUseEver)

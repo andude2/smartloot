@@ -665,8 +665,47 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
         _G.SMARTLOOT_REMOTE_DECISIONS = newQueue
         
         if removedCount > 0 then
-            logging.debug(string.format("[SmartLoot] Cleared %d resolved remote decision(s) for '%s' from %s", 
+            logging.debug(string.format("[SmartLoot] Cleared %d resolved remote decision(s) for '%s' from %s",
                 removedCount, itemName, requester))
+        end
+    elseif cmd == "batch_unknown_review_request" then
+        -- Another character is requesting we handle their batch unknown review
+        _G.SMARTLOOT_REMOTE_BATCH_UNKNOWN = _G.SMARTLOOT_REMOTE_BATCH_UNKNOWN or {}
+        table.insert(_G.SMARTLOOT_REMOTE_BATCH_UNKNOWN, {
+            requester = sender,
+            items = data.items or {},
+            timestamp = data.timestamp or mq.gettime()
+        })
+        logging.debug(string.format("[SmartLoot] Received batch unknown review request from %s (%d items, queue size: %d)",
+            sender, #(data.items or {}), #_G.SMARTLOOT_REMOTE_BATCH_UNKNOWN))
+    elseif cmd == "batch_unknown_review_response" then
+        -- Foreground character responded with decisions for our batch unknown review
+        local requester = sender
+        local decisions = data.decisions or {}
+        logging.debug(string.format("[SmartLoot] Received batch unknown review response from %s with %d decisions",
+            requester, #decisions))
+
+        -- Apply decisions to local rules
+        for _, decision in ipairs(decisions) do
+            if decision.rule and decision.rule ~= "" and decision.rule ~= "Unset" then
+                database.setLootRule(decision.itemName, decision.rule, decision.itemID, true)
+                logging.debug(string.format("[SmartLoot] Applied remote batch decision: %s = %s", decision.itemName, decision.rule))
+            end
+        end
+
+        -- Clear the pending remote batch request from our queue
+        _G.SMARTLOOT_REMOTE_BATCH_UNKNOWN = _G.SMARTLOOT_REMOTE_BATCH_UNKNOWN or {}
+        local newQueue = {}
+        for _, batch in ipairs(_G.SMARTLOOT_REMOTE_BATCH_UNKNOWN) do
+            if batch.requester ~= requester then
+                table.insert(newQueue, batch)
+            end
+        end
+        _G.SMARTLOOT_REMOTE_BATCH_UNKNOWN = newQueue
+
+        -- Complete the local unknown review if it was pending
+        if SmartLootEngine.state.unknownReview.active then
+            SmartLootEngine.completeUnknownReview()
         end
     else
         util.printSmartLoot("Unknown command '" .. tostring(cmd) .. "' from " .. sender, "warning")
@@ -1810,6 +1849,7 @@ mq.imgui.init("SmartLoot", function()
         uiPopups.drawUnknownItemsReviewPopup(lootUI, database, util)
         uiPopups.drawLootDecisionPopup(lootUI, settings, nil)
         uiPopups.drawRemotePendingDecisionsPopup(lootUI, database, util)
+        uiPopups.drawRemoteBatchUnknownReviewPopup(lootUI, database, util)
         uiPopups.drawLootStatsPopup(lootUI, lootStats)
         uiPopups.drawLootRulesPopup(lootUI, database, util)
         uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
