@@ -49,6 +49,18 @@ local function getFinalRuleForSelection(rule, threshold)
     return rule
 end
 
+local RULE_COLORS = {
+    Keep = {0.2, 0.8, 0.2, 1},
+    Ignore = {0.8, 0.2, 0.2, 1},
+    Destroy = {0.6, 0.2, 0.8, 1},
+    KeepIfFewerThan = {0.8, 0.6, 0.2, 1},
+    Unset = {0.5, 0.5, 0.5, 1},
+}
+
+local function getRuleColor(rule)
+    return RULE_COLORS[rule] or RULE_COLORS.Unset
+end
+
 local function getRuleLabel(rule)
     if not rule or rule == "" then
         return "Unset"
@@ -61,6 +73,123 @@ local function getRuleLabel(rule)
         return string.format("KeepIfFewerThan (%d)", threshold)
     end
     return rule
+end
+
+local PEER_RULE_BULK_TARGETS = {
+    { key = "all", label = "All Peers" },
+    { key = "plate", label = "All Plate" },
+    { key = "chain", label = "All Chain" },
+    { key = "leather", label = "All Leather" },
+    { key = "silk", label = "All Silk" },
+    { key = "warrior", label = "All Warriors" },
+    { key = "cleric", label = "All Clerics" },
+    { key = "paladin", label = "All Paladins" },
+    { key = "shadowknight", label = "All Shadow Knights" },
+    { key = "ranger", label = "All Rangers" },
+    { key = "bard", label = "All Bards" },
+    { key = "rogue", label = "All Rogues" },
+    { key = "shaman", label = "All Shamans" },
+    { key = "berserker", label = "All Berserkers" },
+    { key = "druid", label = "All Druids" },
+    { key = "monk", label = "All Monks" },
+    { key = "beastlord", label = "All Beastlords" },
+    { key = "necromancer", label = "All Necromancers" },
+    { key = "wizard", label = "All Wizards" },
+    { key = "magician", label = "All Magicians" },
+    { key = "enchanter", label = "All Enchanters" },
+}
+
+local PEER_RULE_CLASS_TARGETS = {
+    war = "warrior", warrior = "warrior",
+    clr = "cleric", cleric = "cleric",
+    pal = "paladin", paladin = "paladin",
+    shd = "shadowknight", shadowknight = "shadowknight",
+    rng = "ranger", ranger = "ranger",
+    brd = "bard", bard = "bard",
+    rog = "rogue", rogue = "rogue",
+    shm = "shaman", shaman = "shaman",
+    ber = "berserker", berserker = "berserker",
+    dru = "druid", druid = "druid",
+    mnk = "monk", monk = "monk",
+    bst = "beastlord", beastlord = "beastlord",
+    nec = "necromancer", necromancer = "necromancer",
+    wiz = "wizard", wizard = "wizard",
+    mag = "magician", magician = "magician",
+    enc = "enchanter", enchanter = "enchanter",
+}
+
+local function normalizePeerClassName(className)
+    if not className or className == "" then
+        return nil
+    end
+    return tostring(className):gsub("%s+", ""):lower()
+end
+
+local function getPeerRuleBulkTargetLabel(targetKey)
+    for _, option in ipairs(PEER_RULE_BULK_TARGETS) do
+        if option.key == targetKey then
+            return option.label
+        end
+    end
+    return "All Peers"
+end
+
+local function getPeerClassName(peerName, currentCharacter, connectedPeerSet)
+    if not peerName or peerName == "" then
+        return nil
+    end
+    if peerName == currentCharacter then
+        return mq.TLO.Me.Class.ShortName() or mq.TLO.Me.Class.Name() or nil
+    end
+    if connectedPeerSet and connectedPeerSet[peerName] then
+        local spawn = mq.TLO.Spawn(peerName)
+        if spawn() then
+            return spawn.Class.ShortName() or spawn.Class.Name() or nil
+        end
+    end
+    return nil
+end
+
+local function doesPeerMatchBulkTarget(peerClassName, targetKey)
+    if targetKey == "all" then
+        return true
+    end
+    local normalizedClass = normalizePeerClassName(peerClassName)
+    if not normalizedClass then
+        return false
+    end
+    if targetKey == "plate" or targetKey == "chain" or targetKey == "leather" then
+        return database.getArmorTypeByClass(normalizedClass) == targetKey
+    end
+    if targetKey == "silk" then
+        local armorType = database.getArmorTypeByClass(normalizedClass)
+        return armorType == "cloth" or armorType == "silk"
+    end
+    return PEER_RULE_CLASS_TARGETS[normalizedClass] == targetKey
+end
+
+local function savePeerPopupRuleFor(peer, itemName, itemID, iconID, newRuleValue, currentCharacter, connectedPeerSet, tableSource)
+    local isFromFallback = (tableSource == "lootrules_name_fallback")
+    local success = false
+    if isFromFallback then
+        success = database.saveNameBasedRuleFor(peer, itemName, newRuleValue)
+    elseif peer == currentCharacter then
+        success = database.saveLootRule(itemName, itemID, newRuleValue, iconID)
+    else
+        success = database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
+    end
+
+    if success then
+        if peer == currentCharacter then
+            database.refreshLootRuleCache()
+        else
+            database.refreshLootRuleCacheForPeer(peer)
+        end
+        if connectedPeerSet and connectedPeerSet[peer] then
+            util.sendPeerCommandViaActor(peer, "reload_rules")
+        end
+    end
+    return success
 end
 
 local function saveUnknownReviewRule(item, targetCharacter, finalRule)
@@ -1211,101 +1340,115 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
             
             logging.debug(string.format("[PeerRules] Final peer list: %s", table.concat(peerList, ", ")))
 
-            -- Quick Actions section - moved above table for better UX
-            ImGui.Text("Quick Actions:")
-            
-            if ImGui.Button("Set All to Keep") then
-                local itemName = lootUI.peerItemRulesPopup.itemName
-                -- Use the itemID and iconID from the popup
-                local itemID = lootUI.peerItemRulesPopup.itemID or 0
-                local iconID = lootUI.peerItemRulesPopup.iconID or 0
-                
-                logging.debug(string.format("[SetAllKeep] PeerList has %d entries: %s", #peerList, table.concat(peerList, ", ")))
-                logging.debug(string.format("[SetAllKeep] ConnectedPeers: %s", table.concat(connectedPeers or {}, ", ")))
-                
-                local updateCount = 0
-                for _, peer in ipairs(peerList) do
-                    local success = false
-                    -- Check if this item is from the fallback table
-                    local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback")
-                    
-                    if isFromFallback then
-                        -- Use name-based rule saving for fallback table items
-                        success = database.saveNameBasedRuleFor(peer, itemName, "Keep")
-                    else
-                        -- Use itemID-based saving for regular items
-                        if peer == currentCharacter then
-                            success = database.saveLootRule(itemName, itemID, "Keep", iconID)
-                        else
-                            success = database.saveLootRuleFor(peer, itemName, itemID, "Keep", iconID)
-                        end
+            lootUI.peerItemRulesPopup.bulkRule = lootUI.peerItemRulesPopup.bulkRule or "Keep"
+            lootUI.peerItemRulesPopup.bulkThreshold = math.max(1, tonumber(lootUI.peerItemRulesPopup.bulkThreshold) or 1)
+            lootUI.peerItemRulesPopup.bulkTarget = lootUI.peerItemRulesPopup.bulkTarget or "all"
+
+            ImGui.Text("Bulk apply this item rule:")
+            ImGui.SetNextItemWidth(170)
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
+            if ImGui.BeginCombo("##peerRulesBulkRule", lootUI.peerItemRulesPopup.bulkRule) then
+                for _, option in ipairs({"Keep", "Ignore", "KeepIfFewerThan", "KeepThenIgnore", "Destroy", "Unset"}) do
+                    local isSelected = (lootUI.peerItemRulesPopup.bulkRule == option)
+                    local colorLabel = option == "KeepThenIgnore" and "KeepIfFewerThan" or option
+                    local color = getRuleColor(colorLabel)
+                    ImGui.PushStyleColor(ImGuiCol.Text, color[1], color[2], color[3], color[4])
+                    if ImGui.Selectable(option, isSelected) then
+                        lootUI.peerItemRulesPopup.bulkRule = option
                     end
-                    
-                    if success then
-                        updateCount = updateCount + 1
-                        logging.debug(string.format("[SetAllKeep] Updated peer: %s", peer))
-                    end
-                    
-                    if connectedPeerSet[peer] then
-                        util.sendPeerCommandViaActor(peer, "reload_rules")
+                    ImGui.PopStyleColor()
+                    if isSelected then
+                        ImGui.SetItemDefaultFocus()
                     end
                 end
-                logging.log(string.format("Set all %d peers to 'Keep' for %s", updateCount, itemName))
+                ImGui.EndCombo()
             end
-            
+            ImGui.PopStyleVar()
+
+            local bulkRuleValue = getFinalRuleForSelection(lootUI.peerItemRulesPopup.bulkRule, lootUI.peerItemRulesPopup.bulkThreshold)
+            if lootUI.peerItemRulesPopup.bulkRule == "Unset" then
+                bulkRuleValue = ""
+            end
+
+            if lootUI.peerItemRulesPopup.bulkRule == "KeepIfFewerThan" or lootUI.peerItemRulesPopup.bulkRule == "KeepThenIgnore" then
+                ImGui.SameLine()
+                ImGui.SetNextItemWidth(90)
+                ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
+                local newBulkThreshold, thresholdChanged = ImGui.InputInt("##peerRulesBulkThreshold", lootUI.peerItemRulesPopup.bulkThreshold)
+                ImGui.PopStyleVar()
+                if thresholdChanged then
+                    lootUI.peerItemRulesPopup.bulkThreshold = math.max(1, newBulkThreshold)
+                end
+                bulkRuleValue = getFinalRuleForSelection(lootUI.peerItemRulesPopup.bulkRule, lootUI.peerItemRulesPopup.bulkThreshold)
+            end
+
             ImGui.SameLine()
-            
-            if ImGui.Button("Set All to Ignore") then
-                local itemName = lootUI.peerItemRulesPopup.itemName
-                -- Use the itemID and iconID from the popup
-                local itemID = lootUI.peerItemRulesPopup.itemID or 0
-                local iconID = lootUI.peerItemRulesPopup.iconID or 0
-                
-                logging.debug(string.format("[SetAllIgnore] PeerList has %d entries: %s", 
-                                          #peerList, table.concat(peerList, ", ")))
-                logging.debug(string.format("[SetAllIgnore] ConnectedPeers: %s", 
-                                          table.concat(connectedPeers or {}, ", ")))
-                
-                local updateCount = 0
-                for _, peer in ipairs(peerList) do
-                    local success = false
-                    -- Check if this item is from the fallback table
-                    local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback")
-                    
-                    if isFromFallback then
-                        -- Use name-based rule saving for fallback table items
-                        success = database.saveNameBasedRuleFor(peer, itemName, "Ignore")
-                    else
-                        -- Use itemID-based saving for regular items
-                        if peer == currentCharacter then
-                            success = database.saveLootRule(itemName, itemID, "Ignore", iconID)
-                        else
-                            success = database.saveLootRuleFor(peer, itemName, itemID, "Ignore", iconID)
-                        end
+            ImGui.Text("to")
+            ImGui.SameLine()
+            ImGui.SetNextItemWidth(190)
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
+            if ImGui.BeginCombo("##peerRulesBulkTarget", getPeerRuleBulkTargetLabel(lootUI.peerItemRulesPopup.bulkTarget)) then
+                for _, option in ipairs(PEER_RULE_BULK_TARGETS) do
+                    local isSelected = (lootUI.peerItemRulesPopup.bulkTarget == option.key)
+                    if ImGui.Selectable(option.label, isSelected) then
+                        lootUI.peerItemRulesPopup.bulkTarget = option.key
                     end
-                    
-                    if success then
-                        updateCount = updateCount + 1
-                        logging.debug(string.format("[SetAllIgnore] Updated peer: %s", peer))
-                    end
-                    
-                    if connectedPeerSet[peer] then
-                        util.sendPeerCommandViaActor(peer, "reload_rules")
+                    if isSelected then
+                        ImGui.SetItemDefaultFocus()
                     end
                 end
-                logging.log(string.format("Set all %d peers to 'Ignore' for %s", updateCount, itemName))
+                ImGui.EndCombo()
             end
-            
+            ImGui.PopStyleVar()
+
+            local matchingPeerCount = 0
+            local unknownClassCount = 0
+            for _, peer in ipairs(peerList) do
+                local peerClassName = getPeerClassName(peer, currentCharacter, connectedPeerSet)
+                if lootUI.peerItemRulesPopup.bulkTarget ~= "all" and not peerClassName then
+                    unknownClassCount = unknownClassCount + 1
+                elseif doesPeerMatchBulkTarget(peerClassName, lootUI.peerItemRulesPopup.bulkTarget) then
+                    matchingPeerCount = matchingPeerCount + 1
+                end
+            end
+
             ImGui.SameLine()
-            
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 8.0)
+            if ImGui.Button("Apply") then
+                local itemName = lootUI.peerItemRulesPopup.itemName or ""
+                local itemID = lootUI.peerItemRulesPopup.itemID or 0
+                local iconID = lootUI.peerItemRulesPopup.iconID or 0
+                local updateCount = 0
+                for _, peer in ipairs(peerList) do
+                    local peerClassName = getPeerClassName(peer, currentCharacter, connectedPeerSet)
+                    if doesPeerMatchBulkTarget(peerClassName, lootUI.peerItemRulesPopup.bulkTarget) then
+                        if savePeerPopupRuleFor(peer, itemName, itemID, iconID, bulkRuleValue, currentCharacter, connectedPeerSet, lootUI.peerItemRulesPopup.tableSource) then
+                            updateCount = updateCount + 1
+                            if not lootUI.peerItemRulesPopup.peerStates then
+                                lootUI.peerItemRulesPopup.peerStates = {}
+                            end
+                            lootUI.peerItemRulesPopup.peerStates[peer] = lootUI.peerItemRulesPopup.peerStates[peer] or {}
+                            lootUI.peerItemRulesPopup.peerStates[peer].displayRule = (#bulkRuleValue > 0) and lootUI.peerItemRulesPopup.bulkRule or "Unset"
+                            lootUI.peerItemRulesPopup.peerStates[peer].threshold = lootUI.peerItemRulesPopup.bulkThreshold
+                            lootUI.peerItemRulesPopup.peerStates[peer].recentlyChanged = true
+                            lootUI.peerItemRulesPopup.peerStates[peer].changeTime = mq.gettime()
+                        end
+                    end
+                end
+                logging.log(string.format("Applied '%s' to %d peers for %s", getRuleLabel(bulkRuleValue), updateCount, itemName))
+            end
+            ImGui.PopStyleVar()
+
+            ImGui.SameLine()
             if ImGui.Button("Close") then
                 keepOpen = false
             end
-            
-            -- Add context help
-            ImGui.SameLine()
-            ImGui.TextColored(0.7, 0.7, 0.7, 1, " - Configure rules here, then return to loot decision")
-            
+
+            ImGui.TextDisabled("Applies '%s' to %d peers.", getRuleLabel(bulkRuleValue), matchingPeerCount)
+            if lootUI.peerItemRulesPopup.bulkTarget ~= "all" and unknownClassCount > 0 then
+                ImGui.TextDisabled("%d peers skipped because class is unknown.", unknownClassCount)
+            end
+
             ImGui.Separator()
 
             if ImGui.BeginTable("PeerItemRulesTable", 3, 
@@ -1426,21 +1569,16 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                     local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
                                     local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                                     
-                                    local success = false
-                                    -- Check if this item is from the fallback table (prefer original table source from popup)
-                                    local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") or 
-                                                          (ruleData and ruleData.tableSource == "lootrules_name_fallback")
-                                    if isFromFallback then
-                                        -- Use name-based rule saving for fallback table items
-                                        success = database.saveNameBasedRuleFor(peer, itemName, newRuleValue)
-                                    else
-                                        -- Use itemID-based saving for regular items
-                                        if peer == currentCharacter then
-                                            success = database.saveLootRule(itemName, itemID, newRuleValue, iconID)
-                                        else
-                                            success = database.saveLootRuleFor(peer, itemName, itemID, newRuleValue, iconID)
-                                        end
-                                    end
+                                    local success = savePeerPopupRuleFor(
+                                        peer,
+                                        itemName,
+                                        itemID,
+                                        iconID,
+                                        newRuleValue,
+                                        currentCharacter,
+                                        connectedPeerSet,
+                                        (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") and "lootrules_name_fallback" or (ruleData and ruleData.tableSource)
+                                    )
                                     
                                     if success then
                                         -- Update persistent state
@@ -1449,15 +1587,7 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                         peerState.changeTime = mq.gettime()
                                         logging.debug(string.format("[PeerRules] Successfully saved rule '%s' for %s -> %s (itemID=%d, iconID=%d)", 
                                             newRuleValue, peer, itemName, itemID, iconID))
-                                        
-                                        -- Force refresh of rules cache
-                                        if peer == currentCharacter then
-                                            database.refreshLootRuleCache()
-                                        else
-                                            database.refreshLootRuleCacheForPeer(peer)
-                                        end
-                                        
-                                        
+
                                         -- Debug: Check if rule is in cache after refresh
                                         local testRules = database.getLootRulesForPeer(peer)
                                         local testKey = itemID > 0 and string.format("%s_%d", itemName, itemID) or itemName
@@ -1496,35 +1626,22 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                                 local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
                                 local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                                 
-                                local success = false
-                                -- Check if this item is from the fallback table (prefer original table source from popup)
-                                local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") or 
-                                                      (ruleData and ruleData.tableSource == "lootrules_name_fallback")
-                                if isFromFallback then
-                                    -- Use name-based rule saving for fallback table items
-                                    success = database.saveNameBasedRuleFor(peer, itemName, updatedRule)
-                                else
-                                    -- Use itemID-based saving for regular items
-                                    if peer == currentCharacter then
-                                        success = database.saveLootRule(itemName, itemID, updatedRule, iconID)
-                                    else
-                                        success = database.saveLootRuleFor(peer, itemName, itemID, updatedRule, iconID)
-                                    end
-                                end
+                                local success = savePeerPopupRuleFor(
+                                    peer,
+                                    itemName,
+                                    itemID,
+                                    iconID,
+                                    updatedRule,
+                                    currentCharacter,
+                                    connectedPeerSet,
+                                    (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") and "lootrules_name_fallback" or (ruleData and ruleData.tableSource)
+                                )
                                 
                                 if success then
                                     peerState.threshold = newThreshold
                                     peerState.recentlyChanged = true
                                     peerState.changeTime = mq.gettime()
                                     logging.debug(string.format("[PeerRules] Successfully updated threshold to %d for %s -> %s", newThreshold, peer, itemName))
-                                    
-                                    -- Force refresh of rules cache
-                                    if peer == currentCharacter then
-                                        database.refreshLootRuleCache()
-                                    else
-                                        database.refreshLootRuleCacheForPeer(peer)
-                                    end
-                                    
                                 else
                                     logging.debug(string.format("[PeerRules] Failed to update threshold to %d for %s -> %s", newThreshold, peer, itemName))
                                 end
@@ -1539,35 +1656,22 @@ function uiPopups.drawPeerItemRulesPopup(lootUI, database, util)
                             local itemID = lootUI.peerItemRulesPopup.itemID or ruleData.item_id or 0
                             local iconID = lootUI.peerItemRulesPopup.iconID or ruleData.icon_id or 0
                             
-                            local success = false
-                            -- Check if this item is from the fallback table (prefer original table source from popup)
-                            local isFromFallback = (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") or 
-                                                  (ruleData and ruleData.tableSource == "lootrules_name_fallback")
-                            if isFromFallback then
-                                -- Use name-based rule saving for fallback table items
-                                success = database.saveNameBasedRuleFor(peer, itemName, "")
-                            else
-                                -- Use itemID-based saving for regular items
-                                if peer == currentCharacter then
-                                    success = database.saveLootRule(itemName, itemID, "", iconID)
-                                else
-                                    success = database.saveLootRuleFor(peer, itemName, itemID, "", iconID)
-                                end
-                            end
+                            local success = savePeerPopupRuleFor(
+                                peer,
+                                itemName,
+                                itemID,
+                                iconID,
+                                "",
+                                currentCharacter,
+                                connectedPeerSet,
+                                (lootUI.peerItemRulesPopup.tableSource == "lootrules_name_fallback") and "lootrules_name_fallback" or (ruleData and ruleData.tableSource)
+                            )
                             
                             if success then
                                 peerState.displayRule = "Unset"
                                 peerState.recentlyChanged = true
                                 peerState.changeTime = mq.gettime()
                                 logging.debug(string.format("[PeerRules] Successfully unset rule for %s -> %s", peer, itemName))
-                                
-                                -- Force refresh of rules cache
-                                if peer == currentCharacter then
-                                    database.refreshLootRuleCache()
-                                else
-                                    database.refreshLootRuleCacheForPeer(peer)
-                                end
-                                
                             else
                                 logging.debug(string.format("[PeerRules] Failed to unset rule for %s -> %s", peer, itemName))
                             end

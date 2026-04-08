@@ -203,6 +203,7 @@ config.floatingButton = {
     x = 100,
     y = 100,
     show = true,
+    style = "round",
 }
 
 -- Load function to read stored configuration
@@ -1371,6 +1372,16 @@ function config.setFloatingButtonPosition(x, y)
     config.floatingButton.x = tonumber(x) or config.floatingButton.x
     config.floatingButton.y = tonumber(y) or config.floatingButton.y
     config.save()
+end
+
+function config.setFloatingButtonStyle(style)
+    style = tostring(style or "round"):lower()
+    if style ~= "round" and style ~= "square" then
+        style = "round"
+    end
+    config.floatingButton.style = style
+    config.save()
+    return style
 end
 
 function config.setFloatingButtonVisible(show)

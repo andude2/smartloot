@@ -13,6 +13,7 @@ local floatingButtonState = {
     position = { x = 100, y = 100 },
     buttonSize = 60,
     alpha = 0.95,
+    style = "round",
     isDragging = false,
     dragOffset = { x = 0, y = 0 },
     SmartLootEngine = nil, -- Store reference to SmartLootEngine
@@ -47,6 +48,7 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
             floatingButtonState.position.x = cfg.x or floatingButtonState.position.x
             floatingButtonState.position.y = cfg.y or floatingButtonState.position.y
             floatingButtonState.show = (cfg.show ~= false)
+            floatingButtonState.style = cfg.style or floatingButtonState.style
         end
         settingsLoadedFromConfig = true
     end
@@ -69,6 +71,10 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
     end
 
     local buttonOpen = true
+    local buttonStyle = (floatingButtonState.style == "square") and "square" or "round"
+    local windowPadding = (buttonStyle == "square") and 6 or 0
+    ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0)
+    ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, windowPadding, windowPadding)
     if ImGui.Begin("SmartLoot Button", buttonOpen, buttonWindowFlags) then
         -- Get and update window position
         local windowPosX, windowPosY = ImGui.GetWindowPos()
@@ -76,7 +82,7 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         floatingButtonState.position.y = windowPosY
 
         -- === COMPACT BUTTON RENDERING (Always shown) ===
-        local buttonSize = floatingButtonState.buttonSize
+        local buttonSize = (buttonStyle == "square") and 50 or floatingButtonState.buttonSize
         
         -- Get current SmartLoot status
         local isActive = not (lootUI.paused or false)
@@ -91,11 +97,14 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         local buttonPosX, buttonPosY = ImGui.GetCursorScreenPos()
         local buttonCenter = { x = buttonPosX + buttonSize * 0.5, y = buttonPosY + buttonSize * 0.5 }
         local radius = buttonSize * 0.4
-        
+        local squareRounding = 10.0
+        local rectMinX, rectMinY = buttonPosX, buttonPosY
+        local rectMaxX, rectMaxY = buttonPosX + buttonSize, buttonPosY + buttonSize
+
         -- Check if button is hovered
         local mousePosX, mousePosY = ImGui.GetMousePos()
         local distanceToCenter = distance(mousePosX, mousePosY, buttonCenter.x, buttonCenter.y)
-        local isHovered = distanceToCenter <= radius and ImGui.IsWindowHovered()
+        local isHovered = false
         local isPressed = isHovered and ImGui.IsMouseDown(ImGuiMouseButton.Left)
         
         -- Determine colors based on state
@@ -123,40 +132,60 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         end
         textColor = {r=1.0, g=1.0, b=1.0, a=1.0 * alpha}
         
-        -- Draw glow effect when hovered
-        if isHovered then
-            local glowRadius = radius + 6.0
-            local glowColorU32 = colorToU32(glowColor.r, glowColor.g, glowColor.b, glowColor.a * 0.5)
-            drawList:AddCircleFilled(ImVec2(buttonCenter.x, buttonCenter.y), glowRadius, glowColorU32, 0)
-        end
-        
-        -- Draw main button circle
-        local baseColorU32 = colorToU32(baseColor.r, baseColor.g, baseColor.b, baseColor.a)
-        drawList:AddCircleFilled(ImVec2(buttonCenter.x, buttonCenter.y), radius, baseColorU32, 0)
-        
-        -- Add mode indicator ring for active states
-        if hasDatabase and isActive then
-            local ringColor = colorToU32(0.39, 0.78, 1.0, 0.6 * alpha)
-            drawList:AddCircle(ImVec2(buttonCenter.x, buttonCenter.y), radius + 2.0, ringColor, 0, 2.0)
-        end
-        
-        -- Add inner highlight/shadow
-        if isPressed then
-            local shadowColor = colorToU32(0, 0, 0, 0.3 * alpha)
-            drawList:AddCircleFilled(ImVec2(buttonCenter.x, buttonCenter.y), radius * 0.7, shadowColor, 0)
+        local clicked = false
+        if buttonStyle == "square" then
+            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, squareRounding)
+            ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(baseColor.r, baseColor.g, baseColor.b, baseColor.a))
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ImVec4(
+                math.min(baseColor.r + 0.04, 1.0),
+                math.min(baseColor.g + 0.04, 1.0),
+                math.min(baseColor.b + 0.04, 1.0),
+                math.min(baseColor.a + 0.12, 1.0)
+            ))
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, ImVec4(
+                math.max(baseColor.r - 0.06, 0.0),
+                math.max(baseColor.g - 0.06, 0.0),
+                math.max(baseColor.b - 0.06, 0.0),
+                math.min(baseColor.a + 0.1, 1.0)
+            ))
+            clicked = ImGui.Button("##SmartLootToggleSquare", buttonSize, buttonSize)
+            isHovered = ImGui.IsItemHovered()
+            isPressed = ImGui.IsItemActive()
+            ImGui.PopStyleColor(3)
+            ImGui.PopStyleVar()
         else
-            local highlightColor = colorToU32(1.0, 1.0, 1.0, 0.2 * alpha)
-            drawList:AddCircleFilled(ImVec2(buttonCenter.x - radius * 0.2, buttonCenter.y - radius * 0.2), radius * 0.3, highlightColor, 0)
+            isHovered = distanceToCenter <= radius and ImGui.IsWindowHovered()
+            isPressed = isHovered and ImGui.IsMouseDown(ImGuiMouseButton.Left)
+
+            -- Draw glow effect when hovered
+            if isHovered then
+                local glowColorU32 = colorToU32(glowColor.r, glowColor.g, glowColor.b, glowColor.a * 0.5)
+                local glowRadius = radius + 6.0
+                drawList:AddCircleFilled(ImVec2(buttonCenter.x, buttonCenter.y), glowRadius, glowColorU32, 0)
+            end
+
+            local baseColorU32 = colorToU32(baseColor.r, baseColor.g, baseColor.b, baseColor.a)
+            drawList:AddCircleFilled(ImVec2(buttonCenter.x, buttonCenter.y), radius, baseColorU32, 0)
+
+            -- Add mode indicator ring for active states
+            if hasDatabase and isActive then
+                local ringColor = colorToU32(0.39, 0.78, 1.0, 0.6 * alpha)
+                drawList:AddCircle(ImVec2(buttonCenter.x, buttonCenter.y), radius + 2.0, ringColor, 0, 2.0)
+            end
+
+            -- Add inner highlight/shadow
+            if isPressed then
+                local shadowColor = colorToU32(0, 0, 0, 0.3 * alpha)
+                drawList:AddCircleFilled(ImVec2(buttonCenter.x, buttonCenter.y), radius * 0.7, shadowColor, 0)
+            else
+                local highlightColor = colorToU32(1.0, 1.0, 1.0, 0.2 * alpha)
+                drawList:AddCircleFilled(ImVec2(buttonCenter.x - radius * 0.2, buttonCenter.y - radius * 0.2), radius * 0.3, highlightColor, 0)
+            end
+
+            local borderAlpha = (isHovered and 0.6 or 0.31) * alpha
+            local borderColor = colorToU32(1.0, 1.0, 1.0, borderAlpha)
+            drawList:AddCircle(ImVec2(buttonCenter.x, buttonCenter.y), radius, borderColor, 0, 1.5)
         end
-        
-        -- Draw border
-        local borderAlpha = (isHovered and 0.6 or 0.31) * alpha
-        local borderColor = colorToU32(1.0, 1.0, 1.0, borderAlpha)
-        drawList:AddCircle(ImVec2(buttonCenter.x, buttonCenter.y), radius, borderColor, 0, 1.5)
-        
-        -- Create invisible button for interaction
-        ImGui.SetCursorScreenPos(buttonPosX, buttonPosY)
-        local clicked = ImGui.InvisibleButton("SmartLootToggle", buttonSize, buttonSize)
         
         -- Draw text centered
         local textSize = ImGui.CalcTextSize(modeText)
@@ -177,7 +206,6 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         local indicatorBorder = colorToU32(1.0, 1.0, 1.0, 0.6 * alpha)
         drawList:AddCircle(ImVec2(indicatorPos.x, indicatorPos.y), 4.0, indicatorBorder, 0, 1.0)
         
-        -- Handle click - SIMPLIFIED: Just toggle main UI
         if clicked then
             toggle_ui()
         end
@@ -372,6 +400,23 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
                 end
                 ImGui.EndMenu()
             end
+
+            if ImGui.BeginMenu("Button Style") then
+                local function setStylePersist(style)
+                    floatingButtonState.style = style
+                    pcall(function()
+                        local config = require("modules.config")
+                        if config.setFloatingButtonStyle then config.setFloatingButtonStyle(style) end
+                    end)
+                end
+                if ImGui.MenuItem("Round", nil, floatingButtonState.style == "round") then
+                    setStylePersist("round")
+                end
+                if ImGui.MenuItem("Square", nil, floatingButtonState.style == "square") then
+                    setStylePersist("square")
+                end
+                ImGui.EndMenu()
+            end
             
             ImGui.Separator()
             
@@ -383,6 +428,7 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         end
     end
     ImGui.End()
+    ImGui.PopStyleVar(2)
     
     if not buttonOpen then
         floatingButtonState.show = false
@@ -453,6 +499,7 @@ function uiFloatingButton.saveSettings()
             "pos(" .. floatingButtonState.position.x .. "," .. floatingButtonState.position.y .. ") " ..
             "size(" .. floatingButtonState.buttonSize .. ") " ..
             "alpha(" .. floatingButtonState.alpha .. ") " ..
+            "style(" .. tostring(floatingButtonState.style) .. ") " ..
             "show(" .. tostring(floatingButtonState.show) .. ")", "info")
     end
 end
@@ -464,6 +511,7 @@ function uiFloatingButton.loadSettings(settings)
         floatingButtonState.buttonSize = settings.size or floatingButtonState.buttonSize
         floatingButtonState.alpha = settings.alpha or floatingButtonState.alpha
         floatingButtonState.show = settings.show ~= false
+        floatingButtonState.style = settings.style or floatingButtonState.style
     end
 end
 
