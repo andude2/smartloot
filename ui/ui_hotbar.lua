@@ -91,15 +91,64 @@ local buttonConfig = {
     },
     pausePeer = {
         id = "pausePeer",
-        name = "Pause/Resume",
+        name = "Peer Pause/Resume",
         icon = function(settings) return settings.peerTriggerPaused and (uiUtils.UI_ICONS.PLAY or "▶") or (uiUtils.UI_ICONS.PAUSE or "⏸") end,
-        text = function(settings) return settings.peerTriggerPaused and "Resume" or "Pause" end,
+        text = function(settings) 
+            if settings.peerTriggerPaused then
+                return {"Peer", "Resume"}
+            else
+                return {"Peer", "Pause"}
+            end
+        end,
         tooltip = function(settings) return settings.peerTriggerPaused and "Resume Peer Triggering" or "Pause Peer Triggering" end,
         color = function(settings) return settings.peerTriggerPaused and {0, 1, 0} or {1, 0.7, 0} end,
         visible = true,
         action = function(settings)
             settings.peerTriggerPaused = not settings.peerTriggerPaused
             logging.log(settings.peerTriggerPaused and "Peer triggering paused" or "Peer triggering resumed")
+        end
+    },
+    pauseEngine = {
+        id = "pauseEngine",
+        name = "Loot Pause/Resume",
+        icon = function()
+            local SmartLootEngine = require("modules.SmartLootEngine")
+            local isPaused = SmartLootEngine.getLootMode() == SmartLootEngine.LootMode.Disabled
+            return isPaused and (uiUtils.UI_ICONS.PLAY or "▶") or (uiUtils.UI_ICONS.PAUSE_CIRCLE or "⏸")
+        end,
+        text = function()
+            local SmartLootEngine = require("modules.SmartLootEngine")
+            local isPaused = SmartLootEngine.getLootMode() == SmartLootEngine.LootMode.Disabled
+            if isPaused then
+                return {"Loot", "Resume"}
+            else
+                return {"Loot", "Pause"}
+            end
+        end,
+        tooltip = function()
+            local SmartLootEngine = require("modules.SmartLootEngine")
+            local isPaused = SmartLootEngine.getLootMode() == SmartLootEngine.LootMode.Disabled
+            return isPaused and "Resume Looting Engine" or "Pause Looting Engine"
+        end,
+        color = function()
+            local SmartLootEngine = require("modules.SmartLootEngine")
+            local isPaused = SmartLootEngine.getLootMode() == SmartLootEngine.LootMode.Disabled
+            return isPaused and {0, 0.9, 0.2} or {0.9, 0.3, 0.1}
+        end,
+        visible = true,
+        action = function()
+            local SmartLootEngine = require("modules.SmartLootEngine")
+            local currentMode = SmartLootEngine.getLootMode()
+            if currentMode == SmartLootEngine.LootMode.Disabled then
+                -- Resume: restore to Background mode (stored in engine state)
+                local resumeMode = SmartLootEngine.state.pausePreviousMode or SmartLootEngine.LootMode.Background
+                SmartLootEngine.setLootMode(resumeMode, "Engine pause button resume")
+                logging.log("Engine resumed via hotbar button")
+            else
+                -- Pause: engine stores current mode automatically in setLootMode
+                SmartLootEngine.setLootMode(SmartLootEngine.LootMode.Disabled, "Engine pause button")
+                logging.log("Engine paused via hotbar button")
+            end
         end
     },
     toggleUI = {
@@ -232,7 +281,13 @@ function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
                 colorPushed = true
             end
             
+            -- Handle 2-row text labels (table format)
             local buttonText = icon or "?"
+            if type(buttonText) == "table" then
+                -- Format as 2-line label
+                buttonText = buttonText[1] .. "\n" .. buttonText[2]
+            end
+            
             local buttonPressed = false
             
             if hotbarConfig.compactMode then
@@ -413,7 +468,17 @@ function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
             -- Status display
             ImGui.TextColored(0.7, 0.7, 0.7, 1, "Status:")
             ImGui.Text("Peers Connected: " .. #(util.getConnectedPeers()))
-            ImGui.Text("SmartLoot: " .. (lootUI.paused and "Paused" or "Active"))
+            local SmartLootEngine = require("modules.SmartLootEngine")
+            local engineMode = SmartLootEngine.getLootMode()
+            local enginePaused = engineMode == SmartLootEngine.LootMode.Disabled
+            local peerPaused = lootUI.paused or false
+            if enginePaused then
+                ImGui.TextColored(1.0, 0.5, 0.2, 1, "SmartLoot: ENGINE PAUSED")
+            elseif peerPaused then
+                ImGui.TextColored(1.0, 0.8, 0.2, 1, "SmartLoot: PEER PAUSED")
+            else
+                ImGui.TextColored(0.2, 0.9, 0.2, 1, "SmartLoot: Active (" .. engineMode .. ")")
+            end
             
             ImGui.EndPopup()
         end
@@ -433,8 +498,15 @@ function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
                         ImGui.SetCursorPosY(ImGui.GetCursorPosY() - buttonSize - 5)
                     end
                     
+                    -- Check if button has 2-row text label
+                    local textValue = resolveValue(button.text, settings, lootUI)
+                    local labelText = button.name
+                    if type(textValue) == "table" then
+                        labelText = textValue[1] .. "\n" .. textValue[2]
+                    end
+                    
                     ImGui.PushStyleColor(ImGuiCol.Text, 0.8, 0.8, 0.8, 1)
-                    ImGui.Text(button.name)
+                    ImGui.Text(labelText)
                     ImGui.PopStyleColor()
                     
                     if not hotbarConfig.vertical and not firstLabel then

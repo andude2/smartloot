@@ -64,6 +64,7 @@ config.hotbar = {
         lootAll = true,
         autoKnown = true,
         pausePeer = true,
+        pauseEngine = true,
         toggleUI = true,
         addRule = true,
         peerCommands = true,
@@ -242,7 +243,18 @@ function config.load()
 
             -- Apply hotbar settings
             if configData.global.hotbar then
-                config.hotbar = configData.global.hotbar
+                -- Merge with defaults to ensure new buttons are added to existing configs
+                for key, value in pairs(configData.global.hotbar) do
+                    if key == "buttonVisibility" and type(value) == "table" then
+                        -- Merge button visibility with defaults
+                        for btnId, btnVisible in pairs(config.hotbar.buttonVisibility) do
+                            if value[btnId] == nil then
+                                value[btnId] = btnVisible
+                            end
+                        end
+                    end
+                    config.hotbar[key] = value
+                end
             end
 
             -- Apply live stats settings

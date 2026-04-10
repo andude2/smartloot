@@ -21,7 +21,9 @@ uiUtils.UI_ICONS = {
     REFRESH = Icons.FA_REFRESH,
     INFO = Icons.FA_INFO_CIRCLE,
     PAUSE = Icons.FA_PAUSE,
+    PAUSE_CIRCLE = Icons.FA_PAUSE_CIRCLE,
     PLAY = Icons.FA_PLAY,
+    PLAY_CIRCLE = Icons.FA_PLAY_CIRCLE,
     LIGHTNING = Icons.FA_BOLT
 }
 
