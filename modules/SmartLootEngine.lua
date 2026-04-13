@@ -1037,7 +1037,7 @@ function SmartLootEngine.processDirectedTasksTick()
                 return true
             end
 
-            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(foundItemInfo.name, targetSlot)
+            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(foundItemInfo.name, foundItemInfo.itemID, targetSlot)
             if hasLoreConflict then
                 util.printSmartLoot(
                     string.format("Directed: skipping lore-conflicting item '%s' (%s)",
@@ -1767,7 +1767,7 @@ end
 -- LORE ITEM CHECKING
 -- ============================================================================
 
-function SmartLootEngine.checkLoreConflict(itemName, itemSlot)
+function SmartLootEngine.checkLoreConflict(itemName, itemID, itemSlot)
     -- Lore checking is always enabled to prevent getting stuck on corpses
 
     -- Check if the item on the corpse is Lore
@@ -1818,7 +1818,7 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
 
         -- Check for Lore conflict before applying temp rule
         if tempRule == "Keep" then
-            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName,
+            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName, itemID,
                 SmartLootEngine.state.currentItem.slot)
             if hasLoreConflict then
                 logging.debug(string.format("[Engine] Temp rule %s overridden by Lore check: %s", tempRule, loreReason))
@@ -1909,8 +1909,8 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
 
     -- Check for Lore conflict before applying Keep rules
     if rule == "Keep" then
-        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName,
-            SmartLootEngine.state.currentItem.slot)
+        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName, itemID,
+                SmartLootEngine.state.currentItem.slot)
         if hasLoreConflict then
             logging.debug(string.format("[Engine] Keep rule overridden by Lore check: %s", loreReason))
             return "Ignore", itemID, iconID
@@ -1926,7 +1926,7 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
 
         if currentCount < threshold then
             -- Check for Lore conflict before keeping
-            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName,
+            local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName, itemID,
                 SmartLootEngine.state.currentItem.slot)
             if hasLoreConflict then
                 logging.debug(string.format("[Engine] KeepIfFewerThan rule overridden by Lore check: %s", loreReason))
@@ -3056,7 +3056,7 @@ function SmartLootEngine.processProcessingItemsState()
         return
     elseif rule == "Keep" then
         -- Final Lore check before executing loot action
-        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemInfo.name,
+        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemInfo.name, finalItemID,
             SmartLootEngine.state.currentItemIndex)
         if hasLoreConflict then
             logging.debug(string.format("[Engine] Final Keep rule overridden by Lore check: %s", loreReason))
@@ -3821,7 +3821,7 @@ function SmartLootEngine.resolvePendingDecision(itemName, itemID, selectedRule, 
 
     -- Check for Lore conflict if user selected Keep
     if selectedRule == "Keep" then
-        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName,
+        local hasLoreConflict, loreReason = SmartLootEngine.checkLoreConflict(itemName, itemID,
             SmartLootEngine.state.currentItemIndex)
         if hasLoreConflict then
             logging.debug(string.format("[Engine] Manual Keep decision overridden by Lore check: %s", loreReason))
