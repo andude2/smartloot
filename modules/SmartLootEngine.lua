@@ -711,7 +711,7 @@ function SmartLootEngine.completeUnknownReview()
                 allowed = #(item.corpseRefs or {})
             elseif type(localRule) == "string" and localRule:find("^KeepIfFewerThan") then
                 local threshold = parseKeepThreshold(localRule) or 0
-                local currentCount = mq.TLO.FindItemCount(item.itemName)() or 0
+                local currentCount = ((item.itemID or 0) > 0 and (mq.TLO.FindItemCount(item.itemID)() or 0)) or (mq.TLO.FindItemCount(item.itemName)() or 0)
                 allowed = math.max(0, threshold - currentCount)
             end
 
@@ -1782,7 +1782,7 @@ function SmartLootEngine.checkLoreConflict(itemName, itemSlot)
     end
 
     -- Check if we already have this Lore item
-    local currentCount = mq.TLO.FindItemCount(itemName)() or 0
+    local currentCount = ((itemID or 0) > 0 and (mq.TLO.FindItemCount(itemID)() or 0)) or (mq.TLO.FindItemCount(itemName)() or 0)
     if currentCount > 0 then
         local message = string.format("Already have Lore item: %s (count: %d)", itemName, currentCount)
         logging.debug(string.format("[Engine] Lore conflict detected: %s", message))
@@ -1922,7 +1922,7 @@ function SmartLootEngine.evaluateItemRule(itemName, itemID, iconID)
         -- Support extended format: KeepIfFewerThan:<n>[:AutoIgnore]
         local threshold = tonumber(rule:match("^KeepIfFewerThan:(%d+)")) or 0
         local autoIgnore = rule:find(":AutoIgnore") ~= nil
-        local currentCount = mq.TLO.FindItemCount(itemName)() or 0
+        local currentCount = ((itemID or 0) > 0 and (mq.TLO.FindItemCount(itemID)() or 0)) or (mq.TLO.FindItemCount(itemName)() or 0)
 
         if currentCount < threshold then
             -- Check for Lore conflict before keeping
@@ -2081,7 +2081,7 @@ function SmartLootEngine.executeLootAction(action, itemSlot, itemName, itemID, i
     SmartLootEngine.state.preLootItemCount = 0
 
     if action == SmartLootEngine.LootAction.Loot then
-        SmartLootEngine.state.preLootItemCount = mq.TLO.FindItemCount(itemName)() or 0
+        SmartLootEngine.state.preLootItemCount = ((itemID or 0) > 0 and (mq.TLO.FindItemCount(itemID)() or 0)) or (mq.TLO.FindItemCount(itemName)() or 0)
     end
 
     if action == SmartLootEngine.LootAction.Loot then
@@ -2118,7 +2118,7 @@ function SmartLootEngine.checkLootActionCompletion()
     local currentItemCount = 0
 
     if action == SmartLootEngine.LootAction.Loot then
-        currentItemCount = mq.TLO.FindItemCount(item.name)() or 0
+        currentItemCount = ((item.itemID or 0) > 0 and (mq.TLO.FindItemCount(item.itemID)() or 0)) or (mq.TLO.FindItemCount(item.name)() or 0)
     end
 
     local slotCleared  = lootWindowOpen and isCorpseSlotCleared(itemSlot, item.name) or false
