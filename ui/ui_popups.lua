@@ -733,9 +733,33 @@ end
 -- Loot Decision Popup - REDESIGNED with better layout and consistent button sizing
 function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
     if lootUI.currentItem then
+    local decisionKey = string.format("%s:%d:%s",
+        tostring(lootUI.currentItem.name or ""),
+        tonumber(lootUI.currentItem.itemID or 0),
+        tostring(lootUI.currentItem.index or 0))
+
+    if lootUI.pendingDecisionWindowKey ~= decisionKey then
+        lootUI.pendingDecisionWindowKey = decisionKey
+        lootUI.pendingDecisionWindowNeedsAttention = true
+    end
+
+    if lootUI.pendingDecisionWindowNeedsAttention then
+        local io = ImGui.GetIO()
+        if io and io.DisplaySize then
+            ImGui.SetNextWindowPos(io.DisplaySize.x * 0.5, io.DisplaySize.y * 0.3, ImGuiCond.Always, 0.5, 0.0)
+        end
+        if ImGui.SetNextWindowCollapsed then
+            ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always)
+        end
+        if ImGui.SetNextWindowFocus then
+            ImGui.SetNextWindowFocus()
+        end
+    end
+
     ImGui.SetNextWindowSize(520, 380, ImGuiCond.FirstUseEver)
     local decisionOpen = ImGui.Begin("SmartLoot - Loot Decision", true)
         if decisionOpen then
+            lootUI.pendingDecisionWindowNeedsAttention = false
             -- Get current item info
             local itemName = lootUI.currentItem.name
             local itemID = lootUI.currentItem.itemID or 0
@@ -1033,6 +1057,8 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                 
                 -- Clear currentItem for immediate processing
                 lootUI.currentItem = nil
+                lootUI.pendingDecisionWindowKey = nil
+                lootUI.pendingDecisionWindowNeedsAttention = false
                 lootUI.pendingDecisionRule = nil
                 lootUI.pendingThreshold = 1
             end
@@ -1231,6 +1257,8 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
                     skipRuleSave = true
                 }
                 lootUI.currentItem = nil
+                lootUI.pendingDecisionWindowKey = nil
+                lootUI.pendingDecisionWindowNeedsAttention = false
                 lootUI.pendingDecisionRule = nil
                 lootUI.pendingThreshold = 1
             end
@@ -1251,6 +1279,8 @@ function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
         -- If window was closed, clean up state
         if not decisionOpen then
             lootUI.currentItem = nil
+            lootUI.pendingDecisionWindowKey = nil
+            lootUI.pendingDecisionWindowNeedsAttention = false
             lootUI.pendingDecisionRule = nil
             lootUI.pendingThreshold = 1
         end
@@ -4142,6 +4172,7 @@ function uiPopups.drawRemoteBatchUnknownReviewPopup(lootUI, databaseRef, utilRef
                     end
                 end
                 ImGui.EndCombo()
+            end
 
             ImGui.TableSetColumnIndex(8)
             local currentSelection = lootUI.remoteBatchUnknownSelections[key]

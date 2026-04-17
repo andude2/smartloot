@@ -234,6 +234,8 @@ local lootUI = {
     paused = false,
     pendingDecisionPauseActive = false,
     pendingDecisionPausePrevMode = nil,
+    pendingDecisionWindowNeedsAttention = false,
+    pendingDecisionWindowKey = nil,
     pendingDeleteItem = nil,
     pendingDecision = nil,
     selectedPeer = "",
@@ -432,6 +434,10 @@ local function handleEnginePendingDecision()
     -- Check if engine needs a pending decision and UI doesn't have one
     if engineState.needsPendingDecision and not lootUI.currentItem then
         local pendingDetails = engineState.pendingItemDetails
+        local decisionKey = string.format("%s:%d:%s",
+            tostring(pendingDetails.itemName or ""),
+            tonumber(pendingDetails.itemID or 0),
+            tostring(engineState.currentItemIndex or 0))
 
         lootUI.currentItem = {
             name = pendingDetails.itemName,
@@ -441,6 +447,8 @@ local function handleEnginePendingDecision()
             itemID = pendingDetails.itemID,
             iconID = pendingDetails.iconID
         }
+        lootUI.pendingDecisionWindowKey = decisionKey
+        lootUI.pendingDecisionWindowNeedsAttention = true
 
         logging.debug("[Bridge] Created UI pending decision for: " .. pendingDetails.itemName)
     end
@@ -464,6 +472,8 @@ local function processUIDecisionForEngine()
 
         lootUI.pendingLootAction = nil
         lootUI.currentItem = nil
+        lootUI.pendingDecisionWindowKey = nil
+        lootUI.pendingDecisionWindowNeedsAttention = false
 
         logging.debug(string.format("[Bridge] Resolved engine decision for: %s with rule: %s (skipSave: %s)", 
             itemName, rule, tostring(skipRuleSave)))
@@ -474,6 +484,8 @@ local function processUIDecisionForEngine()
     if not engineState.needsPendingDecision and lootUI.currentItem and not lootUI.pendingLootAction then
         logging.debug("[Bridge] Clearing stale UI pending decision state")
         lootUI.currentItem = nil
+        lootUI.pendingDecisionWindowKey = nil
+        lootUI.pendingDecisionWindowNeedsAttention = false
     end
 end
 

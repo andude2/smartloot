@@ -98,8 +98,6 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
         local buttonCenter = { x = buttonPosX + buttonSize * 0.5, y = buttonPosY + buttonSize * 0.5 }
         local radius = buttonSize * 0.4
         local squareRounding = 10.0
-        local rectMinX, rectMinY = buttonPosX, buttonPosY
-        local rectMaxX, rectMaxY = buttonPosX + buttonSize, buttonPosY + buttonSize
 
         -- Check if button is hovered
         local mousePosX, mousePosY = ImGui.GetMousePos()
@@ -154,8 +152,9 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
             ImGui.PopStyleColor(3)
             ImGui.PopStyleVar()
         else
-            isHovered = distanceToCenter <= radius and ImGui.IsWindowHovered()
-            isPressed = isHovered and ImGui.IsMouseDown(ImGuiMouseButton.Left)
+            clicked = ImGui.InvisibleButton("##SmartLootToggleRound", buttonSize, buttonSize)
+            isHovered = ImGui.IsItemHovered() and distanceToCenter <= radius
+            isPressed = ImGui.IsItemActive() and distanceToCenter <= radius
 
             -- Draw glow effect when hovered
             if isHovered then
@@ -376,8 +375,7 @@ function uiFloatingButton.draw(lootUI, settings, toggle_ui, loot, util, SmartLoo
             ImGui.Separator()
             
             if ImGui.MenuItem("Reset Position") then
-                floatingButtonState.position.x = 100
-                floatingButtonState.position.y = 100
+                uiFloatingButton.setPosition(100, 100)
                 ImGui.SetWindowPos("SmartLoot Button", 100, 100)
             end
             
