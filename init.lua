@@ -561,7 +561,7 @@ local smartlootMailbox = actors.register("smartloot_mailbox", function(message)
         -- A peer is reporting completion to RGMain
         local sessionId = data.sessionId
         SmartLootEngine.reportRGMainCompletion(sender, sessionId)
-    elseif message.cmd == "refresh_rules" then
+    elseif data.cmd == "refresh_rules" then
         local database = require("modules.database")
         database.refreshLootRuleCache()
         logging.log("[SmartLoot] Reloaded local loot rule cache")
@@ -1565,7 +1565,6 @@ local uiDebugWindow = safeRequire("ui.ui_debug_window", "DebugWindow")
 local uiLiveStats = safeRequire("ui.ui_live_stats", "LiveStats")
 local uiHelp = safeRequire("ui.ui_help", "Help")
 local uiDirectedAssign = safeRequire("ui.ui_directed_assign", "DirectedAssign")
--- local uiTempRules = safeRequire("ui.ui_temp_rules", "TempRules") -- Removed - replaced with name-based rules
 
 -- Configure engine UI integration
 if dbInitialized then
@@ -1882,10 +1881,6 @@ mq.imgui.init("SmartLoot", function()
         uiPeerCommands.draw(lootUI, nil, util)
     end
 
-    -- Log window UI not implemented yet
-    -- if uiLogWindow then
-    --     uiLogWindow.draw(settings, logging)
-    -- end
 
     -- Live stats window
     if uiLiveStats then

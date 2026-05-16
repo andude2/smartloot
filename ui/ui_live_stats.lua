@@ -629,20 +629,6 @@ function liveStatsWindow.setCompactMode(compact)
     if configModule.save then configModule.save() end
 end
 
-function liveStatsWindow.setAlpha(alpha)
-    liveStatsWindow.alpha = math.max(0.1, math.min(1.0, alpha))
-    configModule.liveStats.alpha = liveStatsWindow.alpha
-    if configModule.save then configModule.save() end
-end
-
-function liveStatsWindow.setPosition(x, y)
-    liveStatsWindow.position.x = x
-    liveStatsWindow.position.y = y
-    configModule.liveStats.position.x = x
-    configModule.liveStats.position.y = y
-    if configModule.save then configModule.save() end
-end
-
 function liveStatsWindow.getConfig()
     return {
         show = liveStatsWindow.show,

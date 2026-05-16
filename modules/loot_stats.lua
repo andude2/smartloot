@@ -190,45 +190,19 @@ function lootStats.recordItemDrop(itemName, itemID, iconID, zoneName, quantity, 
   ]]
  
   local rows, err = lootStats.executeSelect(recentCheck, {itemID, corpseID, zoneName, serverName})
-  
-  -- Debug logging to see what we got back
-  logging.verbose(string.format("[LootStats] Duplicate check query result: rows=%s, err=%s", 
-                 tostring(rows and "table" or rows), tostring(err)))
-  
-  if rows then
-    logging.verbose(string.format("[LootStats] Rows length: %d", #rows))
-    if rows[1] then
-      logging.verbose(string.format("[LootStats] First row: %s", tostring(rows[1])))
-      if type(rows[1]) == "table" then
-        for i, v in ipairs(rows[1]) do
-          logging.verbose(string.format("[LootStats] Row[1][%d] = %s", i, tostring(v)))
-        end
-      end
-    end
-  end
-  
-  -- More robust way to check the count
+
   local isDuplicate = false
   if rows and #rows > 0 then
     local firstRow = rows[1]
     if firstRow then
       local count = nil
-      
-      -- Try different ways to access the count depending on how executeSelect returns data
       if type(firstRow) == "table" then
-        -- If it's an array-like table
         count = firstRow[1] or firstRow.count or firstRow["COUNT(*)"]
       elseif type(firstRow) == "number" then
-        -- If the first row is directly the number
         count = firstRow
       else
-        -- If it's some other format
         count = tonumber(tostring(firstRow))
       end
-      
-      logging.verbose(string.format("[LootStats] Extracted count value: %s (type: %s)", 
-                     tostring(count), type(count)))
-      
       if count and tonumber(count) and tonumber(count) > 0 then
         isDuplicate = true
       end
@@ -236,8 +210,6 @@ function lootStats.recordItemDrop(itemName, itemID, iconID, zoneName, quantity, 
   end
   
   if isDuplicate then
-    logging.verbose(string.format("[LootStats] Skipping duplicate drop record for %s from corpse %d (recorded within 5 minutes)",
-                   itemName, corpseID))
     return true
   end
  
@@ -272,82 +244,9 @@ function lootStats.recordItemDrop(itemName, itemID, iconID, zoneName, quantity, 
     return false
   end
  
-  logging.verbose(string.format("[LootStats] Successfully recorded drop: %s (ID:%d) from corpse %d", 
+  logging.verbose(string.format("[LootStats] Successfully recorded drop: %s (ID:%d) from corpse %d",
                  itemName, itemID, corpseID))
   return true
-end
-
--- Alternative simpler approach - skip the duplicate check for now to avoid the error
-function lootStats.recordItemDropSimple(itemName, itemID, iconID, zoneName, quantity, corpseID, npcName, npcID)
-  local serverName = mq.TLO.EverQuest.Server()
- 
-  -- Skip duplicate check for now - just insert
-  local stmt, err = prepareStatement([[
-    INSERT INTO loot_stats_drops
-    (item_name, item_id, icon_id, zone_name, item_count, corpse_id, npc_name, npc_id, dropped_by, server_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  ]])
- 
-  if not stmt then
-    logging.verbose(string.format("[LootStats] Error preparing recordItemDrop: %s", tostring(err)))
-    return false
-  end
- 
-  stmt:bind(1, itemName)
-  stmt:bind(2, itemID)
-  stmt:bind(3, iconID)
-  stmt:bind(4, zoneName)
-  stmt:bind(5, quantity)
-  stmt:bind(6, corpseID)
-  stmt:bind(7, npcName)
-  stmt:bind(8, npcID)
-  stmt:bind(9, npcName)
-  stmt:bind(10, serverName)
- 
-  local result = stmt:step()
-  stmt:finalize()
- 
-  if result ~= sqlite3.DONE then
-    logging.verbose(string.format("[LootStats] Error recording drop: %s", getConnection():errmsg()))
-    return false
-  end
- 
-  return true
-end
-
--- If you want to add back duplicate checking later, you need to understand 
--- how your executeSelect function returns data. Add this debug function:
-function lootStats.debugExecuteSelect()
-  local testQuery = "SELECT COUNT(*) FROM loot_stats_drops LIMIT 1"
-  local rows, err = lootStats.executeSelect(testQuery)
-  
-  logging.log("=== executeSelect Debug ===")
-  logging.log("Query: " .. testQuery)
-  logging.log("Error: " .. tostring(err))
-  logging.log("Rows type: " .. type(rows))
-  
-  if rows then
-    logging.log("Rows length: " .. #rows)
-    if rows[1] then
-      logging.log("First row type: " .. type(rows[1]))
-      logging.log("First row value: " .. tostring(rows[1]))
-      
-      if type(rows[1]) == "table" then
-        logging.log("First row is table with " .. #(rows[1]) .. " elements")
-        for i, v in ipairs(rows[1]) do
-          logging.log(string.format("  [%d] = %s (%s)", i, tostring(v), type(v)))
-        end
-        
-        -- Check for named keys
-        for k, v in pairs(rows[1]) do
-          if type(k) ~= "number" then
-            logging.log(string.format("  ['%s'] = %s (%s)", k, tostring(v), type(v)))
-          end
-        end
-      end
-    end
-  end
-  logging.log("=== End Debug ===")
 end
 
 function lootStats.getUniqueZones()
@@ -566,11 +465,6 @@ function lootStats.getItemDropRates(itemName, filters)
   end
 
   -- Construct the full query with proper parameter placeholders
-  local corpseParamPlaceholders = string.rep("?,", #corpseParams):sub(1, -2)
-  if #corpseParams > 0 then
-    corpseParamPlaceholders = "AND timestamp >= ? " .. (filters.endDate and "AND timestamp < ?" or "")
-  end
-
   local sql = string.format([[
     SELECT
       d.zone_name,

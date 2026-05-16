@@ -28,9 +28,6 @@ end
 
 -- Helper: whether current character should avoid triggering peers (whitelist-only + flag)
 local function _preventPeerTriggers()
-    local ok = false
-    local success = false
-    -- Guarded checks in case config functions are missing
     if config and config.isWhitelistOnly then
         local wl = false
         local noTrig = false
@@ -823,15 +820,15 @@ function SmartLootEngine.enqueueDirectedTasks(tasks)
             if #normalizedItems == 0 then
                 logging.debug("[Directed] Skipped task with no valid items")
             else
-            table.insert(SmartLootEngine.state.directedTasksQueue, {
-                corpseSpawnID = tonumber(t.corpseSpawnID) or tonumber(t.corpseID) or 0,
-                corpseID = tonumber(t.corpseID) or tonumber(t.corpseSpawnID) or 0,
-                corpseName = tostring(t.corpseName or ""),
-                itemName = tostring(normalizedItems[1].itemName),
-                items = normalizedItems,
-                activeItemIndex = nil,
-            })
-            validTasks = validTasks + 1
+                table.insert(SmartLootEngine.state.directedTasksQueue, {
+                    corpseSpawnID = tonumber(t.corpseSpawnID) or tonumber(t.corpseID) or 0,
+                    corpseID = tonumber(t.corpseID) or tonumber(t.corpseSpawnID) or 0,
+                    corpseName = tostring(t.corpseName or ""),
+                    itemName = tostring(normalizedItems[1].itemName),
+                    items = normalizedItems,
+                    activeItemIndex = nil,
+                })
+                validTasks = validTasks + 1
             end
         else
             logging.debug("[Directed] Skipped invalid task: " .. tostring(t and t.itemName or "unknown"))
@@ -849,12 +846,6 @@ function SmartLootEngine.enqueueDirectedTasks(tasks)
     end
 end
 
-function SmartLootEngine.startDirectedTaskProcessing()
-    if #SmartLootEngine.state.directedTasksQueue > 0 then
-        SmartLootEngine.state.directedProcessing.active = true
-        SmartLootEngine.state.directedProcessing.step = "idle"
-    end
-end
 
 local function _beginNextDirectedTask()
     SmartLootEngine.state.directedProcessing.currentTask = table.remove(SmartLootEngine.state.directedTasksQueue, 1)
@@ -2234,77 +2225,6 @@ end
 function SmartLootEngine.queueIgnoredItem(itemName, itemID)
     table.insert(SmartLootEngine.state.ignoredItemsThisSession, { name = itemName, id = itemID })
     logging.debug(string.format("[Engine] Queued ignored item for peer processing: %s (ID: %d)", itemName, itemID))
-end
-
-function SmartLootEngine.findNextInterestedPeer(itemName, itemID)
-    if not SmartLootEngine.config.enablePeerCoordination or _preventPeerTriggers() then
-        return nil
-    end
-    -- Check for temporary peer assignment first
-    local assignedPeer = tempRules.getPeerAssignment(itemName)
-    if assignedPeer then
-        -- Verify peer is connected
-        local connectedPeers = util.getConnectedPeers()
-        for _, peer in ipairs(connectedPeers) do
-            if peer:lower() == assignedPeer:lower() then
-                return assignedPeer
-            end
-        end
-    end
-
-    local currentToon = util.getCurrentToon()
-    local connectedPeers = util.getConnectedPeers()
-
-    if not config.peerLootOrder or #config.peerLootOrder == 0 then
-        return nil
-    end
-
-    -- Find current character's position in loot order
-    local currentIndex = nil
-    for i, peer in ipairs(config.peerLootOrder) do
-        if peer:lower() == currentToon:lower() then
-            currentIndex = i
-            break
-        end
-    end
-
-    if not currentIndex then
-        return nil
-    end
-
-    -- Check peers after current character
-    for i = currentIndex + 1, #config.peerLootOrder do
-        local peer = config.peerLootOrder[i]
-
-        -- Check if peer is connected
-        local isConnected = false
-        for _, connectedPeer in ipairs(connectedPeers) do
-            if peer:lower() == connectedPeer:lower() then
-                isConnected = true
-                break
-            end
-        end
-
-        if isConnected then
-            local peerRules = database.getLootRulesForPeer(peer)
-            local ruleData = nil
-            if itemID and itemID > 0 then
-                local compositeKey = string.format("%s_%d", itemName, itemID)
-                ruleData = peerRules[compositeKey]
-            end
-
-            if not ruleData then
-                local lowerName = string.lower(itemName)
-                ruleData = peerRules[lowerName] or peerRules[itemName]
-            end
-
-            if ruleData and (ruleData.rule == "Keep" or ruleData.rule:find("KeepIfFewerThan")) then
-                return peer
-            end
-        end
-    end
-
-    return nil
 end
 
 function SmartLootEngine.findNextInterestedPeerInZone(itemName, itemID)

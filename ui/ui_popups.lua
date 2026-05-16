@@ -10,7 +10,6 @@ local json = require("dkjson")
 local SmartLootEngine = require("modules.SmartLootEngine")
 
 local uiPopups = {}
-local uiUtils = require("ui.ui_utils")
 
 local function formatCopperValue(value)
     value = tonumber(value) or 0
@@ -733,558 +732,558 @@ end
 -- Loot Decision Popup - REDESIGNED with better layout and consistent button sizing
 function uiPopups.drawLootDecisionPopup(lootUI, settings, loot)
     if lootUI.currentItem then
-    local decisionKey = string.format("%s:%d:%s",
-        tostring(lootUI.currentItem.name or ""),
-        tonumber(lootUI.currentItem.itemID or 0),
-        tostring(lootUI.currentItem.index or 0))
+            local decisionKey = string.format("%s:%d:%s",
+            tostring(lootUI.currentItem.name or ""),
+            tonumber(lootUI.currentItem.itemID or 0),
+            tostring(lootUI.currentItem.index or 0))
 
-    if lootUI.pendingDecisionWindowKey ~= decisionKey then
-        lootUI.pendingDecisionWindowKey = decisionKey
-        lootUI.pendingDecisionWindowNeedsAttention = true
-    end
-
-    if lootUI.pendingDecisionWindowNeedsAttention then
-        local io = ImGui.GetIO()
-        if io and io.DisplaySize then
-            ImGui.SetNextWindowPos(io.DisplaySize.x * 0.5, io.DisplaySize.y * 0.3, ImGuiCond.Always, 0.5, 0.0)
-        end
-        if ImGui.SetNextWindowCollapsed then
-            ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always)
-        end
-        if ImGui.SetNextWindowFocus then
-            ImGui.SetNextWindowFocus()
-        end
-    end
-
-    ImGui.SetNextWindowSize(520, 380, ImGuiCond.FirstUseEver)
-    local decisionOpen = ImGui.Begin("SmartLoot - Loot Decision", true)
-        if decisionOpen then
-            lootUI.pendingDecisionWindowNeedsAttention = false
-            -- Get current item info
-            local itemName = lootUI.currentItem.name
-            local itemID = lootUI.currentItem.itemID or 0
-            local iconID = lootUI.currentItem.iconID or 0
-            
-            -- Get item value from corpse (in copper)
-            local itemValue = 0
-            local tributeValue = lootUI.currentItem.tributeValue or 0
-            local itemIndex = lootUI.currentItem.index
-            if itemIndex then
-                local corpseItem = mq.TLO.Corpse.Item(itemIndex)
-                if corpseItem and corpseItem() then
-                    itemValue = corpseItem.Value() or 0
-                    tributeValue = corpseItem.Tribute() or tributeValue
-                end
+            if lootUI.pendingDecisionWindowKey ~= decisionKey then
+            lootUI.pendingDecisionWindowKey = decisionKey
+            lootUI.pendingDecisionWindowNeedsAttention = true
             end
-            
-            -- Convert copper to platinum display (1000 copper = 1 platinum)
-            local platValue = math.floor(itemValue / 1000)
-            local goldValue = math.floor((itemValue % 1000) / 100)
-            local silverValue = math.floor((itemValue % 100) / 10)
-            local copperValue = itemValue % 10
-            
-            -- Build value string
-            local valueStr = ""
-            if platValue > 0 then
-                valueStr = string.format("%dp", platValue)
-                if goldValue > 0 then valueStr = valueStr .. string.format(" %dg", goldValue) end
-            elseif goldValue > 0 then
-                valueStr = string.format("%dg", goldValue)
-                if silverValue > 0 then valueStr = valueStr .. string.format(" %ds", silverValue) end
-            elseif silverValue > 0 then
-                valueStr = string.format("%ds", silverValue)
-                if copperValue > 0 then valueStr = valueStr .. string.format(" %dc", copperValue) end
-            elseif copperValue > 0 then
-                valueStr = string.format("%dc", copperValue)
-            else
-                valueStr = "0c"
+
+            if lootUI.pendingDecisionWindowNeedsAttention then
+            local io = ImGui.GetIO()
+            if io and io.DisplaySize then
+                ImGui.SetNextWindowPos(io.DisplaySize.x * 0.5, io.DisplaySize.y * 0.3, ImGuiCond.Always, 0.5, 0.0)
             end
-            
-            -- Compact header row with icon + info
-            local uiUtils = require("smartloot.ui.ui_utils")
-            local iconSize = 42
-            ImGui.BeginGroup()
-            uiUtils.drawItemIcon(iconID or 0, iconSize, iconSize)
-            ImGui.EndGroup()
-            ImGui.SameLine()
-            ImGui.BeginGroup()
-            ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 0.6, 1)
-            local itemLabel = itemName .. "##pendingItemLink"
-            if ImGui.Selectable(itemLabel, false, ImGuiSelectableFlags.DontClosePopups) and itemIndex then
-                pcall(function()
-                    local corpseItem = mq.TLO.Corpse.Item(itemIndex)
-                    if corpseItem and corpseItem() then
-                        local itemLink = corpseItem.ItemLink()
-                        if itemLink and itemLink ~= "" and itemLink ~= "NULL" then
-                            local wrappedLink = string.format("\x12%s\x12", itemLink)
-                            local links = mq.ExtractLinks(wrappedLink)
-                            if links and #links > 0 then
-                                mq.ExecuteTextLink(links[1])
-                            else
-                                links = mq.ExtractLinks(itemLink)
-                                if links and #links > 0 then
-                                    mq.ExecuteTextLink(links[1])
+            if ImGui.SetNextWindowCollapsed then
+                ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always)
+            end
+            if ImGui.SetNextWindowFocus then
+                ImGui.SetNextWindowFocus()
+            end
+            end
+
+            ImGui.SetNextWindowSize(520, 380, ImGuiCond.FirstUseEver)
+            local decisionOpen = ImGui.Begin("SmartLoot - Loot Decision", true)
+                if decisionOpen then
+                    lootUI.pendingDecisionWindowNeedsAttention = false
+                    -- Get current item info
+                    local itemName = lootUI.currentItem.name
+                    local itemID = lootUI.currentItem.itemID or 0
+                    local iconID = lootUI.currentItem.iconID or 0
+                
+                    -- Get item value from corpse (in copper)
+                    local itemValue = 0
+                    local tributeValue = lootUI.currentItem.tributeValue or 0
+                    local itemIndex = lootUI.currentItem.index
+                    if itemIndex then
+                        local corpseItem = mq.TLO.Corpse.Item(itemIndex)
+                        if corpseItem and corpseItem() then
+                            itemValue = corpseItem.Value() or 0
+                            tributeValue = corpseItem.Tribute() or tributeValue
+                        end
+                    end
+                
+                    -- Convert copper to platinum display (1000 copper = 1 platinum)
+                    local platValue = math.floor(itemValue / 1000)
+                    local goldValue = math.floor((itemValue % 1000) / 100)
+                    local silverValue = math.floor((itemValue % 100) / 10)
+                    local copperValue = itemValue % 10
+                
+                    -- Build value string
+                    local valueStr = ""
+                    if platValue > 0 then
+                        valueStr = string.format("%dp", platValue)
+                        if goldValue > 0 then valueStr = valueStr .. string.format(" %dg", goldValue) end
+                    elseif goldValue > 0 then
+                        valueStr = string.format("%dg", goldValue)
+                        if silverValue > 0 then valueStr = valueStr .. string.format(" %ds", silverValue) end
+                    elseif silverValue > 0 then
+                        valueStr = string.format("%ds", silverValue)
+                        if copperValue > 0 then valueStr = valueStr .. string.format(" %dc", copperValue) end
+                    elseif copperValue > 0 then
+                        valueStr = string.format("%dc", copperValue)
+                    else
+                        valueStr = "0c"
+                    end
+                
+                    -- Compact header row with icon + info
+                    local uiUtils = require("smartloot.ui.ui_utils")
+                    local iconSize = 42
+                    ImGui.BeginGroup()
+                    uiUtils.drawItemIcon(iconID or 0, iconSize, iconSize)
+                    ImGui.EndGroup()
+                    ImGui.SameLine()
+                    ImGui.BeginGroup()
+                    ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 0.6, 1)
+                    local itemLabel = itemName .. "##pendingItemLink"
+                    if ImGui.Selectable(itemLabel, false, ImGuiSelectableFlags.DontClosePopups) and itemIndex then
+                        pcall(function()
+                            local corpseItem = mq.TLO.Corpse.Item(itemIndex)
+                            if corpseItem and corpseItem() then
+                                local itemLink = corpseItem.ItemLink()
+                                if itemLink and itemLink ~= "" and itemLink ~= "NULL" then
+                                    local wrappedLink = string.format("\x12%s\x12", itemLink)
+                                    local links = mq.ExtractLinks(wrappedLink)
+                                    if links and #links > 0 then
+                                        mq.ExecuteTextLink(links[1])
+                                    else
+                                        links = mq.ExtractLinks(itemLink)
+                                        if links and #links > 0 then
+                                            mq.ExecuteTextLink(links[1])
+                                        end
+                                    end
                                 end
+                            end
+                        end)
+                    end
+                    ImGui.PopStyleColor()
+                    if ImGui.IsItemHovered() then
+                        ImGui.SetTooltip("Click to inspect item")
+                    end
+                    ImGui.TextDisabled("Item ID: %d", itemID)
+                    ImGui.SameLine()
+                    ImGui.TextDisabled("Corpse Slot: %s", tostring(itemIndex or "?"))
+                    local config = require("modules.config")
+                    local toonName = mq.TLO.Me.Name() or "unknown"
+                    local showTribute = config.isShowPendingDecisionTribute and config.isShowPendingDecisionTribute(toonName) or true
+                    ImGui.Text("Value:")
+                    ImGui.SameLine()
+                    local valueColor = {0.6, 0.4, 0.3, 1}
+                    if platValue > 0 then valueColor = {0.9, 0.85, 0.4, 1}
+                    elseif goldValue > 0 then valueColor = {0.9, 0.7, 0.3, 1}
+                    elseif silverValue > 0 then valueColor = {0.7, 0.7, 0.7, 1} end
+                    ImGui.TextColored(valueColor[1], valueColor[2], valueColor[3], valueColor[4], valueStr)
+                    if showTribute then
+                        ImGui.SameLine()
+                        ImGui.TextDisabled("|")
+                        ImGui.SameLine()
+                        ImGui.Text("Tribute:")
+                        ImGui.SameLine()
+                        ImGui.TextColored(0.7, 0.9, 1.0, 1.0, tostring(tributeValue or 0))
+                    end
+                    ImGui.EndGroup()
+                
+                    ImGui.Spacing()
+                    ImGui.Separator()
+                    ImGui.Spacing()
+
+                    -- Quick pause/resume controls for this decision
+                    ImGui.Text("Processing control:")
+                    ImGui.SameLine()
+                    ImGui.TextDisabled("Pause SmartLoot while you decide")
+
+                    local pauseActive = lootUI.pendingDecisionPauseActive
+                    local pauseLabel = pauseActive and "Resume" or "Pause"
+                    local pauseColor = pauseActive and {0.2, 0.7, 0.2, 0.9} or {0.8, 0.3, 0.3, 0.9}
+                    local pauseHoverColor = pauseActive and {0.3, 0.8, 0.3, 1.0} or {0.9, 0.4, 0.4, 1.0}
+                    local pauseActiveColor = pauseActive and {0.1, 0.5, 0.1, 1.0} or {0.7, 0.2, 0.2, 1.0}
+
+                    ImGui.PushStyleColor(ImGuiCol.Button, pauseColor[1], pauseColor[2], pauseColor[3], pauseColor[4])
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, pauseHoverColor[1], pauseHoverColor[2], pauseHoverColor[3], pauseHoverColor[4])
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, pauseActiveColor[1], pauseActiveColor[2], pauseActiveColor[3], pauseActiveColor[4])
+
+                    if ImGui.Button(pauseLabel .. "##PendingDecisionPause", 80, 22) then
+                        if pauseActive then
+                            if lootUI.resumeEngineAfterPendingDecision then
+                                lootUI.resumeEngineAfterPendingDecision("Manual resume from pending decision window")
+                            end
+                        else
+                            if lootUI.pauseEngineForPendingDecision then
+                                lootUI.pauseEngineForPendingDecision()
                             end
                         end
                     end
-                end)
-            end
-            ImGui.PopStyleColor()
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Click to inspect item")
-            end
-            ImGui.TextDisabled("Item ID: %d", itemID)
-            ImGui.SameLine()
-            ImGui.TextDisabled("Corpse Slot: %s", tostring(itemIndex or "?"))
-            local config = require("modules.config")
-            local toonName = mq.TLO.Me.Name() or "unknown"
-            local showTribute = config.isShowPendingDecisionTribute and config.isShowPendingDecisionTribute(toonName) or true
-            ImGui.Text("Value:")
-            ImGui.SameLine()
-            local valueColor = {0.6, 0.4, 0.3, 1}
-            if platValue > 0 then valueColor = {0.9, 0.85, 0.4, 1}
-            elseif goldValue > 0 then valueColor = {0.9, 0.7, 0.3, 1}
-            elseif silverValue > 0 then valueColor = {0.7, 0.7, 0.7, 1} end
-            ImGui.TextColored(valueColor[1], valueColor[2], valueColor[3], valueColor[4], valueStr)
-            if showTribute then
-                ImGui.SameLine()
-                ImGui.TextDisabled("|")
-                ImGui.SameLine()
-                ImGui.Text("Tribute:")
-                ImGui.SameLine()
-                ImGui.TextColored(0.7, 0.9, 1.0, 1.0, tostring(tributeValue or 0))
-            end
-            ImGui.EndGroup()
-            
-            ImGui.Spacing()
-            ImGui.Separator()
-            ImGui.Spacing()
 
-            -- Quick pause/resume controls for this decision
-            ImGui.Text("Processing control:")
-            ImGui.SameLine()
-            ImGui.TextDisabled("Pause SmartLoot while you decide")
-
-            local pauseActive = lootUI.pendingDecisionPauseActive
-            local pauseLabel = pauseActive and "Resume" or "Pause"
-            local pauseColor = pauseActive and {0.2, 0.7, 0.2, 0.9} or {0.8, 0.3, 0.3, 0.9}
-            local pauseHoverColor = pauseActive and {0.3, 0.8, 0.3, 1.0} or {0.9, 0.4, 0.4, 1.0}
-            local pauseActiveColor = pauseActive and {0.1, 0.5, 0.1, 1.0} or {0.7, 0.2, 0.2, 1.0}
-
-            ImGui.PushStyleColor(ImGuiCol.Button, pauseColor[1], pauseColor[2], pauseColor[3], pauseColor[4])
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, pauseHoverColor[1], pauseHoverColor[2], pauseHoverColor[3], pauseHoverColor[4])
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, pauseActiveColor[1], pauseActiveColor[2], pauseActiveColor[3], pauseActiveColor[4])
-
-            if ImGui.Button(pauseLabel .. "##PendingDecisionPause", 80, 22) then
-                if pauseActive then
-                    if lootUI.resumeEngineAfterPendingDecision then
-                        lootUI.resumeEngineAfterPendingDecision("Manual resume from pending decision window")
+                    if ImGui.IsItemHovered() then
+                        ImGui.SetTooltip(pauseActive and "Resume SmartLoot processing" or "Pause SmartLoot until you're ready")
                     end
-                else
-                    if lootUI.pauseEngineForPendingDecision then
-                        lootUI.pauseEngineForPendingDecision()
-                    end
-                end
-            end
+                    ImGui.PopStyleColor(3)
 
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip(pauseActive and "Resume SmartLoot processing" or "Pause SmartLoot until you're ready")
-            end
-            ImGui.PopStyleColor(3)
-
-            if pauseActive then
-                ImGui.SameLine()
-                ImGui.TextColored(1.0, 0.9, 0.4, 1.0, "Processing Paused")
-            else
-                ImGui.SameLine()
-                ImGui.TextColored(0.7, 0.9, 0.7, 1.0, "Looting")
-            end
-
-            ImGui.Spacing()
-            
-            -- Rule selection section
-            ImGui.Text("Select rule to apply:")
-            ImGui.Separator()
-            
-            -- Initialize selected rule state
-            -- Load default from config, with validation and fallback to "Keep"
-            if not lootUI.pendingDecisionRule then
-                local config = require("modules.config")
-                local toonName = mq.TLO.Me.Name() or "unknown"
-                local selection = "Keep"  -- default fallback
-                if config.getDefaultPromptDropdown then
-                    selection = config.getDefaultPromptDropdown(toonName)
-                end
-                -- Validate it's a known rule
-                local validRules = {"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}
-                local isValid = false
-                for _, rule in ipairs(validRules) do
-                    if selection == rule then
-                        isValid = true
-                        break
+                    if pauseActive then
+                        ImGui.SameLine()
+                        ImGui.TextColored(1.0, 0.9, 0.4, 1.0, "Processing Paused")
+                    else
+                        ImGui.SameLine()
+                        ImGui.TextColored(0.7, 0.9, 0.7, 1.0, "Looting")
                     end
-                end
-                lootUI.pendingDecisionRule = isValid and selection or "Keep"
-            end
-            lootUI.pendingThreshold = lootUI.pendingThreshold or 1
-            
-            -- Rule selection (dropdown or buttons based on config)
-            local toonName = mq.TLO.Me.Name() or "unknown"
-            local useButtons = config.isUsePendingDecisionButtons and config.isUsePendingDecisionButtons(toonName) or false
-            local actionLayout = config.getPendingDecisionActionLayout and config.getPendingDecisionActionLayout(toonName) or "selector"
-            local quickButtons = config.getPendingDecisionQuickButtons and config.getPendingDecisionQuickButtons(toonName) or {
-                allKeep = true,
-                allIgnore = true,
-                meKeep = true,
-                meIgnore = true,
-            }
 
-            if useButtons then
-                -- Button mode: row of small buttons
-                local buttonRules = {
-                    {rule = "Keep", label = "Keep", width = 45},
-                    {rule = "Ignore", label = "Ignore", width = 45},
-                    {rule = "Destroy", label = "Destroy", width = 50},
-                    {rule = "KeepIfFewerThan", label = "K<N", width = 35},
-                    {rule = "KeepThenIgnore", label = "KTI", width = 35}
-                }
-                for bi, btn in ipairs(buttonRules) do
-                    if bi > 1 then ImGui.SameLine() end
-                    local isSelected = (lootUI.pendingDecisionRule == btn.rule)
-                    if isSelected then
-                        ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.2, 1.0)
+                    ImGui.Spacing()
+                
+                    -- Rule selection section
+                    ImGui.Text("Select rule to apply:")
+                    ImGui.Separator()
+                
+                    -- Initialize selected rule state
+                    -- Load default from config, with validation and fallback to "Keep"
+                    if not lootUI.pendingDecisionRule then
+                        local config = require("modules.config")
+                        local toonName = mq.TLO.Me.Name() or "unknown"
+                        local selection = "Keep"  -- default fallback
+                        if config.getDefaultPromptDropdown then
+                            selection = config.getDefaultPromptDropdown(toonName)
+                        end
+                        -- Validate it's a known rule
+                        local validRules = {"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}
+                        local isValid = false
+                        for _, rule in ipairs(validRules) do
+                            if selection == rule then
+                                isValid = true
+                                break
+                            end
+                        end
+                        lootUI.pendingDecisionRule = isValid and selection or "Keep"
                     end
-                    if ImGui.Button(btn.label .. "##pendingBtn_" .. bi, btn.width, 0) then
-                        lootUI.pendingDecisionRule = btn.rule
+                    lootUI.pendingThreshold = lootUI.pendingThreshold or 1
+                
+                    -- Rule selection (dropdown or buttons based on config)
+                    local toonName = mq.TLO.Me.Name() or "unknown"
+                    local useButtons = config.isUsePendingDecisionButtons and config.isUsePendingDecisionButtons(toonName) or false
+                    local actionLayout = config.getPendingDecisionActionLayout and config.getPendingDecisionActionLayout(toonName) or "selector"
+                    local quickButtons = config.getPendingDecisionQuickButtons and config.getPendingDecisionQuickButtons(toonName) or {
+                        allKeep = true,
+                        allIgnore = true,
+                        meKeep = true,
+                        meIgnore = true,
+                    }
+
+                    if useButtons then
+                        -- Button mode: row of small buttons
+                        local buttonRules = {
+                            {rule = "Keep", label = "Keep", width = 45},
+                            {rule = "Ignore", label = "Ignore", width = 45},
+                            {rule = "Destroy", label = "Destroy", width = 50},
+                            {rule = "KeepIfFewerThan", label = "K<N", width = 35},
+                            {rule = "KeepThenIgnore", label = "KTI", width = 35}
+                        }
+                        for bi, btn in ipairs(buttonRules) do
+                            if bi > 1 then ImGui.SameLine() end
+                            local isSelected = (lootUI.pendingDecisionRule == btn.rule)
+                            if isSelected then
+                                ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.2, 1.0)
+                            end
+                            if ImGui.Button(btn.label .. "##pendingBtn_" .. bi, btn.width, 0) then
+                                lootUI.pendingDecisionRule = btn.rule
+                            end
+                            if isSelected then
+                                ImGui.PopStyleColor()
+                            end
+                            if ImGui.IsItemHovered() then
+                                ImGui.SetTooltip(btn.rule)
+                            end
+                        end
+                    else
+                        -- Dropdown mode (default)
+                        ImGui.SetNextItemWidth(180)
+                        if ImGui.BeginCombo("##pendingRule", lootUI.pendingDecisionRule) then
+                            for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
+                                local isSelected = (lootUI.pendingDecisionRule == rule)
+                                if ImGui.Selectable(rule, isSelected) then
+                                    lootUI.pendingDecisionRule = rule
+                                end
+                                if isSelected then
+                                    ImGui.SetItemDefaultFocus()
+                                end
+                            end
+                            ImGui.EndCombo()
+                        end
                     end
-                    if isSelected then
-                        ImGui.PopStyleColor()
+                
+                    -- Threshold input for KeepIfFewerThan
+                    if lootUI.pendingDecisionRule == "KeepIfFewerThan" or lootUI.pendingDecisionRule == "KeepThenIgnore" then
+                        ImGui.SameLine()
+                        ImGui.Text("Threshold:")
+                        ImGui.SameLine()
+                        ImGui.SetNextItemWidth(80)
+                        local newThreshold, changedThreshold = ImGui.InputInt("##pendingThreshold", lootUI.pendingThreshold)
+                        if changedThreshold then
+                            lootUI.pendingThreshold = math.max(1, newThreshold)
+                        end
+                    end
+                
+                    ImGui.Spacing()
+                    ImGui.Separator()
+                    ImGui.Spacing()
+                
+                    -- Helper function to build final rule string
+                    local function getFinalRule()
+                        if lootUI.pendingDecisionRule == "KeepIfFewerThan" then
+                            return "KeepIfFewerThan:" .. lootUI.pendingThreshold
+                        elseif lootUI.pendingDecisionRule == "KeepThenIgnore" then
+                            return "KeepIfFewerThan:" .. lootUI.pendingThreshold .. ":AutoIgnore"
+                        else
+                            return lootUI.pendingDecisionRule
+                        end
+                    end
+
+                    local function getRuleDisplayLabel()
+                        if lootUI.pendingDecisionRule == "KeepIfFewerThan" then
+                            return string.format("Keep if < %d", lootUI.pendingThreshold or 1)
+                        elseif lootUI.pendingDecisionRule == "KeepThenIgnore" then
+                            return string.format("Keep if < %d then Ignore", lootUI.pendingThreshold or 1)
+                        else
+                            return lootUI.pendingDecisionRule or "Keep"
+                        end
+                    end
+
+                    local currentRuleLabel = getRuleDisplayLabel()
+
+                    ImGui.Spacing()
+                    if actionLayout == "selector" then
+                        ImGui.TextColored(0.9, 0.9, 0.6, 1.0, "Selected rule: %s", currentRuleLabel)
+                        ImGui.SameLine()
+                        ImGui.TextDisabled("(Click the buttons above to change)")
+                    else
+                        ImGui.TextColored(0.9, 0.9, 0.6, 1.0, "Quick action mode")
+                        ImGui.SameLine()
+                        ImGui.TextDisabled("(Configured in Settings)")
+                    end
+                
+                    -- Helper function to apply rule and queue loot action
+                    local function applyRuleAndQueue(rule, skipAction)
+                        local itemID_from_current = lootUI.currentItem.itemID or 0
+                        local iconID_from_current = lootUI.currentItem.iconID or 0
+                    
+                        -- Save the rule locally
+                        database.saveLootRule(itemName, itemID_from_current, rule, iconID_from_current)
+                    
+                        -- Refresh local cache after saving rule
+                        database.refreshLootRuleCache()
+                    
+                        if not skipAction then
+                            -- Queue the loot action
+                            lootUI.pendingLootAction = {
+                                item = lootUI.currentItem,
+                                itemID = itemID_from_current,
+                                iconID = iconID_from_current,
+                                rule = rule,
+                                numericCorpseID = lootUI.currentItem.numericCorpseID,
+                                startTime = lootUI.currentItem.decisionStartTime
+                            }
+                        end
+                    
+                        -- Clear currentItem for immediate processing
+                        lootUI.currentItem = nil
+                        lootUI.pendingDecisionWindowKey = nil
+                        lootUI.pendingDecisionWindowNeedsAttention = false
+                        lootUI.pendingDecisionRule = nil
+                        lootUI.pendingThreshold = 1
+                    end
+
+                    local function applyRuleToAllPeers(rule)
+                        local connectedPeers = util.getConnectedPeers()
+                        local currentCharacter = mq.TLO.Me.Name()
+                        local itemID_from_current = lootUI.currentItem.itemID or 0
+                        local iconID_from_current = lootUI.currentItem.iconID or 0
+
+                        logging.debug(string.format("[Popup] Apply All: itemName=%s, itemID=%d, iconID=%d",
+                            itemName, itemID_from_current, iconID_from_current))
+
+                        local appliedCount = 0
+                        for _, peer in ipairs(connectedPeers) do
+                            if peer ~= currentCharacter and database.saveLootRuleFor then
+                                local success = database.saveLootRuleFor(peer, itemName, itemID_from_current, rule, iconID_from_current)
+                                if success then
+                                    appliedCount = appliedCount + 1
+                                    util.sendPeerCommandViaActor(peer, "reload_rules")
+                                end
+                            end
+                        end
+
+                        logging.log(string.format("Applied rule '%s' for '%s' to %d connected peers", rule, itemName, appliedCount))
+                        database.refreshLootRuleCache()
+                        applyRuleAndQueue(rule)
+                    end
+                
+                    -- Main action buttons - compact layout
+                    local buttonHeight = 22
+                    local roundingRadius = 5
+                    ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, roundingRadius)
+                    local style = ImGui.GetStyle()
+                    local spacing = style.ItemSpacing.x
+                    local primaryWidth = 100
+                    local function drawActionButton(label, width, colors, onClick, tooltip)
+                        ImGui.PushStyleColor(ImGuiCol.Button, colors[1], colors[2], colors[3], colors[4])
+                        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, colors[5], colors[6], colors[7], colors[8])
+                        ImGui.PushStyleColor(ImGuiCol.ButtonActive, colors[9], colors[10], colors[11], colors[12])
+                        if ImGui.Button(label, width, buttonHeight) then
+                            onClick()
+                        end
+                        if ImGui.IsItemHovered() then
+                            ImGui.SetTooltip(tooltip)
+                        end
+                        ImGui.PopStyleColor(3)
+                    end
+
+                    if actionLayout == "quick_buttons" then
+                        local quickActionButtons = {
+                            {
+                                enabled = quickButtons.allKeep,
+                                label = "All Keep",
+                                width = 90,
+                                colors = {0.2, 0.7, 0.2, 0.95, 0.3, 0.8, 0.3, 1.0, 0.1, 0.5, 0.1, 1.0},
+                                onClick = function()
+                                    applyRuleToAllPeers("Keep")
+                                end,
+                                tooltip = "Apply Keep to every connected peer and resolve the item",
+                            },
+                            {
+                                enabled = quickButtons.allIgnore,
+                                label = "All Ignore",
+                                width = 92,
+                                colors = {0.75, 0.55, 0.2, 0.95, 0.85, 0.65, 0.3, 1.0, 0.6, 0.45, 0.1, 1.0},
+                                onClick = function()
+                                    applyRuleToAllPeers("Ignore")
+                                end,
+                                tooltip = "Apply Ignore to every connected peer and resolve the item",
+                            },
+                            {
+                                enabled = quickButtons.meKeep,
+                                label = "Me Keep",
+                                width = 88,
+                                colors = {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
+                                onClick = function()
+                                    logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Keep", itemName))
+                                    applyRuleAndQueue("Keep", false)
+                                end,
+                                tooltip = "Apply Keep locally and resolve immediately",
+                            },
+                            {
+                                enabled = quickButtons.meIgnore,
+                                label = "Me Ignore",
+                                width = 92,
+                                colors = {0.55, 0.45, 0.75, 0.95, 0.65, 0.55, 0.85, 1.0, 0.45, 0.35, 0.65, 1.0},
+                                onClick = function()
+                                    logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Ignore", itemName))
+                                    applyRuleAndQueue("Ignore", false)
+                                end,
+                                tooltip = "Apply Ignore locally and resolve immediately",
+                            },
+                        }
+
+                        local drewButton = false
+                        for _, button in ipairs(quickActionButtons) do
+                            if button.enabled then
+                                if drewButton then
+                                    ImGui.SameLine(0, spacing)
+                                end
+                                drawActionButton(button.label, button.width, button.colors, button.onClick, button.tooltip)
+                                drewButton = true
+                            end
+                        end
+
+                        if not drewButton then
+                            drawActionButton("Me Keep", 88,
+                                {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
+                                function()
+                                    logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Keep", itemName))
+                                    applyRuleAndQueue("Keep", false)
+                                end,
+                                "Apply Keep locally and resolve immediately")
+                        end
+                    else
+                        local applyAllLabel = string.format("All (%s)", currentRuleLabel)
+                        drawActionButton(applyAllLabel, primaryWidth,
+                            {0.2, 0.7, 0.2, 0.95, 0.3, 0.8, 0.3, 1.0, 0.1, 0.5, 0.1, 1.0},
+                            function()
+                                applyRuleToAllPeers(getFinalRule())
+                            end,
+                            "Apply selected rule to every connected peer and resolve the item")
+
+                        ImGui.SameLine(0, spacing)
+
+                        local applyMeLabel = string.format("Me (%s)", currentRuleLabel)
+                        drawActionButton(applyMeLabel, primaryWidth,
+                            {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
+                            function()
+                                local rule = getFinalRule()
+                                logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", rule, itemName))
+                                applyRuleAndQueue(rule, false)
+                            end,
+                            "Apply selected rule locally and resolve immediately")
+                    end
+
+                    ImGui.Spacing()
+                    ImGui.Separator()
+                    ImGui.Spacing()
+
+                    -- Advanced options section
+                    ImGui.Text("Advanced Options:")
+                    ImGui.Spacing()
+                
+                    local advancedWidth = 80
+
+                    ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.4, 0.8, 0.85)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.5, 0.9, 1.0)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.3, 0.7, 1.0)
+                    if ImGui.Button("Peers", advancedWidth, buttonHeight) then
+                        lootUI.peerItemRulesPopup = lootUI.peerItemRulesPopup or {}
+                        lootUI.peerItemRulesPopup.isOpen = true
+                        lootUI.peerItemRulesPopup.itemName = itemName
+                        lootUI.peerItemRulesPopup.itemID = lootUI.currentItem.itemID or 0
+                        lootUI.peerItemRulesPopup.iconID = lootUI.currentItem.iconID or 0
+                        logging.log(string.format("Opening peer rule editor for item: %s (itemID=%d, iconID=%d)",
+                            itemName, lootUI.currentItem.itemID or 0, lootUI.currentItem.iconID or 0))
                     end
                     if ImGui.IsItemHovered() then
-                        ImGui.SetTooltip(btn.rule)
+                        ImGui.SetTooltip("Configure rules individually per character")
                     end
-                end
-            else
-                -- Dropdown mode (default)
-                ImGui.SetNextItemWidth(180)
-                if ImGui.BeginCombo("##pendingRule", lootUI.pendingDecisionRule) then
-                    for _, rule in ipairs({"Keep", "Ignore", "Destroy", "KeepIfFewerThan", "KeepThenIgnore"}) do
-                        local isSelected = (lootUI.pendingDecisionRule == rule)
-                        if ImGui.Selectable(rule, isSelected) then
-                            lootUI.pendingDecisionRule = rule
-                        end
-                        if isSelected then
-                            ImGui.SetItemDefaultFocus()
-                        end
-                    end
-                    ImGui.EndCombo()
-                end
-            end
-            
-            -- Threshold input for KeepIfFewerThan
-            if lootUI.pendingDecisionRule == "KeepIfFewerThan" or lootUI.pendingDecisionRule == "KeepThenIgnore" then
-                ImGui.SameLine()
-                ImGui.Text("Threshold:")
-                ImGui.SameLine()
-                ImGui.SetNextItemWidth(80)
-                local newThreshold, changedThreshold = ImGui.InputInt("##pendingThreshold", lootUI.pendingThreshold)
-                if changedThreshold then
-                    lootUI.pendingThreshold = math.max(1, newThreshold)
-                end
-            end
-            
-            ImGui.Spacing()
-            ImGui.Separator()
-            ImGui.Spacing()
-            
-            -- Helper function to build final rule string
-            local function getFinalRule()
-                if lootUI.pendingDecisionRule == "KeepIfFewerThan" then
-                    return "KeepIfFewerThan:" .. lootUI.pendingThreshold
-                elseif lootUI.pendingDecisionRule == "KeepThenIgnore" then
-                    return "KeepIfFewerThan:" .. lootUI.pendingThreshold .. ":AutoIgnore"
-                else
-                    return lootUI.pendingDecisionRule
-                end
-            end
+                    ImGui.PopStyleColor(3)
 
-            local function getRuleDisplayLabel()
-                if lootUI.pendingDecisionRule == "KeepIfFewerThan" then
-                    return string.format("Keep if < %d", lootUI.pendingThreshold or 1)
-                elseif lootUI.pendingDecisionRule == "KeepThenIgnore" then
-                    return string.format("Keep if < %d then Ignore", lootUI.pendingThreshold or 1)
-                else
-                    return lootUI.pendingDecisionRule or "Keep"
-                end
-            end
+                    ImGui.SameLine(0, spacing)
 
-            local currentRuleLabel = getRuleDisplayLabel()
-
-            ImGui.Spacing()
-            if actionLayout == "selector" then
-                ImGui.TextColored(0.9, 0.9, 0.6, 1.0, "Selected rule: %s", currentRuleLabel)
-                ImGui.SameLine()
-                ImGui.TextDisabled("(Click the buttons above to change)")
-            else
-                ImGui.TextColored(0.9, 0.9, 0.6, 1.0, "Quick action mode")
-                ImGui.SameLine()
-                ImGui.TextDisabled("(Configured in Settings)")
-            end
-            
-            -- Helper function to apply rule and queue loot action
-            local function applyRuleAndQueue(rule, skipAction)
-                local itemID_from_current = lootUI.currentItem.itemID or 0
-                local iconID_from_current = lootUI.currentItem.iconID or 0
-                
-                -- Save the rule locally
-                database.saveLootRule(itemName, itemID_from_current, rule, iconID_from_current)
-                
-                -- Refresh local cache after saving rule
-                database.refreshLootRuleCache()
-                
-                if not skipAction then
-                    -- Queue the loot action
-                    lootUI.pendingLootAction = {
-                        item = lootUI.currentItem,
-                        itemID = itemID_from_current,
-                        iconID = iconID_from_current,
-                        rule = rule,
-                        numericCorpseID = lootUI.currentItem.numericCorpseID,
-                        startTime = lootUI.currentItem.decisionStartTime
-                    }
-                end
-                
-                -- Clear currentItem for immediate processing
-                lootUI.currentItem = nil
-                lootUI.pendingDecisionWindowKey = nil
-                lootUI.pendingDecisionWindowNeedsAttention = false
-                lootUI.pendingDecisionRule = nil
-                lootUI.pendingThreshold = 1
-            end
-
-            local function applyRuleToAllPeers(rule)
-                local connectedPeers = util.getConnectedPeers()
-                local currentCharacter = mq.TLO.Me.Name()
-                local itemID_from_current = lootUI.currentItem.itemID or 0
-                local iconID_from_current = lootUI.currentItem.iconID or 0
-
-                logging.debug(string.format("[Popup] Apply All: itemName=%s, itemID=%d, iconID=%d",
-                    itemName, itemID_from_current, iconID_from_current))
-
-                local appliedCount = 0
-                for _, peer in ipairs(connectedPeers) do
-                    if peer ~= currentCharacter and database.saveLootRuleFor then
-                        local success = database.saveLootRuleFor(peer, itemName, itemID_from_current, rule, iconID_from_current)
-                        if success then
-                            appliedCount = appliedCount + 1
-                            util.sendPeerCommandViaActor(peer, "reload_rules")
-                        end
-                    end
-                end
-
-                logging.log(string.format("Applied rule '%s' for '%s' to %d connected peers", rule, itemName, appliedCount))
-                database.refreshLootRuleCache()
-                applyRuleAndQueue(rule)
-            end
-            
-            -- Main action buttons - compact layout
-            local buttonHeight = 22
-            local roundingRadius = 5
-            ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, roundingRadius)
-            local style = ImGui.GetStyle()
-            local spacing = style.ItemSpacing.x
-            local primaryWidth = 100
-            local function drawActionButton(label, width, colors, onClick, tooltip)
-                ImGui.PushStyleColor(ImGuiCol.Button, colors[1], colors[2], colors[3], colors[4])
-                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, colors[5], colors[6], colors[7], colors[8])
-                ImGui.PushStyleColor(ImGuiCol.ButtonActive, colors[9], colors[10], colors[11], colors[12])
-                if ImGui.Button(label, width, buttonHeight) then
-                    onClick()
-                end
-                if ImGui.IsItemHovered() then
-                    ImGui.SetTooltip(tooltip)
-                end
-                ImGui.PopStyleColor(3)
-            end
-
-            if actionLayout == "quick_buttons" then
-                local quickActionButtons = {
-                    {
-                        enabled = quickButtons.allKeep,
-                        label = "All Keep",
-                        width = 90,
-                        colors = {0.2, 0.7, 0.2, 0.95, 0.3, 0.8, 0.3, 1.0, 0.1, 0.5, 0.1, 1.0},
-                        onClick = function()
-                            applyRuleToAllPeers("Keep")
-                        end,
-                        tooltip = "Apply Keep to every connected peer and resolve the item",
-                    },
-                    {
-                        enabled = quickButtons.allIgnore,
-                        label = "All Ignore",
-                        width = 92,
-                        colors = {0.75, 0.55, 0.2, 0.95, 0.85, 0.65, 0.3, 1.0, 0.6, 0.45, 0.1, 1.0},
-                        onClick = function()
-                            applyRuleToAllPeers("Ignore")
-                        end,
-                        tooltip = "Apply Ignore to every connected peer and resolve the item",
-                    },
-                    {
-                        enabled = quickButtons.meKeep,
-                        label = "Me Keep",
-                        width = 88,
-                        colors = {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
-                        onClick = function()
-                            logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Keep", itemName))
-                            applyRuleAndQueue("Keep", false)
-                        end,
-                        tooltip = "Apply Keep locally and resolve immediately",
-                    },
-                    {
-                        enabled = quickButtons.meIgnore,
-                        label = "Me Ignore",
-                        width = 92,
-                        colors = {0.55, 0.45, 0.75, 0.95, 0.65, 0.55, 0.85, 1.0, 0.45, 0.35, 0.65, 1.0},
-                        onClick = function()
-                            logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Ignore", itemName))
-                            applyRuleAndQueue("Ignore", false)
-                        end,
-                        tooltip = "Apply Ignore locally and resolve immediately",
-                    },
-                }
-
-                local drewButton = false
-                for _, button in ipairs(quickActionButtons) do
-                    if button.enabled then
-                        if drewButton then
-                            ImGui.SameLine(0, spacing)
-                        end
-                        drawActionButton(button.label, button.width, button.colors, button.onClick, button.tooltip)
-                        drewButton = true
-                    end
-                end
-
-                if not drewButton then
-                    drawActionButton("Me Keep", 88,
-                        {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
-                        function()
-                            logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", "Keep", itemName))
-                            applyRuleAndQueue("Keep", false)
-                        end,
-                        "Apply Keep locally and resolve immediately")
-                end
-            else
-                local applyAllLabel = string.format("All (%s)", currentRuleLabel)
-                drawActionButton(applyAllLabel, primaryWidth,
-                    {0.2, 0.7, 0.2, 0.95, 0.3, 0.8, 0.3, 1.0, 0.1, 0.5, 0.1, 1.0},
-                    function()
-                        applyRuleToAllPeers(getFinalRule())
-                    end,
-                    "Apply selected rule to every connected peer and resolve the item")
-
-                ImGui.SameLine(0, spacing)
-
-                local applyMeLabel = string.format("Me (%s)", currentRuleLabel)
-                drawActionButton(applyMeLabel, primaryWidth,
-                    {0.2, 0.5, 0.8, 0.95, 0.3, 0.6, 0.9, 1.0, 0.1, 0.4, 0.7, 1.0},
-                    function()
-                        local rule = getFinalRule()
-                        logging.log(string.format("Setting rule '%s' for '%s' locally only and processing", rule, itemName))
+                    ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.6, 0.2, 0.85)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.9, 0.7, 0.3, 1.0)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.7, 0.5, 0.1, 1.0)
+                    if ImGui.Button("Ignore", advancedWidth, buttonHeight) then
+                        local rule = "Ignore"
+                        logging.log(string.format("Processing '%s' as ignored - will trigger peer chain", itemName))
                         applyRuleAndQueue(rule, false)
-                    end,
-                    "Apply selected rule locally and resolve immediately")
-            end
+                    end
+                    if ImGui.IsItemHovered() then
+                        ImGui.SetTooltip("Resolve this item as ignored and continue chain")
+                    end
+                    ImGui.PopStyleColor(3)
 
-            ImGui.Spacing()
-            ImGui.Separator()
-            ImGui.Spacing()
+                    ImGui.SameLine(0, spacing)
 
-            -- Advanced options section
-            ImGui.Text("Advanced Options:")
-            ImGui.Spacing()
+                    ImGui.PushStyleColor(ImGuiCol.Button, 0.55, 0.55, 0.55, 0.85)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.65, 0.65, 0.65, 1.0)
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.4, 0.4, 0.4, 1.0)
+                    if ImGui.Button("Skip", advancedWidth, buttonHeight) then
+                        logging.log("Skipping item " .. itemName .. " - leaving rule unset, moving to next item")
+                        local itemID_from_current = lootUI.currentItem.itemID or 0
+                        local iconID_from_current = lootUI.currentItem.iconID or 0
+                        lootUI.pendingLootAction = {
+                            item = lootUI.currentItem,
+                            itemID = itemID_from_current,
+                            iconID = iconID_from_current,
+                            rule = "Ignore",
+                            numericCorpseID = lootUI.currentItem.numericCorpseID,
+                            startTime = lootUI.currentItem.decisionStartTime,
+                            skipRuleSave = true
+                        }
+                        lootUI.currentItem = nil
+                        lootUI.pendingDecisionWindowKey = nil
+                        lootUI.pendingDecisionWindowNeedsAttention = false
+                        lootUI.pendingDecisionRule = nil
+                        lootUI.pendingThreshold = 1
+                    end
+                    if ImGui.IsItemHovered() then
+                        ImGui.SetTooltip("Skip without setting any rule (temporary ignore)")
+                    end
+                    ImGui.PopStyleColor(3)
+
+                    -- Pop the rounding style at the very end, after all buttons
+                    ImGui.PopStyleVar()
+
+                    ImGui.Spacing()
+                    ImGui.Separator()
+                
+                end
+                ImGui.End()
             
-            local advancedWidth = 80
-
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.4, 0.8, 0.85)
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.5, 0.9, 1.0)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.3, 0.7, 1.0)
-            if ImGui.Button("Peers", advancedWidth, buttonHeight) then
-                lootUI.peerItemRulesPopup = lootUI.peerItemRulesPopup or {}
-                lootUI.peerItemRulesPopup.isOpen = true
-                lootUI.peerItemRulesPopup.itemName = itemName
-                lootUI.peerItemRulesPopup.itemID = lootUI.currentItem.itemID or 0
-                lootUI.peerItemRulesPopup.iconID = lootUI.currentItem.iconID or 0
-                logging.log(string.format("Opening peer rule editor for item: %s (itemID=%d, iconID=%d)",
-                    itemName, lootUI.currentItem.itemID or 0, lootUI.currentItem.iconID or 0))
+                -- If window was closed, clean up state
+                if not decisionOpen then
+                    lootUI.currentItem = nil
+                    lootUI.pendingDecisionWindowKey = nil
+                    lootUI.pendingDecisionWindowNeedsAttention = false
+                    lootUI.pendingDecisionRule = nil
+                    lootUI.pendingThreshold = 1
+                end
             end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Configure rules individually per character")
-            end
-            ImGui.PopStyleColor(3)
-
-            ImGui.SameLine(0, spacing)
-
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.8, 0.6, 0.2, 0.85)
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.9, 0.7, 0.3, 1.0)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.7, 0.5, 0.1, 1.0)
-            if ImGui.Button("Ignore", advancedWidth, buttonHeight) then
-                local rule = "Ignore"
-                logging.log(string.format("Processing '%s' as ignored - will trigger peer chain", itemName))
-                applyRuleAndQueue(rule, false)
-            end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Resolve this item as ignored and continue chain")
-            end
-            ImGui.PopStyleColor(3)
-
-            ImGui.SameLine(0, spacing)
-
-            ImGui.PushStyleColor(ImGuiCol.Button, 0.55, 0.55, 0.55, 0.85)
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.65, 0.65, 0.65, 1.0)
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.4, 0.4, 0.4, 1.0)
-            if ImGui.Button("Skip", advancedWidth, buttonHeight) then
-                logging.log("Skipping item " .. itemName .. " - leaving rule unset, moving to next item")
-                local itemID_from_current = lootUI.currentItem.itemID or 0
-                local iconID_from_current = lootUI.currentItem.iconID or 0
-                lootUI.pendingLootAction = {
-                    item = lootUI.currentItem,
-                    itemID = itemID_from_current,
-                    iconID = iconID_from_current,
-                    rule = "Ignore",
-                    numericCorpseID = lootUI.currentItem.numericCorpseID,
-                    startTime = lootUI.currentItem.decisionStartTime,
-                    skipRuleSave = true
-                }
-                lootUI.currentItem = nil
-                lootUI.pendingDecisionWindowKey = nil
-                lootUI.pendingDecisionWindowNeedsAttention = false
-                lootUI.pendingDecisionRule = nil
-                lootUI.pendingThreshold = 1
-            end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("Skip without setting any rule (temporary ignore)")
-            end
-            ImGui.PopStyleColor(3)
-
-            -- Pop the rounding style at the very end, after all buttons
-            ImGui.PopStyleVar()
-
-            ImGui.Spacing()
-            ImGui.Separator()
-            
-        end
-        ImGui.End()
-        
-        -- If window was closed, clean up state
-        if not decisionOpen then
-            lootUI.currentItem = nil
-            lootUI.pendingDecisionWindowKey = nil
-            lootUI.pendingDecisionWindowNeedsAttention = false
-            lootUI.pendingDecisionRule = nil
-            lootUI.pendingThreshold = 1
-        end
-    end
 end
 
 -- Peer Item Rules Popup (ENHANCED with better workflow integration)
@@ -2233,49 +2232,6 @@ function uiPopups.drawLootRulesPopup(lootUI, database, util)
             lootUI.selectedItemForPopup = nil
         end
     end
-end
-
--- Broadcast New Rule Popup
-function uiPopups.drawBroadcastNewRulePopup(lootUI, database, util)
-    local pop = lootUI and lootUI.broadcastNewRulePopup
-    if not pop or not pop.isOpen then return end
-
-    ImGui.SetNextWindowSize(420, 170, ImGuiCond.Appearing)
-    local keepOpen = true
-    if ImGui.Begin("Broadcast New Rule?", keepOpen, ImGuiWindowFlags.NoCollapse + ImGuiWindowFlags.AlwaysAutoResize) then
-        ImGui.Text("A new rule was created:")
-        ImGui.BulletText("%s -> %s", pop.itemName or "?", pop.rule or "?")
-        ImGui.Spacing()
-        ImGui.Text("Broadcast this rule to all connected peers?")
-        ImGui.Spacing()
-
-        if ImGui.Button("Broadcast", 120, 0) then
-            local peers = util.getConnectedPeers()
-            for _, peer in ipairs(peers) do
-                if peer ~= (mq.TLO.Me.Name() or "") then
-                    pcall(function()
-                        database.saveLootRuleFor(peer, pop.itemName, pop.itemID or 0, pop.rule, pop.iconID or 0)
-                    end)
-                end
-            end
-            -- Ask peers to refresh rules via actor mailbox
-            pcall(function() util.broadcastRulesReload() end)
-            util.printSmartLoot(string.format("Broadcasted rule %s -> %s to %d peer(s)", pop.itemName, pop.rule, math.max(0, #peers-1)), "success")
-            pop.isOpen = false
-        end
-        
-        ImGui.SameLine()
-        if ImGui.Button("Don't Broadcast", 160, 0) then
-            pop.isOpen = false
-        end
-
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Keeps the rule only on this character")
-        end
-
-        ImGui.End()
-    end
-    if not keepOpen then pop.isOpen = false end
 end
 
 -- KeepIfFewerThan Threshold Popup

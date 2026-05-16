@@ -336,7 +336,6 @@ function uiHotbar.draw(lootUI, settings, toggle_ui, loot, util)
         end
 
 
-
         -- Render configured buttons
         for buttonId, button in pairs(buttonConfig) do
             if button.visible or hotbarState.configMode then
@@ -570,33 +569,6 @@ function uiHotbar.isCompactMode()
     return hotbarConfig.compactMode
 end
 
-function uiHotbar.setPosition(x, y)
-    config.setHotbarPosition(x, y)
-end
-
-function uiHotbar.getPosition()
-    local hotbarConfig = getHotbarConfig()
-    return hotbarConfig.position.x, hotbarConfig.position.y
-end
-
-function uiHotbar.setAlpha(alpha)
-    config.setHotbarAlpha(alpha)
-end
-
-function uiHotbar.getAlpha()
-    local hotbarConfig = getHotbarConfig()
-    return hotbarConfig.alpha
-end
-
-function uiHotbar.setButtonSize(size)
-    config.setHotbarButtonSize(size)
-end
-
-function uiHotbar.getButtonSize()
-    local hotbarConfig = getHotbarConfig()
-    return hotbarConfig.buttonSize
-end
-
 -- New functions for text label mode
 function uiHotbar.setUseTextLabels(useText)
     config.setHotbarUseTextLabels(useText)
@@ -648,29 +620,6 @@ end
 
 function uiHotbar.resetButtonsToDefault()
     config.resetHotbarToDefaults()
-    initializeButtonVisibility()
-end
-
--- Legacy save/load functions (now use config system)
-function uiHotbar.saveSettings()
-    -- Settings are automatically saved through config system
-    local hotbarConfig = getHotbarConfig()
-    logging.log("Hotbar settings saved via config system: " ..
-        "pos(" .. hotbarConfig.position.x .. "," .. hotbarConfig.position.y .. ") " ..
-        "size(" .. hotbarConfig.buttonSize .. ") " ..
-        "alpha(" .. hotbarConfig.alpha .. ") " ..
-        "vertical(" .. tostring(hotbarConfig.vertical) .. ") " ..
-        "useTextLabels(" .. tostring(hotbarConfig.useTextLabels) .. ") " ..
-        "show(" .. tostring(hotbarConfig.show) .. ")")
-    
-    return hotbarConfig
-end
-
-function uiHotbar.loadSettings(settings)
-    -- Settings are automatically loaded through config system
-    if settings then
-        logging.log("Legacy loadSettings called - settings now managed by config system")
-    end
     initializeButtonVisibility()
 end
 
